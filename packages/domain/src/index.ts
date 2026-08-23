@@ -51,3 +51,24 @@ export {
   FirmTeamError,
   PinVerificationError,
 } from './firm-team-service';
+
+export {
+  claimSpace,
+  recordFollowUpConsent,
+  requestInvitation,
+  getSeats,
+  assignSeat,
+  replacementCost,
+  describeSeatReplacement,
+  confirmSeatReplacement,
+  updateSeatState,
+  canInviteClients,
+  getSeatStatus,
+  ensureOutreachLinks,
+  getOutreachVolumes,
+  FirmPortalError,
+  PrivacyConsentRequiredError,
+  AlreadyClaimedError,
+  SeatConflictError,
+} from './firm-portal-service';
+export type { ClaimInput, InvitationRequest } from './firm-portal-service';

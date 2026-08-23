@@ -26,4 +26,14 @@ export default defineWorkspace([
       },
     },
   },
+  {
+    // Pure front-end model logic (no DB, no DOM) — e.g. the firm portal model,
+    // where the three confirmed UX-FRM-001 defect fixes are regression-tested.
+    test: {
+      name: 'unit',
+      include: ['apps/admin/src/**/*.test.ts'],
+      globals: true,
+      environment: 'node',
+    },
+  },
 ]);

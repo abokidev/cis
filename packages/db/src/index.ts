@@ -12,6 +12,8 @@ export * from './queries/responses';
 export * from './queries/firm-coordinators';
 export * from './queries/outreach';
 export * from './queries/governed-config';
+export * from './queries/firm-claims';
+export * from './queries/seat-assignments';
 export {
   seedSurveyRegister,
   getRegisterFixture,

@@ -170,14 +170,64 @@ export interface FirmCoordinator {
   createdAt: Date;
 }
 
-/** Outreach-link tracking. Counters only — never joinable to a response. */
+/** The three outreach audiences a firm segments its own client list into. */
+export type OutreachSegment = 'individual' | 'local_institutional' | 'foreign_institutional';
+
+/** Outreach-link tracking. Counters only — never joinable to a response, and
+ *  deliberately no "invitations sent" figure (the platform never sees a client
+ *  list, so it cannot observe an invitation count). */
 export interface OutreachLink {
   id: string;
   editionId: string;
   organizationId: string;
   token: string;
+  segment: OutreachSegment | null;
   opens: number;
   starts: number;
+  finishes: number;
+  createdAt: Date;
+}
+
+/** The four states a firm survey seat can be in. Why a started seat stopped is
+ *  deliberately not a state — it does not change the coordinator's one action. */
+export type SeatState = 'empty' | 'invited' | 'started' | 'complete';
+
+/** One of the three firm-side survey seats (S1/S2/S3) for a firm in an edition.
+ *  Carries assignment + state ONLY — never any answer content. */
+export interface SeatAssignment {
+  id: string;
+  editionId: string;
+  organizationId: string;
+  /** The firm survey instrument this seat owns. */
+  seatCode: 'S1' | 'S2' | 'S3';
+  /** Human role that owns the seat (MD / Compliance / Operations). */
+  roleLabel: string;
+  assignedName: string | null;
+  assignedEmail: string | null;
+  state: SeatState;
+  /** The coordinator's own seat (assigned from the role they gave at setup). */
+  isSelf: boolean;
+  /** When a started seat went quiet (display string), else null. */
+  stalledAt: string | null;
+  /** Link to the response record for STATE tracking only — no answer access. */
+  respondentId: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/** One firm's claim on its permanent space. One row per firm (one firm, one
+ *  space). The claiming contact is shown masked and is not editable here. */
+export interface FirmClaim {
+  id: string;
+  organizationId: string;
+  claimedAt: Date;
+  claimingContactName: string;
+  claimingContactEmail: string;
+  leadCoordinatorId: string | null;
+  privacyConsent: boolean;
+  /** Optional; gates nothing. The only basis on which a firm may be approached
+   *  commercially (UX-ADM-007 filters on it). */
+  followUpConsent: boolean;
   createdAt: Date;
 }
 

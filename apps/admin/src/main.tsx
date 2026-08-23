@@ -3,12 +3,20 @@ import { createRoot } from 'react-dom/client';
 import './theme.css';
 import { App } from './App';
 import { RespondentApp } from './journey/RespondentApp';
+import { FirmPortal } from './firm/FirmPortal';
 
 const root = document.getElementById('root');
 if (!root) throw new Error('Root element #root not found');
 
-// Respondents and operators are strictly separate surfaces: the respondent-
-// facing journey app lives under /survey and never renders the admin portal.
-const isRespondent = window.location.pathname.startsWith('/survey');
+// Three strictly separate surfaces by path: the firm portal (/firm) and the
+// respondent journey app (/survey) never render the operator admin portal.
+const path = window.location.pathname;
+const surface = path.startsWith('/firm') ? (
+  <FirmPortal />
+) : path.startsWith('/survey') ? (
+  <RespondentApp />
+) : (
+  <App />
+);
 
-createRoot(root).render(<StrictMode>{isRespondent ? <RespondentApp /> : <App />}</StrictMode>);
+createRoot(root).render(<StrictMode>{surface}</StrictMode>);

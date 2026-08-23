@@ -261,3 +261,72 @@ journeys: they bind their content to the Phase 2 Register by instrument code (th
 question text is not transcribed in Phase 3 code), so the same
 `I-SEC-Q5 / I-NGX-Q5 / I-CSCS-Q5` compliance sign-off is a prerequisite before any
 institutional journey is finalized into a production edition freeze.
+
+## Firm claim, portal, team & outreach (Phase 4)
+
+The firm-facing surface (`UX-FRM-001`) — claim → set up access → assign three
+internal respondents (S1/S2/S3) → invite three client segments → monitor link
+volumes → receive results. It runs under `/firm`, strictly separate from the
+operator portal and the respondent journeys.
+
+- **One firm, one space** is a database invariant (`UNIQUE(organization_id)` on
+  `firm_claims`). A second claimant is refused (`AlreadyClaimedError`) and
+  redirected to sign in; the error carries **no identity** of the first claimant.
+- **Firm identity is never inferred from an email domain.** Personal domains are
+  accepted on the request-an-invitation path; a domain match is recorded only as
+  an operational note (`domainNote`), never a gate. Affiliation is confirmed by
+  CIS against the dealing member register (an operations action, `UX-OPS-002`).
+- **Three consent behaviours, distinctly rendered**: privacy consent gates the
+  primary action at both setup and request-an-invitation; follow-up consent is
+  optional, gates nothing (kept freely given for `UX-ADM-007`), and is rendered
+  with a dashed border + explicit "optional".
+- **Four seat states** (`empty`/`invited`/`started`/`complete`). Replacing a
+  _started_ seat states the cost first (the link stops, a part-finished answer is
+  lost); replacing a _completed_ seat says the response is discarded. Computed
+  from state **before** the change (`replacementCost`).
+- **Sequence lock**: inviting clients stays disabled until all three seats are
+  assigned, and the disabled control **states why** (`canInviteClients`).
+- **Visibility boundary** (reused from Phase 3, not reimplemented): the seat
+  accessor (`getSeatStatuses`) returns seat/role/**state only** and never selects
+  answer content.
+- **Measurement is volumes-only**: per-segment opens/starts/finishes. There is no
+  respondent/response key on `outreach_links` (non-joinability), and deliberately
+  **no invitation-count field anywhere** — the platform never receives a client
+  list, so it cannot observe one.
+- **Two struck claims never resurface**: no response-count threshold gates the
+  combined report (the Reporting Specification guarantees it to every
+  participating firm), and rating attribution is never gated on arrival-via-link
+  (an investor picks firms independently — the link only pre-selects and measures).
+  Both are proven by regression tests.
+
+### The three confirmed v14.5 defects — all fixed with a test each
+
+The artefact carried three still-open defects (verified in its markup). Each fix
+is regression-tested in `apps/admin/src/firm/portalModel.test.ts`:
+
+- **§2a `surveyNotBuilt` was dead code.** Now wired: clicking an individual seat
+  row invokes `notBuiltForSeat`, showing the "owned by its own surface, not built
+  here" feedback (naming `UX-FRM-004/005/006`).
+- **§2b `pip3`/`pip4` could never activate.** The claim flow is genuinely two
+  steps, so the indicator renders **two** pips (`PROGRESS_PIP_COUNT`); no view
+  lights more than exist, and both positions are reachable.
+- **§2c `access_model` was a phantom state.** It is absent from `PORTAL_VIEWS`
+  (the 13 real views); the coordinator/respondent split is structural (seat status
+  is state-only), not a screen.
+
+### ⚠️ Design-registry inconsistency for design-ops to reconcile
+
+`UX-FRM-002`, `UX-FRM-DIG-001`, and `UX-FRM-PREV-001` are **not** referenced in
+this artefact's navigable markup, and both its own `destination_design_ids` and
+`PACKAGE.md`'s "Children" line agree on exactly five destinations
+(`UX-FRM-004/005/006/007` and `UX-FRM-RES-001`). If those three other surfaces
+separately declare `UX-FRM-001` as their parent, that is a cross-registry
+inconsistency recorded in two places that disagree — **not resolved by inventing
+navigation here.** This build routes only to the five declared destinations
+(the four Phase-3 surfaces link to the real thing; `UX-FRM-RES-001` is an honest
+not-built stub). The registry owner should reconcile the parent/child mismatch.
+
+> **Note on inputs:** the Phase 4 prompt referenced `PACKAGE.md` as a second
+> authoritative attachment, but only the artefact was supplied. The build followed
+> the prompt's extracted load-bearing rules and the artefact's embedded review
+> contract; if `PACKAGE.md` carries anything beyond those, reconcile against it.

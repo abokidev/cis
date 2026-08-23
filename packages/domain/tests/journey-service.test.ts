@@ -282,7 +282,7 @@ describe('Outreach non-joinability', () => {
     await incrementOutreach(pool, 'tok-1', 'starts');
 
     const summary = await getFirmOutreachSummary(pool, editionId, firmOrg.id);
-    expect(summary).toEqual({ links: 1, opens: 1, starts: 1 });
+    expect(summary).toEqual({ links: 1, opens: 1, starts: 1, finishes: 0 });
 
     // Structural proof: outreach_links has no respondent/response foreign key.
     const cols = await pool.query<{ column_name: string }>(

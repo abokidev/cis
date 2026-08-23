@@ -1,8 +1,10 @@
 import type { SurveyItem } from '@cis/survey';
 import {
   ApiError,
+  type Coordinator,
   type EditionDetail,
   type EditionSummary,
+  type FirmSummary,
   type InstrumentsResponse,
   type LoginResponse,
   type SampleFloor,
@@ -67,6 +69,30 @@ export interface AdminClient {
     approved: boolean,
     rejectionReason?: string,
   ): Promise<{ status: 'approved' | 'rejected'; frozen: boolean }>;
+  // Firm coordinator team (UX-FRM-007) — ordinary account admin, not maker-checker.
+  listFirms(): Promise<FirmSummary[]>;
+  listCoordinators(orgId: string): Promise<Coordinator[]>;
+  createLeadCoordinator(
+    orgId: string,
+    body: { name: string; email: string; role?: string; phone?: string },
+  ): Promise<Coordinator>;
+  addCoordinator(
+    orgId: string,
+    body: { name: string; email: string; role?: string; phone?: string },
+  ): Promise<Coordinator>;
+  setCoordinatorPin(
+    orgId: string,
+    coordinatorId: string,
+    body: { newPin: string; currentPin?: string },
+  ): Promise<{ ok: boolean }>;
+  handoverLead(
+    orgId: string,
+    body: { actingCoordinatorId: string; newLeadCoordinatorId: string },
+  ): Promise<{
+    outgoing: { id: string; isLead: boolean };
+    incoming: { id: string; isLead: boolean };
+  }>;
+  removeCoordinator(orgId: string, coordinatorId: string): Promise<{ removed: boolean }>;
 }
 
 /** Build a client bound to an auth token. */
@@ -107,5 +133,32 @@ export function createClient(token: string | null): AdminClient {
         body: { approved, rejectionReason },
         token,
       }),
+    listFirms: () => request<{ firms: FirmSummary[] }>('/firms', { token }).then((r) => r.firms),
+    listCoordinators: (orgId) =>
+      request<{ coordinators: Coordinator[] }>(`/firms/${orgId}/coordinators`, { token }).then(
+        (r) => r.coordinators,
+      ),
+    createLeadCoordinator: (orgId, body) =>
+      request<{ coordinator: Coordinator }>(`/firms/${orgId}/coordinators/lead`, {
+        method: 'POST',
+        body,
+        token,
+      }).then((r) => r.coordinator),
+    addCoordinator: (orgId, body) =>
+      request<{ coordinator: Coordinator }>(`/firms/${orgId}/coordinators`, {
+        method: 'POST',
+        body,
+        token,
+      }).then((r) => r.coordinator),
+    setCoordinatorPin: (orgId, coordinatorId, body) =>
+      request(`/firms/${orgId}/coordinators/${coordinatorId}/pin`, {
+        method: 'POST',
+        body,
+        token,
+      }),
+    handoverLead: (orgId, body) =>
+      request(`/firms/${orgId}/coordinators/handover`, { method: 'POST', body, token }),
+    removeCoordinator: (orgId, coordinatorId) =>
+      request(`/firms/${orgId}/coordinators/${coordinatorId}`, { method: 'DELETE', token }),
   };
 }

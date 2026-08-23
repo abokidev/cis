@@ -26,3 +26,28 @@ export type { SeededReferenceData } from './seed';
 
 export { submitResponses, ConsentRequiredError, ResponseScopeError } from './response-service';
 export type { SubmitResponsesInput } from './response-service';
+
+export {
+  startJourney,
+  registerContact,
+  setRatedFirms,
+  saveDraftAnswer,
+  getResume,
+  getResumeByToken,
+  submitJourney,
+  createReferral,
+  createColleagueInvite,
+  ReviewGapError,
+} from './journey-service';
+export type { ContactInput, ResumeState } from './journey-service';
+
+export {
+  createLeadCoordinator,
+  addCoordinator,
+  setCoordinatorPin,
+  handOverLead,
+  removeCoordinator,
+  listCoordinators,
+  FirmTeamError,
+  PinVerificationError,
+} from './firm-team-service';

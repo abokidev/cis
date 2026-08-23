@@ -5,6 +5,9 @@ import { registerAuth } from './plugins/auth-plugin';
 import { authRoutes } from './routes/auth';
 import { editionRoutes } from './routes/editions';
 import { instrumentRoutes } from './routes/instruments';
+import { journeyRoutes } from './routes/journeys';
+import { firmTeamRoutes } from './routes/firm-team';
+import { governedContentRoutes } from './routes/governed-content';
 
 export async function buildServer() {
   const app = Fastify({
@@ -33,6 +36,9 @@ export async function buildServer() {
   await app.register(authRoutes);
   await app.register(editionRoutes);
   await app.register(instrumentRoutes);
+  await app.register(journeyRoutes);
+  await app.register(firmTeamRoutes);
+  await app.register(governedContentRoutes);
 
   app.setErrorHandler<Error>((error, request, reply) => {
     const statusCode = resolveStatusCode(error);
@@ -62,10 +68,16 @@ function resolveStatusCode(error: Error & { statusCode?: number }): number {
     case 'MakerCheckerViolationError':
       return 403;
     case 'InvalidReasonError':
+    case 'ResponseScopeError':
+    case 'ReviewGapError':
       return 400;
+    case 'ConsentRequiredError':
+    case 'PinVerificationError':
+      return 403;
     case 'EditionStateError':
     case 'InstrumentsNotFrozenError':
     case 'CriticalActionStateError':
+    case 'FirmTeamError':
     case 'DomainError':
       return 409;
     default:

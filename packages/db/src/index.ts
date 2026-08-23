@@ -9,6 +9,9 @@ export * from './queries/instrument-questions';
 export * from './queries/edition-sample-floors';
 export * from './queries/critical-actions';
 export * from './queries/responses';
+export * from './queries/firm-coordinators';
+export * from './queries/outreach';
+export * from './queries/governed-config';
 export {
   seedSurveyRegister,
   getRegisterFixture,

@@ -18,3 +18,5 @@ export {
   toggleSelect,
   toggleRank,
 } from './logic';
+export { buildJourneySequence, firmContextAt } from './sequence';
+export type { JourneyStep, FirmContext } from './sequence';

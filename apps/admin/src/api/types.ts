@@ -58,6 +58,25 @@ export interface InstrumentsResponse {
   drgOps: DrgOpsQuestion[];
 }
 
+export interface FirmSummary {
+  id: string;
+  displayName: string;
+  slug: string;
+}
+
+export interface Coordinator {
+  id: string;
+  organizationId: string;
+  name: string;
+  role: string | null;
+  email: string;
+  phone: string | null;
+  isLead: boolean;
+  accessCode: string;
+  revokedAt: string | null;
+  createdAt: string;
+}
+
 export interface AuthUser {
   id: string;
   email: string;

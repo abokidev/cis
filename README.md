@@ -197,3 +197,67 @@ seed file's Q5 wording may or may not be the corrected version. **Do not
 finalize these three items into a production edition freeze without a compliance
 sign-off against the current controlled Register.** (Flagged in-code at the top
 of `packages/db/src/seed/register.ts`.)
+
+## Respondent & firm journey surfaces (Phase 3)
+
+Every survey-taking journey — the six survey instruments (S1–S5b) and the three
+institutional/regulator instruments (I-SEC, I-NGX, I-CSCS) — runs through **one**
+shell and **one** sequencing function; there is no per-instrument copy.
+
+- **One sequencing function** (`packages/survey/src/sequence.ts`,
+  `buildJourneySequence`): partitions items by `scope` and presents all `shared`
+  items first (Register order), then, per **independently-selected** rated firm,
+  the `firm_specific` items (Register order, repeated per firm). This scope
+  grouping deliberately supersedes literal Register order. `firmContextAt`
+  recovers which rated firm a given step belongs to, so resume restores the
+  exact firm context mid-loop, not just a question number. Tested in
+  `packages/survey/tests/sequence.test.ts`.
+- **One journey shell** (`apps/admin/src/journey/JourneyShell.tsx`): one question
+  at a time; a mandatory answer blocks progression (shared `outstanding()`); **no
+  save control anywhere** — every change autosaves a mutable draft; submission is
+  final only via an explicit review-before-submit step. Respondents run under
+  `/survey` and never see the operator portal.
+- **Draft → immutable freeze** (`packages/domain/journey-service.ts`,
+  `submitJourney`): autosaved answers live in the mutable `respondent_drafts`
+  table and are frozen into the immutable `responses` table in a single
+  transaction on submit. Submission re-checks the consent gate and requires every
+  required item to be answered server-side (`ReviewGapError` names the gaps).
+- **PAT-011 consent (server-side)** (`registerContact`): consent gates the primary
+  action and is required even when no contact detail is given — a contact field is
+  only stored once consent is accepted. Consent copy and the recovery-link TTL are
+  **governed content** (`governed_config`), not hardcoded; the provisional consent
+  wording is owned by the DPO/legal (OPEN-003) and is swappable via
+  `PUT /governed-config/:key`.
+- **Attribution boundaries**: a referral (`createReferral`) and a colleague invite
+  (`createColleagueInvite`) both start a fully independent journey with
+  `recruiting_firm_id = NULL` — neither ever inherits the inviter's source firm; a
+  colleague carries only the (never-published) institution name, with no stored
+  link to the inviter.
+- **Firm-facing visibility boundary** (structural, at the query layer):
+  `getFirmRespondentStatuses` returns completion **status only** and never selects
+  from `responses`; `outreach_links` carries **counters only** with no
+  respondent/response key, so `getFirmOutreachSummary` cannot correlate a response
+  to an outreach link. Proven in `packages/domain/tests/journey-service.test.ts`.
+- **Firm coordinator team — UX-FRM-007** (`packages/domain/firm-team-service.ts`):
+  ordinary account admin, **not** maker-checker. Lead handover is immediate and
+  irreversible by the outgoing lead (only the current lead may hand over); the
+  outgoing lead keeps ordinary access; a PIN change requires the current PIN;
+  removal is immediate and a re-add issues a new access code. Tested in
+  `packages/domain/tests/firm-team-service.test.ts`.
+
+### ⚠️ Absorption-inventory gap (UX-RET-001 / UX-RET-003)
+
+The retail entry (`UX-RET-001`) combines consent, contact, and recovery choice on
+one surface. The **full absorption inventory** for what `UX-RET-001` and
+`UX-RET-003` each subsume was **not supplied** as a settled artefact for this
+phase, so the retail entry implements the PAT-011 consent/contact/firm-picker flow
+and resume-by-link, but the complete field-by-field mapping of every element the
+two surfaces are meant to absorb is **not yet reconciled**. Reconcile this
+inventory against the controlled UX artefacts before the retail surface is treated
+as feature-complete for a production edition.
+
+The institutional **Q5 caveat above still applies** to the Phase 3 institutional
+journeys: they bind their content to the Phase 2 Register by instrument code (the
+question text is not transcribed in Phase 3 code), so the same
+`I-SEC-Q5 / I-NGX-Q5 / I-CSCS-Q5` compliance sign-off is a prerequisite before any
+institutional journey is finalized into a production edition freeze.

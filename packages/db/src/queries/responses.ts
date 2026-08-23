@@ -1,6 +1,28 @@
 import { Pool } from 'pg';
-import type { QuestionScope, Respondent, Response } from '@cis/shared-types';
+import type { QuestionScope, Respondent, RespondentDraft, Response } from '@cis/shared-types';
 import { query } from '../client';
+
+interface RawDraftRow {
+  id: string;
+  respondent_id: string;
+  question_id: string;
+  scope: string;
+  rated_firm_id: string | null;
+  answer: { a: unknown; c?: string };
+  updated_at: Date;
+}
+
+function mapDraft(row: RawDraftRow): RespondentDraft {
+  return {
+    id: row.id,
+    respondentId: row.respondent_id,
+    questionId: row.question_id,
+    scope: row.scope as QuestionScope,
+    ratedFirmId: row.rated_firm_id,
+    answer: row.answer,
+    updatedAt: row.updated_at,
+  };
+}
 
 interface RawRespondentRow {
   id: string;
@@ -9,6 +31,15 @@ interface RawRespondentRow {
   recruiting_firm_id: string | null;
   submitted_at: Date | null;
   consent_accepted: boolean;
+  rated_firm_ids: string[];
+  resume_step: number;
+  referred_by_respondent_id: string | null;
+  institution_name: string | null;
+  contact_channel: 'email' | 'text' | 'both' | 'none' | null;
+  contact_email: string | null;
+  contact_phone: string | null;
+  recovery_token: string | null;
+  report_delivery: string | null;
   created_at: Date;
 }
 
@@ -31,6 +62,15 @@ function mapRespondent(row: RawRespondentRow): Respondent {
     recruitingFirmId: row.recruiting_firm_id,
     submittedAt: row.submitted_at,
     consentAccepted: row.consent_accepted,
+    ratedFirmIds: row.rated_firm_ids,
+    resumeStep: row.resume_step,
+    referredByRespondentId: row.referred_by_respondent_id,
+    institutionName: row.institution_name,
+    contactChannel: row.contact_channel,
+    contactEmail: row.contact_email,
+    contactPhone: row.contact_phone,
+    recoveryToken: row.recovery_token,
+    reportDelivery: row.report_delivery,
     createdAt: row.created_at,
   };
 }
@@ -55,23 +95,92 @@ export async function createRespondent(
     instrumentCode: string;
     recruitingFirmId?: string | null;
     consentAccepted?: boolean;
+    ratedFirmIds?: string[];
+    referredByRespondentId?: string | null;
+    institutionName?: string | null;
   },
 ): Promise<Respondent> {
   const result = await query<RawRespondentRow>(
     pool,
-    `INSERT INTO respondents (edition_id, instrument_code, recruiting_firm_id, consent_accepted)
-     VALUES ($1, $2, $3, $4)
+    `INSERT INTO respondents
+       (edition_id, instrument_code, recruiting_firm_id, consent_accepted,
+        rated_firm_ids, referred_by_respondent_id, institution_name)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
      RETURNING *`,
     [
       data.editionId,
       data.instrumentCode,
       data.recruitingFirmId ?? null,
       data.consentAccepted ?? false,
+      JSON.stringify(data.ratedFirmIds ?? []),
+      data.referredByRespondentId ?? null,
+      data.institutionName ?? null,
     ],
   );
   const row = result.rows[0];
   if (!row) throw new Error('Respondent insert returned no rows');
   return mapRespondent(row);
+}
+
+/** Update mutable journey state (rated-firm list + resume step). Consent, once
+ *  accepted, is set here too — the response record itself stays immutable. */
+export async function updateRespondentJourney(
+  pool: Pool,
+  id: string,
+  data: {
+    ratedFirmIds?: string[];
+    resumeStep?: number;
+    consentAccepted?: boolean;
+  },
+): Promise<Respondent> {
+  const result = await query<RawRespondentRow>(
+    pool,
+    `UPDATE respondents
+       SET rated_firm_ids   = COALESCE($2, rated_firm_ids),
+           resume_step      = COALESCE($3, resume_step),
+           consent_accepted = COALESCE($4, consent_accepted)
+     WHERE id = $1
+     RETURNING *`,
+    [
+      id,
+      data.ratedFirmIds === undefined ? null : JSON.stringify(data.ratedFirmIds),
+      data.resumeStep ?? null,
+      data.consentAccepted ?? null,
+    ],
+  );
+  const row = result.rows[0];
+  if (!row) throw new Error(`Respondent ${id} not found`);
+  return mapRespondent(row);
+}
+
+/**
+ * Firm-side respondent completion STATUS for a firm — status only, never any
+ * answer content. This is the sole firm-facing view of its respondents: it
+ * returns who was set to answer and whether they submitted, and structurally
+ * cannot return an individual answer (it never selects from responses).
+ */
+export async function getFirmRespondentStatuses(
+  pool: Pool,
+  editionId: string,
+  organizationId: string,
+): Promise<Array<{ respondentId: string; instrumentCode: string; submitted: boolean }>> {
+  const result = await query<{
+    id: string;
+    instrument_code: string;
+    submitted: boolean;
+  }>(
+    pool,
+    `SELECT id, instrument_code, (submitted_at IS NOT NULL) AS submitted
+       FROM respondents
+      WHERE edition_id = $1 AND recruiting_firm_id = $2
+      ORDER BY instrument_code`,
+    [editionId, organizationId],
+  );
+  return result.rows.map((r) => ({
+    respondentId: r.id,
+    instrumentCode: r.instrument_code,
+    submitted: r.submitted,
+  }));
 }
 
 export async function getRespondentById(pool: Pool, id: string): Promise<Respondent | null> {
@@ -132,6 +241,115 @@ export async function getResponsesForRespondent(
     [respondentId],
   );
   return result.rows.map(mapResponse);
+}
+
+// ─── Drafts (mutable, autosave) ────────────────────────────────────────────────
+
+export async function upsertDraft(
+  pool: Pool,
+  data: {
+    respondentId: string;
+    questionId: string;
+    scope: QuestionScope;
+    ratedFirmId: string | null;
+    answer: { a: unknown; c?: string };
+  },
+): Promise<RespondentDraft> {
+  const result = await query<RawDraftRow>(
+    pool,
+    `INSERT INTO respondent_drafts (respondent_id, question_id, scope, rated_firm_id, answer)
+     VALUES ($1, $2, $3, $4, $5)
+     ON CONFLICT (respondent_id, question_id, rated_firm_id)
+       DO UPDATE SET answer = EXCLUDED.answer, updated_at = NOW()
+     RETURNING *`,
+    [data.respondentId, data.questionId, data.scope, data.ratedFirmId, JSON.stringify(data.answer)],
+  );
+  const row = result.rows[0];
+  if (!row) throw new Error('Draft upsert returned no rows');
+  return mapDraft(row);
+}
+
+export async function listDraftsForRespondent(
+  pool: Pool,
+  respondentId: string,
+): Promise<RespondentDraft[]> {
+  const result = await query<RawDraftRow>(
+    pool,
+    'SELECT * FROM respondent_drafts WHERE respondent_id = $1 ORDER BY question_id, rated_firm_id',
+    [respondentId],
+  );
+  return result.rows.map(mapDraft);
+}
+
+// ─── Contact / recovery / report delivery (respondent, mutable) ─────────────────
+
+export async function setRespondentContact(
+  pool: Pool,
+  id: string,
+  data: {
+    channel: 'email' | 'text' | 'both' | 'none';
+    email?: string | null;
+    phone?: string | null;
+    recoveryToken?: string | null;
+    reportDelivery?: string | null;
+  },
+): Promise<Respondent> {
+  const result = await query<RawRespondentRow>(
+    pool,
+    `UPDATE respondents
+       SET contact_channel = $2,
+           contact_email = $3,
+           contact_phone = $4,
+           recovery_token = COALESCE($5, recovery_token),
+           report_delivery = COALESCE($6, report_delivery)
+     WHERE id = $1
+     RETURNING *`,
+    [
+      id,
+      data.channel,
+      data.email ?? null,
+      data.phone ?? null,
+      data.recoveryToken ?? null,
+      data.reportDelivery ?? null,
+    ],
+  );
+  const row = result.rows[0];
+  if (!row) throw new Error(`Respondent ${id} not found`);
+  return mapRespondent(row);
+}
+
+/** Change only the report-delivery preference (UX-RET-008) — answers untouched. */
+export async function setReportDelivery(
+  pool: Pool,
+  id: string,
+  data: { reportDelivery: string; email?: string | null; phone?: string | null },
+): Promise<Respondent> {
+  const result = await query<RawRespondentRow>(
+    pool,
+    `UPDATE respondents
+       SET report_delivery = $2,
+           contact_email = COALESCE($3, contact_email),
+           contact_phone = COALESCE($4, contact_phone)
+     WHERE id = $1
+     RETURNING *`,
+    [id, data.reportDelivery, data.email ?? null, data.phone ?? null],
+  );
+  const row = result.rows[0];
+  if (!row) throw new Error(`Respondent ${id} not found`);
+  return mapRespondent(row);
+}
+
+export async function getRespondentByRecoveryToken(
+  pool: Pool,
+  token: string,
+): Promise<Respondent | null> {
+  const result = await query<RawRespondentRow>(
+    pool,
+    'SELECT * FROM respondents WHERE recovery_token = $1',
+    [token],
+  );
+  const row = result.rows[0];
+  return row ? mapRespondent(row) : null;
 }
 
 /** Distinct rated-firm ids a respondent produced answers for (never includes null). */

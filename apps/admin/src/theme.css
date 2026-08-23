@@ -716,3 +716,91 @@ tr.soft {
     transition: none !important;
   }
 }
+
+/* ─── Respondent journey surfaces (Phase 3) ─────────────────────────────────── */
+.shell.respondent {
+  max-width: 720px;
+  margin: 0 auto;
+}
+.journey {
+  max-width: 680px;
+}
+.journey-progress {
+  font-size: 13px;
+  color: #6b6b6b;
+  margin-bottom: 8px;
+}
+.consent-expansion {
+  background: #f6f6f4;
+  border-left: 3px solid var(--dragnet-black);
+  padding: 12px 14px;
+  margin: 8px 0;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.consent-provisional {
+  font-size: 12px;
+  color: #8a5a00;
+  margin: 4px 0 12px;
+}
+.consent-check {
+  margin: 14px 0;
+  font-weight: 600;
+}
+.contact-fields,
+.firm-picker {
+  border: 1px solid #e2e2df;
+  border-radius: 8px;
+  padding: 14px 16px;
+  margin: 16px 0;
+}
+.contact-fields legend,
+.firm-picker legend {
+  font-weight: 600;
+  padding: 0 6px;
+}
+.save-indicator {
+  font-size: 12px;
+  color: #6b6b6b;
+  min-height: 16px;
+  margin: 6px 0;
+}
+.review-gaps {
+  margin: 10px 0;
+  padding-left: 18px;
+}
+.review-gaps li {
+  margin: 4px 0;
+}
+.refer-block {
+  border-top: 1px solid #e2e2df;
+  margin-top: 22px;
+  padding-top: 16px;
+}
+.public-landing section {
+  margin: 22px 0;
+  padding-top: 8px;
+  border-top: 1px solid #e2e2df;
+}
+.public-landing h2 {
+  font-size: 18px;
+  margin: 0 0 8px;
+}
+.ftbl {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 14px 0;
+  font-size: 14px;
+}
+.ftbl th,
+.ftbl td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid #e2e2df;
+  vertical-align: middle;
+}
+.ftbl td.actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}

@@ -52,3 +52,48 @@ export async function listOrganizations(pool: Pool): Promise<Organization[]> {
   const result = await query<RawOrgRow>(pool, 'SELECT * FROM organizations ORDER BY display_name');
   return result.rows.map(mapOrg);
 }
+
+// ─── Edition participation ──────────────────────────────────────────────────
+
+/** Record (or update) an organisation's participation in an edition. */
+export async function upsertEditionParticipation(
+  pool: Pool,
+  data: {
+    editionId: string;
+    organizationId: string;
+    status?: 'invited' | 'active' | 'completed' | 'withdrawn';
+  },
+): Promise<void> {
+  await query(
+    pool,
+    `INSERT INTO edition_participation (edition_id, organization_id, status)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (edition_id, organization_id)
+       DO UPDATE SET status = EXCLUDED.status, updated_at = NOW()`,
+    [data.editionId, data.organizationId, data.status ?? 'invited'],
+  );
+}
+
+/**
+ * The firms a respondent may actually pick from: organisations that are ACTIVE
+ * participants in this edition and themselves active. This is the single source
+ * for the firm picker — a firm that only exists in the org table, or is merely
+ * `invited`/`withdrawn` for the edition, is never offered.
+ */
+export async function getActiveEditionParticipants(
+  pool: Pool,
+  editionId: string,
+): Promise<Organization[]> {
+  const result = await query<RawOrgRow>(
+    pool,
+    `SELECT o.*
+       FROM organizations o
+       JOIN edition_participation ep ON ep.organization_id = o.id
+      WHERE ep.edition_id = $1
+        AND ep.status = 'active'
+        AND o.is_active = TRUE
+      ORDER BY o.display_name`,
+    [editionId],
+  );
+  return result.rows.map(mapOrg);
+}

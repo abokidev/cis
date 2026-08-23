@@ -9,6 +9,7 @@ import {
   upsertSampleFloor,
   updateClosingDate,
   seedSurveyRegister,
+  seedGovernedConfigDefaults,
 } from '@cis/db';
 import { hashPassword } from '@cis/auth';
 import { EDITION_MANAGE_PERMISSION, EDITION_LOCK_ACTION } from './edition-service';
@@ -105,6 +106,11 @@ export async function seedReferenceData(pool: Pool): Promise<SeededReferenceData
     category: 'foreign_institution',
     floorValue: 15,
   });
+
+  // ── Governed content/parameters ──────────────────────────────────────────────
+  // Consent copy (legally provisional, OPEN-003) and the recovery-link TTL are
+  // governed data, not hardcoded constants — seed their defaults here.
+  await seedGovernedConfigDefaults(pool);
 
   // ── Controlled Survey Register (9 instruments, 90 questions) ──────────────────
   const instruments = await seedSurveyRegister(pool, maker.id);

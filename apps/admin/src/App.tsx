@@ -6,8 +6,9 @@ import { LoginPage } from './pages/LoginPage';
 import { EditionPage } from './pages/EditionPage';
 import { SurveysPage } from './pages/SurveysPage';
 import { RendererPage } from './pages/RendererPage';
+import { FirmTeamPage } from './pages/FirmTeamPage';
 
-type Tab = 'edition' | 'surveys' | 'renderer';
+type Tab = 'edition' | 'surveys' | 'renderer' | 'firmteam';
 
 export function App(): JSX.Element {
   const { session, signIn, signOut } = useSession();
@@ -97,6 +98,14 @@ export function App(): JSX.Element {
         >
           Renderer
         </button>
+        <span aria-hidden="true">·</span>
+        <button
+          type="button"
+          onClick={() => setTab('firmteam')}
+          style={tab === 'firmteam' ? { color: 'var(--dragnet-black)' } : undefined}
+        >
+          Firm team
+        </button>
       </nav>
 
       {!editionId ? (
@@ -105,8 +114,10 @@ export function App(): JSX.Element {
         <EditionPage client={client} editionId={editionId} viewer={session.user} />
       ) : tab === 'surveys' ? (
         <SurveysPage client={client} editionId={editionId} viewer={session.user} />
-      ) : (
+      ) : tab === 'renderer' ? (
         <RendererPage client={client} />
+      ) : (
+        <FirmTeamPage client={client} />
       )}
     </div>
   );

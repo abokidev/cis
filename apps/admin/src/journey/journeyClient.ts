@@ -1,0 +1,150 @@
+import type { SurveyItem } from '@cis/survey';
+import { ApiError } from '../api/types';
+
+/**
+ * Respondent-facing API client. UNAUTHENTICATED by design — a respondent has no
+ * operator account and never touches the admin portal. The respondent id and
+ * the recovery token are the only handles into a journey.
+ */
+const BASE = '/api';
+
+async function request<T>(path: string, method = 'GET', body?: unknown): Promise<T> {
+  const headers: Record<string, string> = {};
+  if (body !== undefined) headers['Content-Type'] = 'application/json';
+  const init: RequestInit = { method, headers };
+  if (body !== undefined) init.body = JSON.stringify(body);
+  const res = await fetch(`${BASE}${path}`, init);
+  const text = await res.text();
+  const data: unknown = text ? JSON.parse(text) : null;
+  if (!res.ok) {
+    const message =
+      data && typeof data === 'object' && 'message' in data
+        ? String((data as { message: unknown }).message)
+        : `Request failed (${res.status})`;
+    throw new ApiError(res.status, message);
+  }
+  return data as T;
+}
+
+export interface ConsentContent {
+  provisional?: boolean;
+  notice: string;
+  expansionTitle: string;
+  expansion: string;
+  checkboxLabel: string;
+}
+
+export interface ParticipatingFirm {
+  id: string;
+  displayName: string;
+  slug: string;
+}
+
+export interface FirmContext {
+  ratedFirmId: string | null;
+  firmIndex: number;
+  firmCount: number;
+}
+
+export interface DraftRow {
+  questionId: string;
+  ratedFirmId: string | null;
+  answer: { a: unknown; c?: string };
+}
+
+export interface ResumeState {
+  respondent: {
+    id: string;
+    instrumentCode: string;
+    ratedFirmIds: string[];
+    resumeStep: number;
+    consentAccepted: boolean;
+    recoveryToken: string | null;
+  };
+  items: SurveyItem[];
+  drafts: DraftRow[];
+  firmContext: FirmContext;
+}
+
+export const journeyApi = {
+  context: () =>
+    request<{
+      editionId: string | null;
+      editionLabel: string | null;
+      resultsSectionVisible: boolean;
+    }>('/journeys/context'),
+
+  consentContent: () =>
+    request<{ consent: ConsentContent | null; recoveryTtlSeconds: number | null }>(
+      '/journeys/consent-content',
+    ),
+
+  participatingFirms: (editionId: string) =>
+    request<{ firms: ParticipatingFirm[] }>(
+      `/journeys/editions/${editionId}/participating-firms`,
+    ).then((r) => r.firms),
+
+  start: (body: {
+    editionId: string;
+    instrumentCode: string;
+    recruitingFirmId?: string | null;
+    institutionName?: string | null;
+  }) => request<{ respondentId: string }>('/journeys', 'POST', body),
+
+  contact: (
+    respondentId: string,
+    body: {
+      consentAccepted: boolean;
+      channel: 'email' | 'text' | 'both' | 'none';
+      email?: string | null;
+      phone?: string | null;
+    },
+  ) =>
+    request<{ respondentId: string; recoveryToken: string | null }>(
+      `/journeys/${respondentId}/contact`,
+      'POST',
+      body,
+    ),
+
+  ratedFirms: (respondentId: string, firmIds: string[]) =>
+    request<{ ratedFirmIds: string[] }>(`/journeys/${respondentId}/rated-firms`, 'POST', {
+      firmIds,
+    }),
+
+  saveAnswer: (
+    respondentId: string,
+    body: {
+      questionId: string;
+      ratedFirmId: string | null;
+      answer: { a: unknown; c?: string };
+      step?: number;
+    },
+  ) => request<{ draft: DraftRow }>(`/journeys/${respondentId}/answers`, 'PUT', body),
+
+  resume: (respondentId: string) => request<ResumeState>(`/journeys/${respondentId}/resume`),
+
+  resumeByToken: (token: string) =>
+    request<ResumeState>(`/journeys/resume/${encodeURIComponent(token)}`),
+
+  submit: (respondentId: string) =>
+    request<{ submitted: boolean; responseCount: number }>(
+      `/journeys/${respondentId}/submit`,
+      'POST',
+    ),
+
+  reportDelivery: (
+    respondentId: string,
+    body: { reportDelivery: string; email?: string | null; phone?: string | null },
+  ) =>
+    request<{ reportDelivery: string | null }>(
+      `/journeys/${respondentId}/report-delivery`,
+      'PATCH',
+      body,
+    ),
+
+  referral: (respondentId: string, body: { editionId: string; instrumentCode: string }) =>
+    request<{ respondentId: string }>(`/journeys/${respondentId}/referral`, 'POST', body),
+
+  colleagueInvite: (body: { editionId: string; instrumentCode: string; institutionName: string }) =>
+    request<{ respondentId: string }>('/journeys/colleague-invite', 'POST', body),
+};

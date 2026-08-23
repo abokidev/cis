@@ -126,6 +126,58 @@ export interface Respondent {
   recruitingFirmId: string | null;
   submittedAt: Date | null;
   consentAccepted: boolean;
+  /** Ordered list of firms this respondent chose to rate (multi-firm loop). */
+  ratedFirmIds: string[];
+  /** Current step index in the journey sequence, for resume. */
+  resumeStep: number;
+  /** Referral lineage (respondent → respondent). Never a firm — a referral never
+   *  inherits the referrer's source firm attribution. */
+  referredByRespondentId: string | null;
+  /** Institution name (institutional respondents), for grouping only — never published. */
+  institutionName: string | null;
+  contactChannel: 'email' | 'text' | 'both' | 'none' | null;
+  contactEmail: string | null;
+  contactPhone: string | null;
+  /** Token for the emailed/device-bound recovery link. */
+  recoveryToken: string | null;
+  /** Report-delivery preference; changeable post-submit without touching answers. */
+  reportDelivery: string | null;
+  createdAt: Date;
+}
+
+/** A mutable in-progress answer (autosave). Frozen into `responses` on submit. */
+export interface RespondentDraft {
+  id: string;
+  respondentId: string;
+  questionId: string;
+  scope: QuestionScope;
+  ratedFirmId: string | null;
+  answer: { a: unknown; c?: string };
+  updatedAt: Date;
+}
+
+/** A firm coordinator (ordinary account admin — not a maker-checker action). */
+export interface FirmCoordinator {
+  id: string;
+  organizationId: string;
+  name: string;
+  role: string | null;
+  email: string;
+  phone: string | null;
+  isLead: boolean;
+  accessCode: string;
+  revokedAt: Date | null;
+  createdAt: Date;
+}
+
+/** Outreach-link tracking. Counters only — never joinable to a response. */
+export interface OutreachLink {
+  id: string;
+  editionId: string;
+  organizationId: string;
+  token: string;
+  opens: number;
+  starts: number;
   createdAt: Date;
 }
 

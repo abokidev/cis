@@ -1,5 +1,5 @@
 {
-  "name": "@cis/domain",
+  "name": "@cis/survey",
   "version": "0.0.1",
   "private": true,
   "main": "./dist/index.js",
@@ -10,16 +10,7 @@
     "lint": "eslint src/",
     "test": "vitest run"
   },
-  "dependencies": {
-    "@cis/audit": "workspace:*",
-    "@cis/auth": "workspace:*",
-    "@cis/db": "workspace:*",
-    "@cis/shared-types": "workspace:*",
-    "@cis/survey": "workspace:*",
-    "pg": "^8.12.0"
-  },
   "devDependencies": {
-    "@types/pg": "^8.11.6",
     "typescript": "*",
     "vitest": "*"
   }

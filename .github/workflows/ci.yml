@@ -66,6 +66,9 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
+      - name: Build
+        run: pnpm build
+
       - name: Run migrations
         run: pnpm --filter @cis/db migrate:up
         env:

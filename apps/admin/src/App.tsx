@@ -5,8 +5,9 @@ import { useSession } from './auth/useSession';
 import { LoginPage } from './pages/LoginPage';
 import { EditionPage } from './pages/EditionPage';
 import { SurveysPage } from './pages/SurveysPage';
+import { RendererPage } from './pages/RendererPage';
 
-type Tab = 'edition' | 'surveys';
+type Tab = 'edition' | 'surveys' | 'renderer';
 
 export function App(): JSX.Element {
   const { session, signIn, signOut } = useSession();
@@ -88,14 +89,24 @@ export function App(): JSX.Element {
         >
           Surveys
         </button>
+        <span aria-hidden="true">·</span>
+        <button
+          type="button"
+          onClick={() => setTab('renderer')}
+          style={tab === 'renderer' ? { color: 'var(--dragnet-black)' } : undefined}
+        >
+          Renderer
+        </button>
       </nav>
 
       {!editionId ? (
         <main>{loadError ? <div className="err">{loadError}</div> : <p>Loading…</p>}</main>
       ) : tab === 'edition' ? (
         <EditionPage client={client} editionId={editionId} viewer={session.user} />
-      ) : (
+      ) : tab === 'surveys' ? (
         <SurveysPage client={client} editionId={editionId} viewer={session.user} />
+      ) : (
+        <RendererPage client={client} />
       )}
     </div>
   );

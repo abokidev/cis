@@ -15,15 +15,10 @@ import {
   updateEditionStatus,
   createUser,
   createCriticalAction,
+  INSTRUMENT_CODES,
 } from '@cis/db';
 import { loadRbacContext, MakerCheckerViolationError, PermissionDeniedError } from '@cis/auth';
-import {
-  seedReferenceData,
-  INSTRUMENT_SEED,
-  requestFreeze,
-  decideFreeze,
-  EditionStateError,
-} from '../src';
+import { seedReferenceData, requestFreeze, decideFreeze, EditionStateError } from '../src';
 import { getTestPool, runMigrations, truncateAllTables, closeTestPool } from '../../db/tests/setup';
 
 let pool: Pool;
@@ -60,7 +55,7 @@ describe('Instrument freeze (maker-checker)', () => {
     expect(frozen).toBe(true);
 
     const snapshots = await getEditionInstrumentSnapshots(pool, seed.editionId);
-    expect(snapshots).toHaveLength(INSTRUMENT_SEED.length);
+    expect(snapshots).toHaveLength(INSTRUMENT_CODES.length);
     expect(await isEditionInstrumentSetFrozen(pool, seed.editionId)).toBe(true);
 
     // Audit: the freeze decision is recorded.

@@ -1,0 +1,1450 @@
+{
+  "generated_from": "UX-X-RENDER-001 v2.0 embedded fixture, cross-checked against QUESTION_SCOPE_MAPPING.md and FUNCTIONAL_FREEZE_SURVEY_ESTATE.md",
+  "source_date": "2026-08-20",
+  "renderer_sha256_16": "abd3cf02b549e1c5",
+  "warning": "This is the banked, byte-verified content as of the functional freeze. FUNCTIONAL_FREEZE_SURVEY_ESTATE.md notes the three institutional Q5 items were still marked PENDING correction in the live Register as of freeze date. VERIFY I-SEC-Q5 / I-NGX-Q5 / I-CSCS-Q5 wording against the current controlled Register before production edition freeze.",
+  "instruments": {
+    "S1": [
+      {
+        "question_id": "S1-Q1",
+        "kind": "rank",
+        "text": "Rank the three most significant challenges facing your firm today.",
+        "scope": "shared",
+        "is_drg_ops": false,
+        "scored": true,
+        "options": [
+          "Client acquisition",
+          "Client retention",
+          "Operational efficiency",
+          "Regulatory compliance",
+          "Technology limitations",
+          "Talent availability",
+          "Cost pressures",
+          "Competition",
+          "Market participation",
+          "Other"
+        ],
+        "rank_exactly_n": 3,
+        "has_optional_comment": 1
+      },
+      {
+        "question_id": "S1-Q2",
+        "kind": "scale",
+        "text": "How would you rate your firm's overall operational maturity today?",
+        "scope": "shared",
+        "is_drg_ops": false,
+        "scored": true,
+        "scale_min": 1,
+        "scale_max": 10,
+        "scale_anchors": "1 = Very immature, heavily manual; 10 = Highly mature, consistently controlled.",
+        "has_optional_comment": 1
+      },
+      {
+        "question_id": "S1-Q3",
+        "kind": "scale",
+        "text": "How would you rate your firm's overall digital maturity today?",
+        "scope": "shared",
+        "is_drg_ops": false,
+        "scored": true,
+        "scale_min": 1,
+        "scale_max": 10,
+        "scale_anchors": "1 = Predominantly manual; 10 = Highly digitised and integrated.",
+        "has_optional_comment": 1
+      },
+      {
+        "question_id": "S1-Q4",
+        "kind": "single",
+        "text": "Which business area most urgently requires improvement?",
+        "scope": "shared",
+        "is_drg_ops": false,
+        "scored": true,
+        "options": [
+          "Onboarding",
+          "Investor servicing",
+          "Corporate actions",
+          "Share transfers",
+          "Reconciliation",
+          "Compliance",
+          "Reporting",
+          "Other"
+        ],
+        "has_optional_comment": 1
+      },
+      {
+        "question_id": "S1-Q5",
+        "kind": "scale",
+        "text": "How significantly do operational inefficiencies affect your firm's ability to serve clients effectively?",
+        "scope": "shared",
+        "is_drg_ops": false,
+        "scored": true,
+        "scale_min": 1,
+        "scale_max": 10,
+        "scale_anchors": "1 = No significant impact; 10 = Extremely significant impact.",
+        "has_optional_comment": 1
+      },
+      {
+        "question_id": "S1-Q6",
+        "kind": "single",
+        "text": "How often do operational issues result in client escalations, complaints, or loss?",
+        "scope": "shared",
+        "is_drg_ops": false,
+        "scored": true,
+        "options": ["Very frequently", "Frequently", "Occasionally", "Rarely", "Never"],
+        "has_optional_comment": 1
+      },
+      {
+        "question_id": "S1-Q7",
+        "kind": "open",
+        "text": "Which operational issue has the greatest impact on client experience at your firm?",
+        "scope": "shared",
+        "is_drg_ops": false,
+        "scored": true
+      },
+      {
+        "question_id": "S1-Q8",
+        "kind": "scale",
+        "text": "How important is technology transformation to your firm's strategy over the next three years?",
+        "scope": "shared",
+        "is_drg_ops": false,
+        "scored": true,
+        "scale_min": 1,
+        "scale_max": 10,
+        "scale_anchors": "1 = Not important; 10 = Critical strategic priority.",
+        "has_optional_comment": 1
+      },
+      {
+        "question_id": "S1-Q9",
+        "kind": "single",
+        "text": "What is the greatest barrier to technology adoption at your firm?",
+        "scope": "shared",
+        "is_drg_ops": false,
+        "scored": true,
+        "options": [
+          "Cost",
+          "Legacy processes",
+          "Staff capability",
+          "Vendor availability",
+          "Regulatory concerns",
+          "Change resistance",
+          "Other"
+        ],
+        "has_optional_comment": 1
+      },
+      {
+        "question_id": "S1-Q10",
+        "kind": "rank",
+        "text": "Which capability would create the greatest business value for your firm?",
+        "scope": "shared",
+        "is_drg_ops": false,
+        "scored": true,
+        "options": [
+          "Digital onboarding and electronic KYC",
+          "Client self-service",
+          "Workflow automation",
+          "Automated reconciliation",
+          "Corporate-actions automation",
+          "Digital share transfers",
+          "Integrated investor records",
+          "Regulatory and compliance automation",
+          "Management analytics",
+          "Customer relationship management",
+          "Market-infrastructure integration",
+          "Artificial-intelligence-assisted operations",
+          "Cybersecurity and fraud prevention",
+          "Business continuity and resilience",
+          "Other"
+        ],
+        "rank_exactly_n": 3,
+        "has_optional_comment": 1
+      },
+      {
+        "question_id": "S1-A1",
+        "kind": "select",
+        "text": "Which industry-wide digital capabilities would create the greatest value for your firm if they were shared across the industry rather than built by each firm on its own?",
+        "scope": "shared",
+        "is_drg_ops": true,
+        "scored": false,
+        "options": [
+          "Reusable verified investor KYC and profile",
+          "Digital broker-to-broker share transfer",
+          "Central investor-request and status tracking",
+          "Shared corporate-actions and dividend service",
+          "Common investor data-update service",
+          "Shared reconciliation and exception management",
+          "Standardised regulatory evidence and document exchange",
+          "Shared registrar interaction",
+          "Shared clearing and settlement interaction",
+          "Industry fraud and identity-risk service",
+          "Shared business-continuity capability",
+          "Common reporting and data-exchange standards",
+          "Other"
+        ],
+        "select_up_to_n": 3,
+        "has_optional_comment": 1
+      },
+      {
+        "question_id": "S1-Q11",
+        "kind": "scale",
+        "text": "How confident are you that your firm consistently meets investor expectations?",
+        "scope": "shared",
+        "is_drg_ops": false,
+        "scored": true,
+        "scale_min": 1,
+        "scale_max": 10,
+        "scale_anchors": "1 = Not confident at all; 10 = Completely confident.",
+        "has_optional_comment": 1
+      },
+      {
+        "question_id": "S1-Q12",
+        "kind": "open",
+        "text": "What single change would most improve the investor experience at your firm?",
+        "scope": "shared",
+        "is_drg_ops": false,
+        "scored": true
+      }
+    ],
+    "S2": [
+      {
+        "question_id": "S2-Q1",
+        "kind": "scale",
+        "text": "How complex is your overall compliance workload today?",
+        "scope": "shared",
+        "is_drg_ops": false,
+        "scored": true,
+        "scale_min": 1,
+        "scale_max": 10,
+        "scale_anchors": "1 = Very simple; 10 = Extremely complex.",
+        "has_optional_comment": 1
+      },
+      {
+        "question_id": "S2-Q2",
+        "kind": "select",
+        "text": "Which areas generate the greatest compliance burden for your team?",
+        "scope": "shared",
+        "is_drg_ops": false,
+        "scored": true,
+        "options": [
+          "Know-your-customer (KYC)",
+          "Anti-money-laundering (AML)",
+          "Record keeping",
+          "Regulatory reporting",
+          "Client documentation",
+          "Data privacy",
+          "Audit preparation",
+          "Corporate actions",
+          "Other"
+        ],
+        "select_up_to_n": 3,
+        "has_optional_comment": 1
+      },
+      {
+        "question_id": "S2-Q3",
+        "kind": "single",
+        "text": "What percentage of your compliance activities remain predominantly manual?",
+        "scope": "shared",
+        "is_drg_ops": false,
+        "scored": true,
+        "options": [
+          "0 to 10%",
+          "11 to 25%",
+          "26 to 50%",
+          "51 to 75%",
+          "76 to 90%",
+          "More than 90%",
+          "Don't know"
+        ],
+        "has_optional_comment": 1
+      },
+      {
+        "question_id": "S2-Q4",
+        "kind": "rank",
+        "text": "What are the biggest sources of compliance risk at your firm?",
+        "scope": "shared",
+        "is_drg_ops": false,
+        "scored": true,
+        "options": [
+          "KYC and customer-identification deficiencies",
+          "AML and counter-financing-of-terrorism monitoring",
+          "Client-documentation deficiencies",
+          "Regulatory reporting errors or delays",
+          "Record keeping and retrieval",
+          "Data privacy",
+          "Cybersecurity",
+          "Manual-process or human error",
+          "Weak internal controls",
+          "Staff competence",
+          "Keeping up with regulatory change",
+          "Vendor and third-party risk",
+          "Audit readiness",
+          "Other"
+        ],
+        "rank_exactly_n": 3,
+        "has_optional_comment": 1
+      },
+      {
+        "question_id": "S2-Q5",
+        "kind": "single",
+        "text": "How often do documentation deficiencies cause operational delays or rework?",
+        "scope": "shared",
+        "is_drg_ops": false,
+        "scored": true,
+        "options": ["Very frequently", "Frequently", "Occasionally", "Rarely", "Never"],
+        "has_optional_comment": 1
+      },
+      {
+        "question_id": "S2-Q6",
+        "kind": "single",
+        "text": "Has your firm ever been unable to produce required documentation during a regulatory review or client dispute?",
+        "scope": "shared",
+        "is_drg_ops": false,
+        "scored": true,
+        "options": ["Yes, more than once", "Yes, once", "No", "Don't know"],
+        "has_optional_comment": 1
+      },
+      {
+        "question_id": "S2-Q7",
+        "kind": "scale",
+        "text": "How confident are you in your firm's audit readiness at any given time?",
+        "scope": "shared",
+        "is_drg_ops": false,
+        "scored": true,
+        "scale_min": 1,
+        "scale_max": 10,
+        "scale_anchors": "1 = Not confident at all; 10 = Completely confident.",
+        "has_optional_comment": 1
+      },
+      {
+        "question_id": "S2-Q8",
+        "kind": "scale",
+        "text": "How prepared is your firm for increasing regulatory expectations over the next 24 months?",
+        "scope": "shared",
+        "is_drg_ops": false,
+        "scored": true,
+        "scale_min": 1,
+        "scale_max": 10,
+        "scale_anchors": "1 = Not prepared; 10 = Fully prepared.",
+        "has_optional_comment": 1
+      },
+      {
+        "question_id": "S2-Q9",
+        "kind": "rank",
+        "text": "Which compliance capability most urgently requires improvement or modernisation?",
+        "scope": "shared",
+        "is_drg_ops": false,
+        "scored": true,
+        "options": [
+          "KYC and onboarding controls",
+          "AML monitoring",
+          "Regulatory reporting",
+          "Document and records management",
+          "Compliance workflow and case management",
+          "Audit evidence and retrieval",
+          "Data privacy",
+          "Cybersecurity oversight",
+          "Regulatory-change monitoring",
+          "Automated compliance alerts",
+          "Staff competence and training",
+          "Compliance dashboards and reporting",
+          "Integration between operations and compliance",
+          "Other"
+        ],
+        "rank_exactly_n": 3,
+        "has_optional_comment": 1
+      },
+      {
+        "question_id": "S2-A1",
+        "kind": "select",
+        "text": "Which compliance information does your firm most often have to collect, reproduce, update, or submit separately to more than one party?",
+        "scope": "shared",
+        "is_drg_ops": true,
+        "scored": false,
+        "options": [
+          "Investor KYC and profile information",
+          "Beneficial-ownership information",
+          "Identity documents",
+          "AML and counter-financing-of-terrorism evidence",
+          "Client mandates and instructions",
+          "Regulatory returns",
+          "Audit evidence",
+          "Transaction and supporting documents",
+          "Corporate-action documentation",
+          "Share-transfer documentation",
+          "Internal approvals",
+          "Staff and professional credentials",
+          "Other"
+        ],
+        "select_up_to_n": 3,
+        "has_optional_comment": 1
+      },
+      {
+        "question_id": "S2-Q10",
+        "kind": "open",
+        "text": "What single change would most reduce your compliance workload or risk exposure?",
+        "scope": "shared",
+        "is_drg_ops": false,
+        "scored": true
+      }
+    ],
+    "S3": [
+      {
+        "question_id": "S3-Q1",
+        "kind": "select",
+        "text": "Which operational processes consume the most staff time and effort?",
+        "scope": "shared",
+        "is_drg_ops": false,
+        "scored": true,
+        "options": [
+          "Onboarding",
+          "Share transfers",
+          "Corporate actions",
+          "Reconciliation",
+          "Investor enquiries",
+          "Documentation",
+          "Compliance support",
+          "Trade settlement",
+          "Other"
+        ],
+        "select_up_to_n": 3,
+        "has_optional_comment": 1
+      },
+      {
+        "question_id": "S3-Q2",
+        "kind": "single",
+        "text": "What percentage of operational processes remain predominantly manual?",
+        "scope": "shared",
+        "is_drg_ops": false,
+        "scored": true,
+        "options": [
+          "0 to 10%",
+          "11 to 25%",
+          "26 to 50%",
+          "51 to 75%",
+          "76 to 90%",
+          "More than 90%",
+          "Don't know"
+        ],
+        "has_optional_comment": 1
+      },
+      {
+        "question_id": "S3-Q3",
+        "kind": "multi",
+        "text": "Which tools does your team use most frequently?",
+        "scope": "shared",
+        "is_drg_ops": false,
+        "scored": true,
+        "options": [
+          "Excel and spreadsheets",
+          "Email",
+          "Paper and manual forms",
+          "Internal system",
+          "Clearing and settlement portal",
+          "Registrar portal",
+          "Third-party workflow tools",
+          "Other"
+        ],
+        "has_optional_comment": 1
+      },
+      {
+        "question_id": "S3-Q4",
+        "kind": "grid",
+        "text": "For each core process (new client onboarding, share transfers, corporate actions, and reconciliation), rate (a) your team's current performance and (b) the level of operational risk.",
+        "scope": "shared",
+        "is_drg_ops": false,
+        "scored": true,
+        "has_optional_comment": 1,
+        "grid_rows": [
+          "New client onboarding",
+          "Share transfers",
+          "Corporate actions",
+          "Reconciliation"
+        ],
+        "grid_dimensions": {
+          "Performance": ["Poor", "Below average", "Average", "Good", "Excellent"],
+          "Risk": ["Very low", "Low", "Moderate", "High", "Very high"]
+        }
+      },
+      {
+        "question_id": "S3-Q5",
+        "kind": "select",
+        "text": "Where do delays most frequently occur in your operations?",
+        "scope": "shared",
+        "is_drg_ops": false,
+        "scored": true,
+        "options": [
+          "Onboarding and KYC",
+          "Account opening and clearing-house-number creation",
+          "Trade processing",
+          "Settlement",
+          "Reconciliation",
+          "Share transfers",
+          "Corporate actions",
+          "Dividend-related enquiries",
+          "Client documentation",
+          "Compliance approvals",
+          "Registrar interaction",
+          "Clearing and settlement interaction",
+          "Internal approvals and hand-offs",
+          "Investor enquiries and complaints",
+          "Other"
+        ],
+        "select_up_to_n": 3,
+        "has_optional_comment": 1
+      },
+      {
+        "question_id": "S3-Q6",
+        "kind": "select",
+        "text": "Where does rework most frequently occur?",
+        "scope": "shared",
+        "is_drg_ops": false,
+        "scored": true,
+        "options": [
+          "Onboarding and KYC",
+          "Account opening and clearing-house-number creation",
+          "Trade processing",
+          "Settlement",
+          "Reconciliation",
+          "Share transfers",
+          "Corporate actions",
+          "Dividend-related enquiries",
+          "Client documentation",
+          "Compliance approvals",
+          "Registrar interaction",
+          "Clearing and settlement interaction",
+          "Internal approvals and hand-offs",
+          "Investor enquiries and complaints",
+          "Other"
+        ],
+        "select_up_to_n": 3,
+        "has_optional_comment": 1
+      },
+      {
+        "question_id": "S3-A1",
+        "kind": "select",
+        "text": "Where does your team most often have to leave its own system and follow up manually with another organisation to complete a process?",
+        "scope": "shared",
+        "is_drg_ops": true,
+        "scored": false,
+        "options": [
+          "Client onboarding and KYC",
+          "Clearing-house-number and account setup",
+          "Trade settlement",
+          "Reconciliation",
+          "Share transfer",
+          "Corporate action",
+          "Dividend or shareholder issue",
+          "Registrar request",
+          "Clearing and settlement request",
+          "Bank or custodian request",
+          "Regulatory or compliance request",
+          "Client-service case",
+          "Other"
+        ],
+        "select_up_to_n": 3,
+        "has_optional_comment": 1
+      },
+      {
+        "question_id": "S3-A2",
+        "kind": "select",
+        "text": "Which processes would benefit most from a shared digital service that connects your firm with other market participants?",
+        "scope": "shared",
+        "is_drg_ops": true,
+        "scored": false,
+        "options": [
+          "Client onboarding and KYC",
+          "Clearing-house-number and account setup",
+          "Trade settlement",
+          "Reconciliation",
+          "Share transfer",
+          "Corporate action",
+          "Dividend or shareholder issue",
+          "Registrar request",
+          "Clearing and settlement request",
+          "Bank or custodian request",
+          "Regulatory or compliance request",
+          "Client-service case",
+          "Other"
+        ],
+        "select_up_to_n": 3,
+        "has_optional_comment": 1
+      },
+      {
+        "question_id": "S3-Q7",
+        "kind": "single",
+        "text": "How often do operational failures or delays result in client complaints or escalations?",
+        "scope": "shared",
+        "is_drg_ops": false,
+        "scored": true,
+        "options": ["Very frequently", "Frequently", "Occasionally", "Rarely", "Never"],
+        "has_optional_comment": 1
+      },
+      {
+        "question_id": "S3-Q8",
+        "kind": "single",
+        "text": "Which process generates the most client dissatisfaction or complaints?",
+        "scope": "shared",
+        "is_drg_ops": false,
+        "scored": true,
+        "options": [
+          "Onboarding and KYC",
+          "Account opening and clearing-house-number creation",
+          "Trade processing",
+          "Settlement",
+          "Reconciliation",
+          "Share transfers",
+          "Corporate actions",
+          "Dividend-related enquiries",
+          "Client documentation",
+          "Compliance approvals",
+          "Registrar interaction",
+          "Clearing and settlement interaction",
+          "Internal approvals and hand-offs",
+          "Investor enquiries and complaints",
+          "Other",
+          "Withdrawal and cash settlement",
+          "Transaction-status visibility",
+          "Customer-support response"
+        ],
+        "has_optional_comment": 1
+      },
+      {
+        "question_id": "S3-Q9",
+        "kind": "single",
+        "text": "What would happen to your operations if your single most experienced staff member were unavailable for two weeks?",
+        "scope": "shared",
+        "is_drg_ops": false,
+        "scored": true,
+        "options": [
+          "Little or no impact",
+          "Minor disruption",
+          "Moderate disruption",
+          "Major disruption",
+          "Severe disruption, critical processes may stop"
+        ],
+        "has_optional_comment": 1
+      },
+      {
+        "question_id": "S3-Q10",
+        "kind": "single",
+        "text": "Which process most urgently requires modernisation?",
+        "scope": "shared",
+        "is_drg_ops": false,
+        "scored": true,
+        "options": [
+          "Onboarding and KYC",
+          "Account opening and clearing-house-number creation",
+          "Trade processing",
+          "Settlement",
+          "Reconciliation",
+          "Share transfers",
+          "Corporate actions",
+          "Dividend-related enquiries",
+          "Client documentation",
+          "Compliance approvals",
+          "Registrar interaction",
+          "Clearing and settlement interaction",
+          "Internal approvals and hand-offs",
+          "Investor enquiries and complaints",
+          "Other"
+        ],
+        "has_optional_comment": 1
+      },
+      {
+        "question_id": "S3-Q11",
+        "kind": "open",
+        "text": "What operational problem causes more damage than people realise, and could be solved by better systems or processes?",
+        "scope": "shared",
+        "is_drg_ops": false,
+        "scored": true
+      }
+    ],
+    "S4": [
+      {
+        "question_id": "S4-P1",
+        "kind": "single",
+        "text": "Approximate current value of your equity portfolio.",
+        "scope": "shared",
+        "is_drg_ops": false,
+        "scored": true,
+        "options": [
+          "Under ₦50,000",
+          "₦50,000 to ₦500,000",
+          "₦500,001 to ₦5 million",
+          "₦5 million to ₦50 million",
+          "₦50 million to ₦500 million",
+          "Above ₦500 million"
+        ]
+      },
+      {
+        "question_id": "S4-Q1",
+        "kind": "scale",
+        "text": "How easy is it to do business with your stockbroking firm?",
+        "scope": "firm_specific",
+        "is_drg_ops": false,
+        "scored": true,
+        "scale_min": 1,
+        "scale_max": 10,
+        "scale_anchors": "1 = Extremely difficult; 10 = Extremely easy."
+      },
+      {
+        "question_id": "S4-Q2",
+        "kind": "scale",
+        "text": "How responsive is your firm when you need assistance?",
+        "scope": "firm_specific",
+        "is_drg_ops": false,
+        "scored": true,
+        "scale_min": 1,
+        "scale_max": 10,
+        "scale_anchors": "1 = Extremely unresponsive; 10 = Extremely responsive."
+      },
+      {
+        "question_id": "S4-Q3",
+        "kind": "scale",
+        "text": "How transparent is your firm about the status of your transactions and requests?",
+        "scope": "firm_specific",
+        "is_drg_ops": false,
+        "scored": true,
+        "scale_min": 1,
+        "scale_max": 10,
+        "scale_anchors": "1 = Not transparent at all; 10 = Completely transparent."
+      },
+      {
+        "question_id": "S4-Q4",
+        "kind": "scale",
+        "text": "How much do you trust your firm to accurately maintain your records and portfolio?",
+        "scope": "firm_specific",
+        "is_drg_ops": false,
+        "scored": true,
+        "scale_min": 1,
+        "scale_max": 10,
+        "scale_anchors": "1 = No trust at all; 10 = Complete trust."
+      },
+      {
+        "question_id": "S4-Q5",
+        "kind": "yesno",
+        "text": "Have service frustrations ever reduced your willingness to invest or grow your portfolio?",
+        "scope": "firm_specific",
+        "is_drg_ops": false,
+        "scored": true,
+        "options": ["Yes", "No"]
+      },
+      {
+        "question_id": "S4-Q6",
+        "kind": "yesno",
+        "text": "Have service frustrations ever caused you to delay or abandon a transaction?",
+        "scope": "firm_specific",
+        "is_drg_ops": false,
+        "scored": true,
+        "options": ["Yes", "No"]
+      },
+      {
+        "question_id": "S4-Q7",
+        "kind": "yesno",
+        "text": "Have you ever moved assets or accounts to another firm because of service quality?",
+        "scope": "firm_specific",
+        "is_drg_ops": false,
+        "scored": true,
+        "options": ["Yes", "No"]
+      },
+      {
+        "question_id": "S4-Q8",
+        "kind": "grid",
+        "text": "Compared with your primary bank, and with fintech or digital investment apps you have used, how would you rate your stockbroking firm's experience?",
+        "scope": "firm_specific",
+        "is_drg_ops": false,
+        "scored": true,
+        "options": [
+          "Significantly better",
+          "Somewhat better",
+          "About the same",
+          "Somewhat worse",
+          "Significantly worse",
+          "Unable to compare"
+        ],
+        "grid_rows": ["Your primary bank", "Fintech or digital investment apps"]
+      },
+      {
+        "question_id": "S4-Q9",
+        "kind": "rank",
+        "text": "What frustrates you most about your firm's service?",
+        "scope": "firm_specific",
+        "is_drg_ops": false,
+        "scored": true,
+        "options": [
+          "Slow onboarding and KYC",
+          "Being asked for the same documents repeatedly",
+          "Difficulty reaching customer service",
+          "Slow responses to requests",
+          "Delayed withdrawals or access to funds",
+          "Delayed transaction processing",
+          "Poor visibility of request status",
+          "Share-transfer delays",
+          "Dividend or corporate-action problems",
+          "Errors in records or portfolio",
+          "Poor communication",
+          "Unclear or unexpected charges",
+          "Difficult digital channels or app",
+          "Too much paperwork",
+          "Difficulty getting complaints resolved",
+          "System downtime",
+          "Limited information or guidance",
+          "Other"
+        ],
+        "rank_exactly_n": 3
+      },
+      {
+        "question_id": "S4-Q12",
+        "kind": "single",
+        "text": "If you use more than one stockbroking firm, how often do you have to provide the same identity, KYC, or profile information separately to each firm?",
+        "scope": "shared",
+        "is_drg_ops": false,
+        "scored": true,
+        "options": ["Every time", "Often", "Sometimes", "Rarely", "Not applicable"]
+      },
+      {
+        "question_id": "S4-A1",
+        "kind": "select",
+        "text": "Which of the following, if available, would most improve your experience as an investor?",
+        "scope": "shared",
+        "is_drg_ops": true,
+        "scored": false,
+        "options": [
+          "One verified identity and profile that works across brokers",
+          "Updating my personal information once instead of with each broker",
+          "Transferring shares between brokers digitally",
+          "Tracking a share transfer from start to finish",
+          "Seeing my holdings across brokers in one place",
+          "Finding and resolving unclaimed shares or dividends",
+          "Tracking dividends and corporate actions",
+          "Tracking withdrawals and access to funds",
+          "Tracking my complaints and requests from start to finish",
+          "A single reference number for each request",
+          "Getting notified about the status of my requests",
+          "Authorising and sharing documents digitally",
+          "Other"
+        ],
+        "select_up_to_n": 3
+      },
+      {
+        "question_id": "S4-Q10",
+        "kind": "open",
+        "text": "What single improvement would most increase your confidence in your firm?",
+        "scope": "firm_specific",
+        "is_drg_ops": false,
+        "scored": true,
+        "answer_optional": 1
+      },
+      {
+        "question_id": "S4-Q11",
+        "kind": "scale",
+        "text": "How likely are you to recommend your firm to a friend or family member?",
+        "scope": "firm_specific",
+        "is_drg_ops": false,
+        "scored": true,
+        "scale_min": 0,
+        "scale_max": 10
+      }
+    ],
+    "S5a": [
+      {
+        "question_id": "S5a-Q1",
+        "kind": "grid",
+        "text": "Rate your stockbroking firms on service quality, reporting quality, responsiveness, and operational efficiency.",
+        "scope": "firm_specific",
+        "is_drg_ops": false,
+        "scored": true,
+        "grid_rows": [
+          "Service quality",
+          "Reporting quality",
+          "Responsiveness",
+          "Operational efficiency"
+        ],
+        "grid_scale": {
+          "min": 1,
+          "max": 10
+        }
+      },
+      {
+        "question_id": "S5a-Q2",
+        "kind": "scale",
+        "text": "How consistently do your firms meet your operational turnaround expectations?",
+        "scope": "firm_specific",
+        "is_drg_ops": false,
+        "scored": true,
+        "scale_min": 1,
+        "scale_max": 10,
+        "scale_anchors": "1 = Almost never; 10 = Consistently."
+      },
+      {
+        "question_id": "S5a-Q3",
+        "kind": "select",
+        "text": "Which operational challenges most affect your institution's relationship with stockbroking firms?",
+        "scope": "firm_specific",
+        "is_drg_ops": false,
+        "scored": true,
+        "options": [
+          "Trade-processing delays",
+          "Settlement delays",
+          "Reconciliation discrepancies",
+          "Reporting delays",
+          "Inaccurate reporting",
+          "Repeated KYC and documentation",
+          "Onboarding delays",
+          "Corporate actions",
+          "Share transfers",
+          "Poor responsiveness",
+          "Weak status visibility",
+          "Manual processes",
+          "Systems-integration limitations",
+          "Technology downtime",
+          "Compliance-document deficiencies",
+          "Record or instruction errors",
+          "Escalation delays",
+          "Other"
+        ],
+        "select_up_to_n": 3
+      },
+      {
+        "question_id": "S5a-Q4",
+        "kind": "yesno",
+        "text": "Have operational or documentation failures by a Nigerian firm ever caused financial or compliance consequences for your institution?",
+        "scope": "firm_specific",
+        "is_drg_ops": false,
+        "scored": true,
+        "options": ["Yes", "No"],
+        "conditional_detail_on": "Yes"
+      },
+      {
+        "question_id": "S5a-Q5",
+        "kind": "scale",
+        "text": "How confident is your institution in the accuracy and completeness of records maintained by your firms?",
+        "scope": "firm_specific",
+        "is_drg_ops": false,
+        "scored": true,
+        "scale_min": 1,
+        "scale_max": 10,
+        "scale_anchors": "1 = Not confident at all; 10 = Completely confident."
+      },
+      {
+        "question_id": "S5a-Q6",
+        "kind": "yesno",
+        "text": "Have service quality concerns led your institution to reduce allocations to, or stop using, a particular firm?",
+        "scope": "firm_specific",
+        "is_drg_ops": false,
+        "scored": true,
+        "options": ["Yes", "No"]
+      },
+      {
+        "question_id": "S5a-Q7",
+        "kind": "single",
+        "text": "Compared with other financial service providers, how would you rate Nigerian stockbroking firms on operational quality?",
+        "scope": "shared",
+        "is_drg_ops": false,
+        "scored": true,
+        "options": ["Better", "Same", "Worse", "Unable to assess"]
+      },
+      {
+        "question_id": "S5a-Q8",
+        "kind": "single",
+        "text": "How does the operational maturity of Nigerian firms compare with firms in other African markets you operate in?",
+        "scope": "shared",
+        "is_drg_ops": false,
+        "scored": true,
+        "options": [
+          "Significantly better",
+          "Somewhat better",
+          "About the same",
+          "Somewhat worse",
+          "Significantly worse",
+          "Unable to compare"
+        ]
+      },
+      {
+        "question_id": "S5a-Q9",
+        "kind": "select",
+        "text": "What would most increase your institution's confidence in Nigerian stockbroking firms?",
+        "scope": "shared",
+        "is_drg_ops": false,
+        "scored": true,
+        "options": [
+          "Faster settlement",
+          "Greater automation",
+          "Systems integration",
+          "Better and more timely reporting",
+          "Better reconciliation",
+          "Stronger controls",
+          "Better record keeping",
+          "Faster onboarding",
+          "Reduced repeated KYC",
+          "Better responsiveness",
+          "Better status visibility",
+          "Stronger cybersecurity",
+          "Better resilience and continuity",
+          "More consistent service standards",
+          "Better escalation handling",
+          "Other"
+        ],
+        "select_up_to_n": 3
+      },
+      {
+        "question_id": "S5a-Q11",
+        "kind": "single",
+        "text": "How often does your institution provide the same identity, KYC, or onboarding documentation separately to each stockbroking firm it uses?",
+        "scope": "shared",
+        "is_drg_ops": false,
+        "scored": true,
+        "options": ["Every time", "Often", "Sometimes", "Rarely", "Not applicable"]
+      },
+      {
+        "question_id": "S5a-A1",
+        "kind": "select",
+        "text": "Which improvements would most reduce operational friction when your institution deals with multiple Nigerian firms?",
+        "scope": "shared",
+        "is_drg_ops": true,
+        "scored": false,
+        "options": [
+          "Reusable verified institutional KYC",
+          "Standardised onboarding and document requirements",
+          "Updating institutional information once across firms",
+          "Standardised reporting formats",
+          "Central request and status tracking",
+          "Digital broker-to-broker asset-transfer workflow",
+          "Shared settlement and exception visibility",
+          "Standardised document exchange",
+          "Common reconciliation data",
+          "Common corporate-actions communication",
+          "Shared escalation and case tracking",
+          "Better system and interface integration",
+          "Other"
+        ],
+        "select_up_to_n": 3
+      },
+      {
+        "question_id": "S5a-Q10",
+        "kind": "open",
+        "text": "What single improvement would most strengthen your relationship with your firms?",
+        "scope": "shared",
+        "is_drg_ops": false,
+        "scored": true
+      }
+    ],
+    "S5b": [
+      {
+        "question_id": "S5b-Q1",
+        "kind": "scale",
+        "text": "How would you rate the ease of accessing and transacting in the Nigerian market compared with other African markets?",
+        "scope": "shared",
+        "is_drg_ops": false,
+        "scored": true,
+        "scale_min": 1,
+        "scale_max": 10,
+        "scale_anchors": "1 = Extremely difficult; 10 = Extremely easy."
+      },
+      {
+        "question_id": "S5b-Q2",
+        "kind": "scale",
+        "text": "How would you rate the quality of operational support provided by Nigerian firms?",
+        "scope": "firm_specific",
+        "is_drg_ops": false,
+        "scored": true,
+        "scale_min": 1,
+        "scale_max": 10,
+        "scale_anchors": "1 = Very poor; 10 = Excellent."
+      },
+      {
+        "question_id": "S5b-Q3",
+        "kind": "scale",
+        "text": "How would you rate the quality and timeliness of reporting and documentation from Nigerian firms?",
+        "scope": "firm_specific",
+        "is_drg_ops": false,
+        "scored": true,
+        "scale_min": 1,
+        "scale_max": 10,
+        "scale_anchors": "1 = Very poor; 10 = Excellent."
+      },
+      {
+        "question_id": "S5b-Q4",
+        "kind": "scale",
+        "text": "How confident is your institution in the accuracy of records maintained by Nigerian firms?",
+        "scope": "firm_specific",
+        "is_drg_ops": false,
+        "scored": true,
+        "scale_min": 1,
+        "scale_max": 10,
+        "scale_anchors": "1 = No confidence; 10 = Complete confidence."
+      },
+      {
+        "question_id": "S5b-Q5",
+        "kind": "yesno",
+        "text": "Have operational or settlement failures in Nigeria ever caused financial or compliance consequences for your institution?",
+        "scope": "shared",
+        "is_drg_ops": false,
+        "scored": true,
+        "options": ["Yes", "No"],
+        "conditional_detail_on": "Yes"
+      },
+      {
+        "question_id": "S5b-Q6",
+        "kind": "single",
+        "text": "Have foreign-exchange or capital-repatriation difficulties influenced your allocation decisions regarding Nigeria?",
+        "scope": "shared",
+        "is_drg_ops": false,
+        "scored": true,
+        "options": [
+          "Significantly reduced",
+          "Moderately reduced",
+          "No impact",
+          "Suspended new allocations"
+        ]
+      },
+      {
+        "question_id": "S5b-Q7",
+        "kind": "grid",
+        "text": "Compared with peer African markets, rate Nigeria on market access, operational efficiency, reporting, corporate actions, and communication.",
+        "scope": "shared",
+        "is_drg_ops": false,
+        "scored": true,
+        "options": ["Better", "Same", "Worse"],
+        "grid_rows": [
+          "Market access",
+          "Operational efficiency",
+          "Reporting",
+          "Corporate actions",
+          "Communication"
+        ]
+      },
+      {
+        "question_id": "S5b-Q8",
+        "kind": "scale",
+        "text": "Overall, how would you rate your institution's confidence in Nigeria as a capital-market investment destination?",
+        "scope": "shared",
+        "is_drg_ops": false,
+        "scored": true,
+        "scale_min": 1,
+        "scale_max": 10,
+        "scale_anchors": "1 = No confidence; 10 = Very high confidence."
+      },
+      {
+        "question_id": "S5b-Q9",
+        "kind": "scale",
+        "text": "How likely is your institution to increase Nigerian allocations in the next 24 months?",
+        "scope": "shared",
+        "is_drg_ops": false,
+        "scored": true,
+        "scale_min": 1,
+        "scale_max": 10,
+        "scale_anchors": "1 = Very unlikely; 10 = Very likely."
+      },
+      {
+        "question_id": "S5b-Q11",
+        "kind": "single",
+        "text": "How often does your institution provide the same identity, KYC, or onboarding documentation separately to each Nigerian firm or counterparty it uses?",
+        "scope": "shared",
+        "is_drg_ops": false,
+        "scored": true,
+        "options": ["Every time", "Often", "Sometimes", "Rarely", "Not applicable"]
+      },
+      {
+        "question_id": "S5b-A1",
+        "kind": "select",
+        "text": "Which operational improvements would most increase the ease of investing through Nigerian intermediaries?",
+        "scope": "shared",
+        "is_drg_ops": true,
+        "scored": false,
+        "options": [
+          "Standardised institutional onboarding and KYC",
+          "A reusable verified institutional profile",
+          "Better broker and custodian systems integration",
+          "Faster and clearer settlement exception handling",
+          "Better real-time status visibility",
+          "Standardised reporting formats",
+          "Better reconciliation information",
+          "Digital document exchange",
+          "Central corporate-actions information",
+          "Clearer repatriation and foreign-exchange process visibility",
+          "Shared escalation and case tracking",
+          "More consistent service standards between firms",
+          "Other"
+        ],
+        "select_up_to_n": 3
+      },
+      {
+        "question_id": "S5b-Q10",
+        "kind": "open",
+        "text": "What single improvement would most increase your willingness to increase exposure to Nigerian equities?",
+        "scope": "shared",
+        "is_drg_ops": false,
+        "scored": true
+      }
+    ],
+    "I-SEC": [
+      {
+        "question_id": "I-SEC-Q1",
+        "kind": "select",
+        "text": "Which operational issues most frequently require regulatory attention across stockbroking firms?",
+        "scope": "shared",
+        "is_drg_ops": false,
+        "scored": false,
+        "options": [
+          "Documentation and record keeping",
+          "Onboarding, KYC and AML compliance",
+          "Regulatory reporting",
+          "Internal controls",
+          "Corporate governance",
+          "Client-complaints handling",
+          "Technology and cybersecurity",
+          "Operational risk management",
+          "Staff competence",
+          "Other"
+        ],
+        "select_up_to_n": 3,
+        "has_optional_comment": 1,
+        "select_then_greatest": 1
+      },
+      {
+        "question_id": "I-SEC-Q2",
+        "kind": "single",
+        "text": "How frequently do supervisory reviews identify operational deficiencies requiring follow-up?",
+        "scope": "shared",
+        "is_drg_ops": false,
+        "scored": false,
+        "options": ["Almost always", "Often", "Sometimes", "Rarely", "Almost never"],
+        "has_optional_comment": 1
+      },
+      {
+        "question_id": "I-SEC-Q3",
+        "kind": "select",
+        "text": "Which characteristics consistently distinguish firms that perform well in their dealings with the Commission?",
+        "scope": "shared",
+        "is_drg_ops": false,
+        "scored": false,
+        "options": [
+          "Corporate governance",
+          "Documentation and record keeping",
+          "Regulatory compliance",
+          "Technology and systems",
+          "Staff competence",
+          "Operational risk management",
+          "Client servicing",
+          "Business continuity",
+          "Operational discipline",
+          "Other"
+        ],
+        "select_up_to_n": 3,
+        "has_optional_comment": 1
+      },
+      {
+        "question_id": "I-SEC-Q4",
+        "kind": "select",
+        "text": "Which operational weaknesses at firm level carry the greatest consequences for investor protection?",
+        "scope": "shared",
+        "is_drg_ops": false,
+        "scored": false,
+        "options": [
+          "Documentation and record keeping",
+          "Onboarding, KYC and AML compliance",
+          "Regulatory reporting",
+          "Internal controls",
+          "Corporate governance",
+          "Client-complaints handling",
+          "Technology and cybersecurity",
+          "Operational risk management",
+          "Staff competence",
+          "Other"
+        ],
+        "select_up_to_n": 3,
+        "has_optional_comment": 1,
+        "select_then_greatest": 1
+      },
+      {
+        "question_id": "I-SEC-Q5",
+        "kind": "single",
+        "text": "Based on the Commission's direct supervisory interactions with licensed stockbroking firms, how would you assess the overall operational capability of the sector today?",
+        "scope": "shared",
+        "is_drg_ops": false,
+        "scored": false,
+        "options": ["Very weak", "Weak", "Adequate", "Strong", "Very strong"],
+        "has_optional_comment": 1
+      }
+    ],
+    "I-NGX": [
+      {
+        "question_id": "I-NGX-Q1",
+        "kind": "select",
+        "text": "Which firm-level operational issues most frequently disrupt member firms' interactions with the Exchange?",
+        "scope": "shared",
+        "is_drg_ops": false,
+        "scored": false,
+        "options": [
+          "Late submissions",
+          "Incomplete or deficient documentation",
+          "Manual processes",
+          "System and technology integration",
+          "Corporate-actions processing",
+          "Communication delays",
+          "Settlement coordination",
+          "Operational governance",
+          "Staff competence",
+          "Other"
+        ],
+        "select_up_to_n": 3,
+        "has_optional_comment": 1,
+        "select_then_greatest": 1
+      },
+      {
+        "question_id": "I-NGX-Q2",
+        "kind": "single",
+        "text": "How frequently do firm-level operational weaknesses create exceptions the Exchange must manage?",
+        "scope": "shared",
+        "is_drg_ops": false,
+        "scored": false,
+        "options": ["Very frequently", "Frequently", "Occasionally", "Rarely", "Never"],
+        "has_optional_comment": 1
+      },
+      {
+        "question_id": "I-NGX-Q3",
+        "kind": "select",
+        "text": "Which characteristics consistently distinguish firms that interact most efficiently with the Exchange?",
+        "scope": "shared",
+        "is_drg_ops": false,
+        "scored": false,
+        "options": [
+          "Technology and system integration",
+          "Operational discipline",
+          "Documentation quality",
+          "Timeliness",
+          "Communication",
+          "Corporate governance",
+          "Process automation",
+          "Staff competence",
+          "Reconciliation",
+          "Other"
+        ],
+        "select_up_to_n": 3,
+        "has_optional_comment": 1
+      },
+      {
+        "question_id": "I-NGX-Q4",
+        "kind": "select",
+        "text": "Which firm-level operational weaknesses carry the greatest consequences for Exchange efficiency?",
+        "scope": "shared",
+        "is_drg_ops": false,
+        "scored": false,
+        "options": [
+          "Late submissions",
+          "Incomplete or deficient documentation",
+          "Manual processes",
+          "System and technology integration",
+          "Corporate-actions processing",
+          "Communication delays",
+          "Settlement coordination",
+          "Operational governance",
+          "Staff competence",
+          "Other"
+        ],
+        "select_up_to_n": 3,
+        "has_optional_comment": 1,
+        "select_then_greatest": 1
+      },
+      {
+        "question_id": "I-NGX-Q5",
+        "kind": "single",
+        "text": "Based on the Exchange's direct interactions with member firms in trading, membership and listing support, how would you assess the overall operational capability of the sector today?",
+        "scope": "shared",
+        "is_drg_ops": false,
+        "scored": false,
+        "options": ["Very weak", "Weak", "Adequate", "Strong", "Very strong"],
+        "has_optional_comment": 1
+      }
+    ],
+    "I-CSCS": [
+      {
+        "question_id": "I-CSCS-Q1",
+        "kind": "select",
+        "text": "Which operational issues involving stockbroking firms most frequently affect clearing and settlement?",
+        "scope": "shared",
+        "is_drg_ops": false,
+        "scored": false,
+        "options": [
+          "Incorrect trade information",
+          "Settlement delays",
+          "Reconciliation issues",
+          "Documentation deficiencies",
+          "Technology failures",
+          "Communication gaps",
+          "Corporate-actions processing",
+          "Investor account or instruction errors",
+          "Staff competence",
+          "Other"
+        ],
+        "select_up_to_n": 3,
+        "has_optional_comment": 1,
+        "select_then_greatest": 1
+      },
+      {
+        "question_id": "I-CSCS-Q2",
+        "kind": "single",
+        "text": "How frequently do firm-level operational weaknesses create clearing or settlement exceptions?",
+        "scope": "shared",
+        "is_drg_ops": false,
+        "scored": false,
+        "options": ["Very frequently", "Frequently", "Occasionally", "Rarely", "Never"],
+        "has_optional_comment": 1
+      },
+      {
+        "question_id": "I-CSCS-Q3",
+        "kind": "select",
+        "text": "Which characteristics consistently distinguish firms that achieve smooth clearing and settlement?",
+        "scope": "shared",
+        "is_drg_ops": false,
+        "scored": false,
+        "options": [
+          "Trade accuracy",
+          "Reconciliation",
+          "Technology and systems",
+          "Documentation quality",
+          "Operational controls",
+          "Communication",
+          "Corporate governance",
+          "Staff competence",
+          "Operational discipline",
+          "Other"
+        ],
+        "select_up_to_n": 3,
+        "has_optional_comment": 1
+      },
+      {
+        "question_id": "I-CSCS-Q4",
+        "kind": "select",
+        "text": "Which operational weaknesses at firm level carry the greatest consequences for settlement?",
+        "scope": "shared",
+        "is_drg_ops": false,
+        "scored": false,
+        "options": [
+          "Incorrect trade information",
+          "Settlement delays",
+          "Reconciliation issues",
+          "Documentation deficiencies",
+          "Technology failures",
+          "Communication gaps",
+          "Corporate-actions processing",
+          "Investor account or instruction errors",
+          "Staff competence",
+          "Other"
+        ],
+        "select_up_to_n": 3,
+        "has_optional_comment": 1,
+        "select_then_greatest": 1
+      },
+      {
+        "question_id": "I-CSCS-Q5",
+        "kind": "single",
+        "text": "Based on the System's direct interactions with firms in clearing, settlement and custody, how would you assess the overall operational capability of the sector today?",
+        "scope": "shared",
+        "is_drg_ops": false,
+        "scored": false,
+        "options": ["Very weak", "Weak", "Adequate", "Strong", "Very strong"],
+        "has_optional_comment": 1
+      }
+    ]
+  }
+}

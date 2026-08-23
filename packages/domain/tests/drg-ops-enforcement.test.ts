@@ -1,23 +1,19 @@
 /**
- * DRG-OPS non-disclosure enforcement (real Postgres). Proves the platform's
+ * DRG-OPS non-disclosure enforcement (real Postgres). The platform's
  * non-negotiable rule: an operational (DRG-OPS) question can never surface in
- * any public / firm-facing / report / evidence-pack query.
- *
- * The guarantee is structural — getPublicVisibleQuestions hardcodes the
- * exclusion — and is proven here against seeded DRG-OPS data, even though
- * evidence packs themselves do not exist until Phase 4.
+ * any public / firm-facing / report / evidence-pack query. Extended in Phase 2
+ * to cover all seven DRG-OPS items by ID, and to confirm they DO remain part of
+ * the respondent runtime (folded invisibly into the instrument flow).
  */
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { Pool } from 'pg';
-import {
-  getPublicVisibleQuestions,
-  getAllQuestionsForInstrument,
-  createInstrumentQuestion,
-} from '@cis/db';
+import { getPublicVisibleQuestions, getInstrumentItems, createInstrumentQuestion } from '@cis/db';
 import { seedReferenceData } from '../src';
 import { getTestPool, runMigrations, truncateAllTables, closeTestPool } from '../../db/tests/setup';
 
 let pool: Pool;
+
+const DRG_OPS_IDS = ['S1-A1', 'S2-A1', 'S3-A1', 'S3-A2', 'S4-A1', 'S5a-A1', 'S5b-A1'];
 
 beforeAll(async () => {
   pool = getTestPool();
@@ -31,20 +27,31 @@ afterAll(async () => {
 });
 
 describe('DRG-OPS exclusion from public questions', () => {
-  it('never returns a DRG-OPS row from the public-question query', async () => {
+  it('never returns any of the seven DRG-OPS items from the public-question query', async () => {
     await seedReferenceData(pool);
 
     const publicQuestions = await getPublicVisibleQuestions(pool);
     expect(publicQuestions.length).toBeGreaterThan(0);
     expect(publicQuestions.every((q) => q.isDrgOps === false)).toBe(true);
-    // The seven seeded DRG-OPS question codes must all be absent.
+
     const publicCodes = new Set(publicQuestions.map((q) => q.questionCode));
-    for (const code of ['S1-A1', 'S2-A1', 'S3-A1', 'S3-A2', 'S4-A1', 'S5a-A1', 'S5b-A1']) {
-      expect(publicCodes.has(code)).toBe(false);
+    for (const id of DRG_OPS_IDS) {
+      expect(publicCodes.has(id), `${id} must be excluded from public questions`).toBe(false);
     }
+    // Public count = 90 total − 7 DRG-OPS.
+    expect(publicQuestions.length).toBe(83);
   });
 
-  it('excludes a freshly-seeded DRG-OPS question too', async () => {
+  it('DRG-OPS items ARE part of the respondent runtime (folded into the flow)', async () => {
+    await seedReferenceData(pool);
+    const s1Items = await getInstrumentItems(pool, 'S1');
+    expect(s1Items.some((i) => i.id === 'S1-A1')).toBe(true);
+    const s1a1 = s1Items.find((i) => i.id === 'S1-A1');
+    expect(s1a1?.isDrgOps).toBe(true);
+    expect(s1a1?.scored).toBe(false);
+  });
+
+  it('excludes a freshly-created DRG-OPS question too', async () => {
     const seed = await seedReferenceData(pool);
     const s1 = seed.instruments['S1'];
     expect(s1).toBeDefined();
@@ -53,16 +60,12 @@ describe('DRG-OPS exclusion from public questions', () => {
       instrumentDefinitionId: s1 as string,
       questionCode: 'S1-A99',
       promptText: 'A brand-new operational probe.',
+      kind: 'select',
       isDrgOps: true,
     });
     expect(drg.isDrgOps).toBe(true);
     expect(drg.scored).toBe(false); // forced false for DRG-OPS
 
-    // It exists in the full instrument view…
-    const all = await getAllQuestionsForInstrument(pool, s1 as string);
-    expect(all.some((q) => q.questionCode === 'S1-A99')).toBe(true);
-
-    // …but never in the public view.
     const publicQuestions = await getPublicVisibleQuestions(pool);
     expect(publicQuestions.some((q) => q.questionCode === 'S1-A99')).toBe(false);
   });
@@ -73,8 +76,8 @@ describe('DRG-OPS exclusion from public questions', () => {
     await expect(
       pool.query(
         `INSERT INTO instrument_questions
-           (instrument_definition_id, question_code, prompt_text, scored, is_drg_ops)
-         VALUES ($1, 'S1-BAD', 'illegal', TRUE, TRUE)`,
+           (instrument_definition_id, question_code, prompt_text, kind, scored, is_drg_ops)
+         VALUES ($1, 'S1-BAD', 'illegal', 'select', TRUE, TRUE)`,
         [s1],
       ),
     ).rejects.toThrow(/drg_ops_never_scored/);

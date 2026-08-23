@@ -21,5 +21,8 @@ export {
   MIN_REASON_LENGTH,
 } from './errors';
 
-export { seedReferenceData, INSTRUMENT_SEED } from './seed';
+export { seedReferenceData } from './seed';
 export type { SeededReferenceData } from './seed';
+
+export { submitResponses, ConsentRequiredError, ResponseScopeError } from './response-service';
+export type { SubmitResponsesInput } from './response-service';

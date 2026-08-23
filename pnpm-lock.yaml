@@ -49,6 +49,9 @@ importers:
 
   apps/admin:
     dependencies:
+      '@cis/survey':
+        specifier: workspace:*
+        version: link:../../packages/survey
       react:
         specifier: ^18.3.1
         version: 18.3.1
@@ -89,6 +92,9 @@ importers:
       '@cis/shared-types':
         specifier: workspace:*
         version: link:../../packages/shared-types
+      '@cis/survey':
+        specifier: workspace:*
+        version: link:../../packages/survey
       '@fastify/helmet':
         specifier: ^13.0.0
         version: 13.1.1
@@ -170,6 +176,9 @@ importers:
       '@cis/shared-types':
         specifier: workspace:*
         version: link:../shared-types
+      '@cis/survey':
+        specifier: workspace:*
+        version: link:../survey
       pg:
         specifier: ^8.12.0
         version: 8.23.0
@@ -201,6 +210,9 @@ importers:
       '@cis/shared-types':
         specifier: workspace:*
         version: link:../shared-types
+      '@cis/survey':
+        specifier: workspace:*
+        version: link:../survey
       pg:
         specifier: ^8.12.0
         version: 8.23.0
@@ -220,6 +232,15 @@ importers:
       typescript:
         specifier: '*'
         version: 5.9.3
+
+  packages/survey:
+    devDependencies:
+      typescript:
+        specifier: '*'
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.7
+        version: 3.2.7(@types/node@22.20.1)(tsx@4.23.12)(yaml@2.9.0)
 
 packages:
   '@babel/code-frame@7.29.7':

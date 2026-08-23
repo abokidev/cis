@@ -1,3 +1,4 @@
+import type { SurveyItem } from '@cis/survey';
 import {
   ApiError,
   type EditionDetail,
@@ -58,6 +59,7 @@ export interface AdminClient {
     rejectionReason?: string,
   ): Promise<{ status: 'approved' | 'rejected'; editionStatus: string }>;
   getInstruments(id: string): Promise<InstrumentsResponse>;
+  getInstrumentItems(code: string): Promise<SurveyItem[]>;
   requestFreeze(id: string, reason: string): Promise<{ criticalActionId: string }>;
   decideFreeze(
     id: string,
@@ -89,6 +91,10 @@ export function createClient(token: string | null): AdminClient {
         token,
       }),
     getInstruments: (id) => request(`/editions/${id}/instruments`, { token }),
+    getInstrumentItems: (code) =>
+      request<{ items: SurveyItem[] }>(`/instruments/${encodeURIComponent(code)}/items`, {
+        token,
+      }).then((r) => r.items),
     requestFreeze: (id, reason) =>
       request(`/editions/${id}/instruments/freeze/request`, {
         method: 'POST',

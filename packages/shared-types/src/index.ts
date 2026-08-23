@@ -17,8 +17,12 @@ export type InstrumentType = 'survey' | 'institutional' | 'regulator';
 /** Respondent categories a sample-sufficiency floor can be set for. */
 export type SampleFloorCategory = 'firm' | 'retail' | 'local_institution' | 'foreign_institution';
 
-/** Question response type (illustrative in Phase 1; the controlled set lands in Phase 2). */
-export type QuestionType = 'scale' | 'single_choice' | 'rank' | 'open_text';
+/** The eight controlled question kinds from the Survey Register. */
+export type QuestionKind =
+  'scale' | 'single' | 'yesno' | 'select' | 'multi' | 'rank' | 'grid' | 'open';
+
+/** Whether an item is answered once or repeats per rated firm. */
+export type QuestionScope = 'shared' | 'firm_specific';
 
 // ─── Core entities ────────────────────────────────────────────────────────────
 
@@ -91,11 +95,52 @@ export interface InstrumentQuestion {
   instrumentDefinitionId: string;
   questionCode: string;
   promptText: string;
-  questionType: QuestionType;
+  kind: QuestionKind;
+  scope: QuestionScope;
   displayOrder: number;
   scored: boolean;
   isDrgOps: boolean;
   isPlaceholder: boolean;
+  options: string[] | null;
+  scaleMin: number | null;
+  scaleMax: number | null;
+  scaleAnchors: string | null;
+  rankExactlyN: number | null;
+  selectUpToN: number | null;
+  hasOptionalComment: boolean;
+  answerOptional: boolean;
+  conditionalDetailOn: string | null;
+  selectThenGreatest: boolean;
+  gridRows: string[] | null;
+  gridDimensions: Record<string, string[]> | null;
+  gridScale: { min: number; max: number } | null;
+  createdAt: Date;
+}
+
+/** A recorded survey respondent (one instrument, one edition). */
+export interface Respondent {
+  id: string;
+  editionId: string;
+  instrumentCode: string;
+  /** How the respondent arrived — the source/recruiting firm. Distinct from any rated firm. */
+  recruitingFirmId: string | null;
+  submittedAt: Date | null;
+  consentAccepted: boolean;
+  createdAt: Date;
+}
+
+/** A raw, immutable answer record. */
+export interface Response {
+  id: string;
+  editionId: string;
+  respondentId: string;
+  /** Register question ID, stored verbatim, never dropped. */
+  questionId: string;
+  scope: QuestionScope;
+  /** The firm being rated (firm-specific items only); null for shared items. */
+  ratedFirmId: string | null;
+  /** Canonical answer envelope { a, c }. */
+  answer: { a: unknown; c?: string };
   createdAt: Date;
 }
 

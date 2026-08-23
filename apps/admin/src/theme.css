@@ -485,6 +485,206 @@ tr.soft {
   padding: 0 20px;
 }
 
+/* ── Shared renderer controls (ported from UX-X-RENDER-001) ─────────────────── */
+.qcard {
+  margin: 0 0 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: #fff;
+  overflow: hidden;
+}
+.qhead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 11px 15px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-3);
+}
+.qhead code {
+  font-family: Consolas, Monaco, monospace;
+  font-size: 13px;
+  font-weight: 700;
+}
+.qbody {
+  padding: 15px;
+}
+.qtext {
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.35;
+  margin: 0 0 12px;
+}
+.qstate {
+  margin-top: 12px;
+  padding-top: 11px;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+  font-weight: 700;
+}
+.qstate.out {
+  color: var(--stop);
+}
+.qstate.ok {
+  color: var(--ok);
+}
+.ctl-scale {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 8px;
+}
+.ctl-scale button {
+  min-height: 52px;
+  min-width: 44px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r);
+  background: #fff;
+  font-size: 17px;
+  font-weight: 700;
+}
+.ctl-scale button[aria-checked='true'] {
+  border-color: var(--dragnet-black);
+  background: var(--dragnet-black);
+  color: #fff;
+}
+.ctl-anchors {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: var(--fg-3);
+}
+.ctl-anchor {
+  margin: 0;
+  font-size: 13px;
+  color: var(--fg-3);
+}
+.ctl-anchor.hi {
+  text-align: right;
+}
+.ctl-choice {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  width: 100%;
+  min-height: 52px;
+  padding: 13px 15px;
+  margin-bottom: 9px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r);
+  background: #fff;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  font-size: 16px;
+}
+.ctl-choice:hover {
+  background: var(--bg-3);
+}
+.ctl-choice input {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  margin-top: 1px;
+}
+.ctl-choice.on {
+  border-color: var(--dragnet-black);
+  box-shadow: inset 0 0 0 1px var(--dragnet-black);
+}
+.ctl-rankno {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--brand-red);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+}
+.ctl-count {
+  margin: 0 0 10px;
+  font-size: 14px;
+  color: var(--fg-3);
+}
+.ctl-then {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+.ctl-detail {
+  margin-top: 12px;
+}
+.ctl-detail label,
+.ctl-comment label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 15px;
+  font-weight: 700;
+}
+.ctl-detail textarea,
+.ctl-open,
+.ctl-comment textarea {
+  width: 100%;
+  min-height: 88px;
+  padding: 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r);
+  background: #fff;
+  resize: vertical;
+  font-size: 16px;
+}
+.ctl-comment {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+.ctl-comment .opt {
+  font-weight: 400;
+  color: var(--fg-3);
+}
+.ctl-gridcard {
+  padding: 14px 15px;
+  margin-bottom: 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r);
+  background: var(--bg-3);
+}
+.ctl-gridrow {
+  margin: 0 0 10px;
+  font-size: 16px;
+  font-weight: 700;
+}
+.ctl-gridfield {
+  margin-bottom: 10px;
+}
+.ctl-gridfield label {
+  display: block;
+  margin-bottom: 5px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--fg-3);
+}
+.ctl-gridfield select,
+.ctl-gridwrap select {
+  width: 100%;
+  min-height: 46px;
+  padding: 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r);
+  background: #fff;
+  font-size: 15px;
+}
+.ctl-gridwrap {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+}
+
 /* Responsive: matches the reference artefacts' ~760px breakpoint. */
 @media (max-width: 760px) {
   html,

@@ -9,6 +9,7 @@ import {
   isEditionInstrumentSetFrozen,
   getPendingCriticalActionForEdition,
   listDrgOpsQuestionSummary,
+  getInstrumentItems,
 } from '@cis/db';
 import { loadRbacContext } from '@cis/auth';
 import { requestFreeze, decideFreeze, INSTRUMENT_FREEZE_ACTION } from '@cis/domain';
@@ -117,6 +118,19 @@ export const instrumentRoutes: FastifyPluginAsyncZod = async (app) => {
         })),
         drgOps,
       });
+    },
+  );
+
+  // Full item set (SurveyItem shape) for an instrument, for the shared renderer.
+  // DRG-OPS items are included — a respondent answers them, folded into the flow;
+  // their exclusion applies only to public/report accessors, not this runtime.
+  app.get(
+    '/instruments/:code/items',
+    { preHandler: [app.authenticate], schema: { params: z.object({ code: z.string().min(1) }) } },
+    async (request, reply) => {
+      const items = await getInstrumentItems(getPool(), request.params.code);
+      if (items.length === 0) return not(reply, 404, 'Not Found', 'Instrument not found');
+      return reply.send({ items });
     },
   );
 

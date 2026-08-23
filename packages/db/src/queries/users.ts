@@ -9,6 +9,7 @@ interface RawUserRow {
   email: string;
   password_hash: string;
   display_name: string;
+  organization: string | null;
   is_active: boolean;
   last_login_at: Date | null;
   created_at: Date;
@@ -37,6 +38,7 @@ function mapUser(row: RawUserRow): User {
     email: row.email,
     passwordHash: row.password_hash,
     displayName: row.display_name,
+    organization: row.organization,
     isActive: row.is_active,
     lastLoginAt: row.last_login_at,
     createdAt: row.created_at,
@@ -68,14 +70,14 @@ function mapPermission(row: RawPermissionRow): Permission {
 
 export async function createUser(
   pool: Pool,
-  data: { email: string; passwordHash: string; displayName: string },
+  data: { email: string; passwordHash: string; displayName: string; organization?: string | null },
 ): Promise<User> {
   const result = await query<RawUserRow>(
     pool,
-    `INSERT INTO users (email, password_hash, display_name)
-     VALUES ($1, $2, $3)
+    `INSERT INTO users (email, password_hash, display_name, organization)
+     VALUES ($1, $2, $3, $4)
      RETURNING *`,
-    [data.email, data.passwordHash, data.displayName],
+    [data.email, data.passwordHash, data.displayName, data.organization ?? null],
   );
   const row = result.rows[0];
   if (!row) throw new Error('User insert returned no rows');

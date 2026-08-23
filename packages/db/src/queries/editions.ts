@@ -92,6 +92,45 @@ export async function updateEditionStatus(
   return mapEdition(row);
 }
 
+/**
+ * Set the "last day for returns" date. Callers (the edition service) enforce
+ * the editability rule; this function only writes.
+ */
+export async function updateClosingDate(pool: Pool, id: string, closesAt: Date): Promise<Edition> {
+  const result = await query<RawEditionRow>(
+    pool,
+    `UPDATE editions
+     SET survey_close_at = $1, updated_at = NOW()
+     WHERE id = $2
+     RETURNING *`,
+    [closesAt, id],
+  );
+  const row = result.rows[0];
+  if (!row) throw new Error(`Edition ${id} not found`);
+  return mapEdition(row);
+}
+
+/**
+ * Transition draft → open. Guarded to fire only from draft, so the transition
+ * can happen exactly once. Callers must have already verified the instrument
+ * set is frozen (see the edition service's markOpened).
+ */
+export async function openEditionFromDraft(pool: Pool, id: string): Promise<Edition> {
+  const result = await query<RawEditionRow>(
+    pool,
+    `UPDATE editions
+     SET status = 'open', survey_open_at = NOW(), updated_at = NOW()
+     WHERE id = $1 AND status = 'draft'
+     RETURNING *`,
+    [id],
+  );
+  const row = result.rows[0];
+  if (!row) {
+    throw new Error(`Edition ${id} could not be opened (not found or not in draft)`);
+  }
+  return mapEdition(row);
+}
+
 export async function lockEdition(pool: Pool, id: string, lockedBy: string): Promise<Edition> {
   const result = await query<RawEditionRow>(
     pool,

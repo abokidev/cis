@@ -31,11 +31,13 @@ export async function truncateAllTables(pool: Pool): Promise<void> {
   await pool.query(`
     TRUNCATE TABLE
       edition_instrument_snapshots,
+      edition_sample_floors,
       edition_participation,
       critical_actions,
       user_roles,
       role_permissions,
       audit_log,
+      instrument_questions,
       instrument_definition_versions,
       instrument_definitions,
       editions,

@@ -68,6 +68,24 @@ export async function getCriticalActionById(
   return row ? mapCriticalAction(row) : null;
 }
 
+/** The most recent still-pending action of a given type for an edition, if any. */
+export async function getPendingCriticalActionForEdition(
+  pool: Pool,
+  editionId: string,
+  actionType: string,
+): Promise<CriticalAction | null> {
+  const result = await query<RawCriticalActionRow>(
+    pool,
+    `SELECT * FROM critical_actions
+     WHERE edition_id = $1 AND action_type = $2 AND status = 'pending'
+     ORDER BY requested_at DESC
+     LIMIT 1`,
+    [editionId, actionType],
+  );
+  const row = result.rows[0];
+  return row ? mapCriticalAction(row) : null;
+}
+
 export async function approveCriticalAction(
   pool: Pool,
   id: string,

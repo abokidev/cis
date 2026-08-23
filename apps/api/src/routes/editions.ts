@@ -3,147 +3,215 @@ import { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import {
   getPool,
-  createEdition,
-  getEditionById,
   listEditions,
-  createEditionInstrumentSnapshot,
+  getEditionById,
+  getUserById,
+  listSampleFloors,
+  isEditionInstrumentSetFrozen,
+  getPendingCriticalActionForEdition,
 } from '@cis/db';
+import { loadRbacContext } from '@cis/auth';
 import {
-  loadRbacContext,
-  requirePermission,
-  requestCriticalAction,
-  approveCriticalActionWithRbac,
-} from '@cis/auth';
-import { writeAudit } from '@cis/audit';
+  setSampleFloor,
+  setClosingDate,
+  requestLock,
+  decideLock,
+  EDITION_LOCK_ACTION,
+} from '@cis/domain';
+import type { CriticalAction } from '@cis/shared-types';
 
-const EditionSchema = z.object({
+const CATEGORY = z.enum(['firm', 'retail', 'local_institution', 'foreign_institution']);
+
+const FloorSchema = z.object({ category: CATEGORY, floorValue: z.number().int().min(1) });
+
+const PendingActionSchema = z
+  .object({
+    id: z.string().uuid(),
+    reason: z.string(),
+    requestedAt: z.string(),
+    requestedBy: z.object({
+      id: z.string().uuid(),
+      displayName: z.string(),
+      org: z.string().nullable(),
+    }),
+  })
+  .nullable();
+
+const EditionDetailSchema = z.object({
   id: z.string().uuid(),
   label: z.string(),
   status: z.enum(['draft', 'open', 'locked', 'archived']),
   surveyOpenAt: z.string().nullable(),
   surveyCloseAt: z.string().nullable(),
-  resultsPublishedAt: z.string().nullable(),
-  priorEditionId: z.string().uuid().nullable(),
   lockedAt: z.string().nullable(),
-  lockedBy: z.string().uuid().nullable(),
-  createdAt: z.string(),
-  updatedAt: z.string(),
+  frozen: z.boolean(),
+  floors: z.array(FloorSchema),
+  pendingLock: PendingActionSchema,
 });
 
-const CreateEditionBody = z.object({
-  label: z.string().min(1).max(64),
-  priorEditionId: z.string().uuid().optional(),
-});
+const not = (reply: FastifyReply, code: number, error: string, message: string) =>
+  (reply as FastifyReply).status(code).send({ error, message, statusCode: code });
 
-const FreezeSnapshotBody = z.object({
-  instrumentDefinitionVersionId: z.string().uuid(),
-});
-
-const RequestLockBody = z.object({
-  reason: z.string().min(1),
-});
-
-function serializeEdition(e: {
-  id: string;
-  label: string;
-  status: string;
-  surveyOpenAt: Date | null;
-  surveyCloseAt: Date | null;
-  resultsPublishedAt: Date | null;
-  priorEditionId: string | null;
-  lockedAt: Date | null;
-  lockedBy: string | null;
-  createdAt: Date;
-  updatedAt: Date;
-}) {
+async function serializePending(
+  pool: ReturnType<typeof getPool>,
+  action: CriticalAction | null,
+): Promise<z.infer<typeof PendingActionSchema>> {
+  if (!action) return null;
+  const requester = await getUserById(pool, action.requestedBy);
+  const reason = typeof action.payload['reason'] === 'string' ? action.payload['reason'] : '';
   return {
-    id: e.id,
-    label: e.label,
-    status: e.status as 'draft' | 'open' | 'locked' | 'archived',
-    surveyOpenAt: e.surveyOpenAt?.toISOString() ?? null,
-    surveyCloseAt: e.surveyCloseAt?.toISOString() ?? null,
-    resultsPublishedAt: e.resultsPublishedAt?.toISOString() ?? null,
-    priorEditionId: e.priorEditionId,
-    lockedAt: e.lockedAt?.toISOString() ?? null,
-    lockedBy: e.lockedBy,
-    createdAt: e.createdAt.toISOString(),
-    updatedAt: e.updatedAt.toISOString(),
+    id: action.id,
+    reason,
+    requestedAt: action.requestedAt.toISOString(),
+    requestedBy: {
+      id: action.requestedBy,
+      displayName: requester?.displayName ?? 'Unknown',
+      org: requester?.organization ?? null,
+    },
   };
 }
 
 export const editionRoutes: FastifyPluginAsyncZod = async (app) => {
+  // List editions — the admin frontend uses this to locate the current edition.
   app.get(
     '/editions',
-    { preHandler: [app.authenticate], schema: { response: { 200: z.array(EditionSchema) } } },
+    {
+      preHandler: [app.authenticate],
+      schema: {
+        response: {
+          200: z.array(
+            z.object({
+              id: z.string().uuid(),
+              label: z.string(),
+              status: z.enum(['draft', 'open', 'locked', 'archived']),
+            }),
+          ),
+        },
+      },
+    },
     async (_request, reply) => {
       const editions = await listEditions(getPool());
-      return reply.send(editions.map(serializeEdition));
+      return reply.send(editions.map((e) => ({ id: e.id, label: e.label, status: e.status })));
     },
   );
 
+  // Full state of one edition: dates, floors, frozen status, pending lock.
   app.get(
     '/editions/:id',
     {
       preHandler: [app.authenticate],
       schema: {
         params: z.object({ id: z.string().uuid() }),
-        response: { 200: EditionSchema },
+        response: { 200: EditionDetailSchema },
       },
     },
     async (request, reply) => {
-      const edition = await getEditionById(getPool(), request.params.id);
-      if (!edition)
-        return (reply as FastifyReply).status(404).send({ error: 'Not Found', statusCode: 404 });
-      return reply.send(serializeEdition(edition));
+      const pool = getPool();
+      const edition = await getEditionById(pool, request.params.id);
+      if (!edition) return not(reply, 404, 'Not Found', 'Edition not found');
+
+      const [floors, frozen, pending] = await Promise.all([
+        listSampleFloors(pool, edition.id),
+        isEditionInstrumentSetFrozen(pool, edition.id),
+        getPendingCriticalActionForEdition(pool, edition.id, EDITION_LOCK_ACTION),
+      ]);
+
+      return reply.send({
+        id: edition.id,
+        label: edition.label,
+        status: edition.status,
+        surveyOpenAt: edition.surveyOpenAt?.toISOString() ?? null,
+        surveyCloseAt: edition.surveyCloseAt?.toISOString() ?? null,
+        lockedAt: edition.lockedAt?.toISOString() ?? null,
+        frozen,
+        floors: floors.map((f) => ({ category: f.category, floorValue: f.floorValue })),
+        pendingLock: await serializePending(pool, pending),
+      });
     },
   );
 
-  app.post(
-    '/editions',
+  // Set sample floors (draft-only, enforced by the service). Accepts one or more.
+  app.patch(
+    '/editions/:id/floors',
     {
       preHandler: [app.authenticate],
       schema: {
-        body: CreateEditionBody,
-        response: { 201: EditionSchema },
+        params: z.object({ id: z.string().uuid() }),
+        body: z.object({ floors: z.array(FloorSchema).min(1) }),
+        response: { 200: z.object({ floors: z.array(FloorSchema) }) },
       },
     },
     async (request, reply) => {
       const pool = getPool();
       const rbac = await loadRbacContext(pool, request.user.sub);
-      requirePermission(rbac, 'edition:create');
-
-      const edition = await createEdition(pool, {
-        label: request.body.label,
-        priorEditionId: request.body.priorEditionId ?? null,
+      const ctx = { ipAddress: request.ip, userAgent: request.headers['user-agent'] ?? null };
+      for (const f of request.body.floors) {
+        await setSampleFloor(pool, rbac, request.params.id, f.category, f.floorValue, ctx);
+      }
+      const floors = await listSampleFloors(pool, request.params.id);
+      return reply.send({
+        floors: floors.map((f) => ({ category: f.category, floorValue: f.floorValue })),
       });
-
-      await writeAudit(pool, {
-        actorId: request.user.sub,
-        actionType: 'edition.created',
-        entityType: 'edition',
-        entityId: edition.id,
-        newValue: { label: edition.label },
-        ipAddress: request.ip,
-        userAgent: request.headers['user-agent'] ?? null,
-      });
-
-      return reply.status(201).send(serializeEdition(edition));
     },
   );
 
-  app.post(
-    '/editions/:id/instrument-snapshots',
+  // Set the last day for returns (editable while not locked, enforced by service).
+  app.patch(
+    '/editions/:id/closing-date',
     {
       preHandler: [app.authenticate],
       schema: {
         params: z.object({ id: z.string().uuid() }),
-        body: FreezeSnapshotBody,
+        body: z.object({ closingDate: z.string().date() }),
+        response: { 200: z.object({ surveyCloseAt: z.string().nullable() }) },
+      },
+    },
+    async (request, reply) => {
+      const pool = getPool();
+      const rbac = await loadRbacContext(pool, request.user.sub);
+      const closesAt = new Date(`${request.body.closingDate}T00:00:00.000Z`);
+      const updated = await setClosingDate(pool, rbac, request.params.id, closesAt, {
+        ipAddress: request.ip,
+        userAgent: request.headers['user-agent'] ?? null,
+      });
+      return reply.send({ surveyCloseAt: updated.surveyCloseAt?.toISOString() ?? null });
+    },
+  );
+
+  // Request the lock (maker step).
+  app.post(
+    '/editions/:id/lock/request',
+    {
+      preHandler: [app.authenticate],
+      schema: {
+        params: z.object({ id: z.string().uuid() }),
+        body: z.object({ reason: z.string() }),
+        response: { 201: z.object({ criticalActionId: z.string().uuid() }) },
+      },
+    },
+    async (request, reply) => {
+      const pool = getPool();
+      const rbac = await loadRbacContext(pool, request.user.sub);
+      const action = await requestLock(pool, rbac, request.params.id, request.body.reason, {
+        ipAddress: request.ip,
+        userAgent: request.headers['user-agent'] ?? null,
+      });
+      return reply.status(201).send({ criticalActionId: action.id });
+    },
+  );
+
+  // Decide the lock (checker step). Self-decide is rejected by the service.
+  app.post(
+    '/editions/:id/lock/:actionId/decide',
+    {
+      preHandler: [app.authenticate],
+      schema: {
+        params: z.object({ id: z.string().uuid(), actionId: z.string().uuid() }),
+        body: z.object({ approved: z.boolean(), rejectionReason: z.string().optional() }),
         response: {
-          201: z.object({
-            id: z.string().uuid(),
-            editionId: z.string().uuid(),
-            instrumentDefinitionVersionId: z.string().uuid(),
-            frozenAt: z.string(),
+          200: z.object({
+            status: z.enum(['approved', 'rejected']),
+            editionStatus: z.enum(['draft', 'open', 'locked', 'archived']),
           }),
         },
       },
@@ -151,116 +219,18 @@ export const editionRoutes: FastifyPluginAsyncZod = async (app) => {
     async (request, reply) => {
       const pool = getPool();
       const rbac = await loadRbacContext(pool, request.user.sub);
-      requirePermission(rbac, 'edition:manage-instruments');
-
-      const edition = await getEditionById(pool, request.params.id);
-      if (!edition)
-        return (reply as FastifyReply).status(404).send({ error: 'Not Found', statusCode: 404 });
-      if (edition.status === 'locked' || edition.status === 'archived') {
-        return (reply as FastifyReply)
-          .status(409)
-          .send({ error: 'Conflict', message: 'Edition is locked or archived' });
-      }
-
-      const snapshot = await createEditionInstrumentSnapshot(pool, {
-        editionId: edition.id,
-        instrumentDefinitionVersionId: request.body.instrumentDefinitionVersionId,
-        frozenBy: request.user.sub,
+      const { action, edition } = await decideLock(
+        pool,
+        rbac,
+        request.params.id,
+        request.params.actionId,
+        { approved: request.body.approved, rejectionReason: request.body.rejectionReason },
+        { ipAddress: request.ip, userAgent: request.headers['user-agent'] ?? null },
+      );
+      return reply.send({
+        status: action.status as 'approved' | 'rejected',
+        editionStatus: edition.status,
       });
-
-      await writeAudit(pool, {
-        actorId: request.user.sub,
-        actionType: 'edition.instrument_snapshot.frozen',
-        entityType: 'edition_instrument_snapshot',
-        entityId: snapshot.id,
-        editionId: edition.id,
-        newValue: { instrumentDefinitionVersionId: snapshot.instrumentDefinitionVersionId },
-        ipAddress: request.ip,
-        userAgent: request.headers['user-agent'] ?? null,
-      });
-
-      return reply.status(201).send({
-        id: snapshot.id,
-        editionId: snapshot.editionId,
-        instrumentDefinitionVersionId: snapshot.instrumentDefinitionVersionId,
-        frozenAt: snapshot.frozenAt.toISOString(),
-      });
-    },
-  );
-
-  app.post(
-    '/editions/:id/lock-requests',
-    {
-      preHandler: [app.authenticate],
-      schema: {
-        params: z.object({ id: z.string().uuid() }),
-        body: RequestLockBody,
-        response: { 201: z.object({ criticalActionId: z.string().uuid() }) },
-      },
-    },
-    async (request, reply) => {
-      const pool = getPool();
-      const rbac = await loadRbacContext(pool, request.user.sub);
-
-      const edition = await getEditionById(pool, request.params.id);
-      if (!edition)
-        return (reply as FastifyReply).status(404).send({ error: 'Not Found', statusCode: 404 });
-      if (edition.status !== 'open') {
-        return (reply as FastifyReply)
-          .status(409)
-          .send({ error: 'Conflict', message: 'Edition must be open to request lock' });
-      }
-
-      const action = await requestCriticalAction(pool, rbac, {
-        actionType: 'edition:lock',
-        payload: { editionId: edition.id, reason: request.body.reason },
-        editionId: edition.id,
-      });
-
-      await writeAudit(pool, {
-        actorId: request.user.sub,
-        actionType: 'critical_action.requested',
-        entityType: 'critical_action',
-        entityId: action.id,
-        editionId: edition.id,
-        newValue: { actionType: action.actionType },
-        reason: request.body.reason,
-        ipAddress: request.ip,
-        userAgent: request.headers['user-agent'] ?? null,
-      });
-
-      return reply.status(201).send({ criticalActionId: action.id });
-    },
-  );
-
-  app.post(
-    '/critical-actions/:id/approve',
-    {
-      preHandler: [app.authenticate],
-      schema: {
-        params: z.object({ id: z.string().uuid() }),
-        response: { 200: z.object({ status: z.string() }) },
-      },
-    },
-    async (request, reply) => {
-      const pool = getPool();
-      const rbac = await loadRbacContext(pool, request.user.sub);
-
-      const action = await approveCriticalActionWithRbac(pool, rbac, request.params.id);
-
-      await writeAudit(pool, {
-        actorId: request.user.sub,
-        actionType: 'critical_action.approved',
-        entityType: 'critical_action',
-        entityId: action.id,
-        editionId: action.editionId,
-        oldValue: { status: 'pending' },
-        newValue: { status: 'approved' },
-        ipAddress: request.ip,
-        userAgent: request.headers['user-agent'] ?? null,
-      });
-
-      return reply.send({ status: action.status });
     },
   );
 };

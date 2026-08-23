@@ -16,6 +16,7 @@ const LoginResponse = z.object({
     id: z.string(),
     email: z.string(),
     displayName: z.string(),
+    org: z.string().nullable(),
   }),
 });
 
@@ -66,11 +67,17 @@ export const authRoutes: FastifyPluginAsyncZod = async (app) => {
         sub: user.id,
         email: user.email,
         displayName: user.displayName,
+        org: user.organization,
       });
 
       return reply.send({
         token,
-        user: { id: user.id, email: user.email, displayName: user.displayName },
+        user: {
+          id: user.id,
+          email: user.email,
+          displayName: user.displayName,
+          org: user.organization,
+        },
       });
     },
   );

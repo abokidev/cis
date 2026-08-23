@@ -14,6 +14,12 @@ export type PermissionType =
 
 export type InstrumentType = 'survey' | 'institutional' | 'regulator';
 
+/** Respondent categories a sample-sufficiency floor can be set for. */
+export type SampleFloorCategory = 'firm' | 'retail' | 'local_institution' | 'foreign_institution';
+
+/** Question response type (illustrative in Phase 1; the controlled set lands in Phase 2). */
+export type QuestionType = 'scale' | 'single_choice' | 'rank' | 'open_text';
+
 // ─── Core entities ────────────────────────────────────────────────────────────
 
 export interface Organization {
@@ -56,7 +62,56 @@ export interface InstrumentDefinition {
   code: string;
   name: string;
   instrumentType: InstrumentType;
+  /**
+   * Whether this instrument's answers may ever feed a calculation/index.
+   * This is a real gate (enforced when calculation definitions are built in
+   * Phase 4), not a UI badge. Six survey instruments are scored; the three
+   * regulator/contextual instruments are not.
+   */
+  scored: boolean;
   createdAt: Date;
+}
+
+/**
+ * A single question within an instrument.
+ *
+ * `is_drg_ops` marks a Dragnet operational question folded invisibly into a
+ * scored instrument's flow. DRG-OPS questions are never scored, carry no
+ * respondent-visible marker distinguishing them from signed questions, and
+ * must never surface in any public/firm-facing report or evidence pack. That
+ * exclusion is enforced structurally by the public-question query layer.
+ *
+ * Phase 1 seeds only illustrative/placeholder content (flagged via
+ * `isPlaceholder`). The controlled question bank arrives in Phase 2 from the
+ * Survey Register — this table's shape exists now so the DRG-OPS exclusion is
+ * provable today.
+ */
+export interface InstrumentQuestion {
+  id: string;
+  instrumentDefinitionId: string;
+  questionCode: string;
+  promptText: string;
+  questionType: QuestionType;
+  displayOrder: number;
+  scored: boolean;
+  isDrgOps: boolean;
+  isPlaceholder: boolean;
+  createdAt: Date;
+}
+
+/**
+ * Sample-sufficiency floor for one respondent category in one edition.
+ * Editable only while the parent edition is in draft — setting or changing a
+ * floor after collection has opened is prohibited (it would let someone choose
+ * what is reportable after seeing what the data says).
+ */
+export interface EditionSampleFloor {
+  id: string;
+  editionId: string;
+  category: SampleFloorCategory;
+  floorValue: number;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 export interface InstrumentDefinitionVersion {
@@ -88,6 +143,8 @@ export interface User {
   /** Never returned to the client. */
   passwordHash: string;
   displayName: string;
+  /** Organisation the user belongs to (e.g. 'CIS', 'Dragnet'). */
+  organization: string | null;
   isActive: boolean;
   lastLoginAt: Date | null;
   createdAt: Date;
@@ -170,4 +227,5 @@ export interface SessionPayload {
   sub: string;
   email: string;
   displayName: string;
+  org: string | null;
 }

@@ -12,6 +12,7 @@ export default defineWorkspace([
         'packages/db/tests/**/*.test.ts',
         'packages/audit/tests/**/*.test.ts',
         'packages/auth/tests/**/*.test.ts',
+        'packages/domain/tests/**/*.test.ts',
       ],
       globals: true,
       environment: 'node',

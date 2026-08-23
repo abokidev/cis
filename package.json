@@ -29,7 +29,7 @@
     "prettier": "^3.3.3",
     "turbo": "^2.1.2",
     "typescript": "^5.5.4",
-    "vitest": "^2.0.5"
+    "vitest": "^3.2.7"
   },
   "lint-staged": {
     "*.{ts,tsx,js,cjs,mjs}": [
@@ -41,7 +41,12 @@
     ]
   },
   "pnpm": {
-    "overrides": {},
+    "overrides": {
+      "glob": "^11.1.0",
+      "vitest": "^3.2.7",
+      "vite": "^6.4.3",
+      "esbuild": "^0.25.0"
+    },
     "onlyBuiltDependencies": [
       "argon2",
       "esbuild"

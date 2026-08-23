@@ -14,6 +14,7 @@ interface RawInstrumentDefRow {
   code: string;
   name: string;
   instrument_type: string;
+  scored: boolean;
   created_at: Date;
 }
 
@@ -43,6 +44,7 @@ function mapDef(row: RawInstrumentDefRow): InstrumentDefinition {
     code: row.code,
     name: row.name,
     instrumentType: row.instrument_type as InstrumentType,
+    scored: row.scored,
     createdAt: row.created_at,
   };
 }
@@ -75,18 +77,43 @@ function mapSnapshot(row: RawSnapshotRow): EditionInstrumentSnapshot {
 
 export async function createInstrumentDefinition(
   pool: Pool,
-  data: { code: string; name: string; instrumentType?: InstrumentType },
+  data: { code: string; name: string; instrumentType?: InstrumentType; scored?: boolean },
 ): Promise<InstrumentDefinition> {
   const result = await query<RawInstrumentDefRow>(
     pool,
-    `INSERT INTO instrument_definitions (code, name, instrument_type)
-     VALUES ($1, $2, $3)
+    `INSERT INTO instrument_definitions (code, name, instrument_type, scored)
+     VALUES ($1, $2, $3, $4)
      RETURNING *`,
-    [data.code, data.name, data.instrumentType ?? 'survey'],
+    [data.code, data.name, data.instrumentType ?? 'survey', data.scored ?? true],
   );
   const row = result.rows[0];
   if (!row) throw new Error('Instrument definition insert returned no rows');
   return mapDef(row);
+}
+
+export async function listInstrumentDefinitions(pool: Pool): Promise<InstrumentDefinition[]> {
+  const result = await query<RawInstrumentDefRow>(
+    pool,
+    'SELECT * FROM instrument_definitions ORDER BY code',
+  );
+  return result.rows.map(mapDef);
+}
+
+/** Latest (highest version_number) version for an instrument definition. */
+export async function getLatestInstrumentVersion(
+  pool: Pool,
+  instrumentDefinitionId: string,
+): Promise<InstrumentDefinitionVersion | null> {
+  const result = await query<RawInstrumentDefVersionRow>(
+    pool,
+    `SELECT * FROM instrument_definition_versions
+     WHERE instrument_definition_id = $1
+     ORDER BY version_number DESC
+     LIMIT 1`,
+    [instrumentDefinitionId],
+  );
+  const row = result.rows[0];
+  return row ? mapVersion(row) : null;
 }
 
 export async function createInstrumentDefinitionVersion(
@@ -165,4 +192,86 @@ export async function getEditionInstrumentSnapshots(
     [editionId],
   );
   return result.rows.map(mapSnapshot);
+}
+
+/**
+ * The single authoritative answer to "is this edition's survey set frozen?".
+ *
+ * Frozen means every current instrument definition has a snapshot row for this
+ * edition. Freeze is all-or-nothing (decideFreeze snapshots every instrument in
+ * one transaction), so in practice snapshots either cover all instruments or
+ * none — but requiring full coverage keeps this honest if instruments are ever
+ * added between freeze attempts. This is a derived query, not a mutable flag
+ * scattered across the schema.
+ */
+export async function isEditionInstrumentSetFrozen(
+  pool: Pool,
+  editionId: string,
+): Promise<boolean> {
+  const result = await query<{ total: string; frozen: string }>(
+    pool,
+    `SELECT
+       (SELECT COUNT(*) FROM instrument_definitions)::text AS total,
+       (SELECT COUNT(DISTINCT idv.instrument_definition_id)
+          FROM edition_instrument_snapshots eis
+          JOIN instrument_definition_versions idv
+            ON idv.id = eis.instrument_definition_version_id
+         WHERE eis.edition_id = $1)::text AS frozen`,
+    [editionId],
+  );
+  const row = result.rows[0];
+  if (!row) return false;
+  const total = parseInt(row.total, 10);
+  const frozen = parseInt(row.frozen, 10);
+  return total > 0 && frozen >= total;
+}
+
+/**
+ * Instruments as shown on the Survey setup surface for an edition: definition
+ * metadata plus whether that instrument is frozen into this edition. Question
+ * text is not returned here (that is Phase 2 runtime).
+ */
+export interface EditionInstrumentView {
+  definition: InstrumentDefinition;
+  frozen: boolean;
+  questionCount: number;
+  /** Latest version's schema snapshot — carries display metadata (feeds, respondent). */
+  meta: Record<string, unknown>;
+}
+
+export async function getEditionInstrumentViews(
+  pool: Pool,
+  editionId: string,
+): Promise<EditionInstrumentView[]> {
+  const result = await query<
+    RawInstrumentDefRow & {
+      frozen: boolean;
+      question_count: string;
+      meta: Record<string, unknown> | null;
+    }
+  >(
+    pool,
+    `SELECT d.*,
+            EXISTS (
+              SELECT 1 FROM edition_instrument_snapshots eis
+              JOIN instrument_definition_versions idv
+                ON idv.id = eis.instrument_definition_version_id
+              WHERE eis.edition_id = $1
+                AND idv.instrument_definition_id = d.id
+            ) AS frozen,
+            (SELECT COUNT(*) FROM instrument_questions q
+              WHERE q.instrument_definition_id = d.id)::text AS question_count,
+            (SELECT idv.schema_snapshot FROM instrument_definition_versions idv
+              WHERE idv.instrument_definition_id = d.id
+              ORDER BY idv.version_number DESC LIMIT 1) AS meta
+       FROM instrument_definitions d
+      ORDER BY d.code`,
+    [editionId],
+  );
+  return result.rows.map((row) => ({
+    definition: mapDef(row),
+    frozen: row.frozen,
+    questionCount: parseInt(row.question_count, 10),
+    meta: row.meta ?? {},
+  }));
 }

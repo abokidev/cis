@@ -4,6 +4,7 @@ import { registerSecurity } from './plugins/security';
 import { registerAuth } from './plugins/auth-plugin';
 import { authRoutes } from './routes/auth';
 import { editionRoutes } from './routes/editions';
+import { instrumentRoutes } from './routes/instruments';
 
 export async function buildServer() {
   const app = Fastify({
@@ -31,10 +32,14 @@ export async function buildServer() {
 
   await app.register(authRoutes);
   await app.register(editionRoutes);
+  await app.register(instrumentRoutes);
 
-  app.setErrorHandler<Error>((error, _request, reply) => {
-    const statusCode = (error as Error & { statusCode?: number }).statusCode ?? 500;
+  app.setErrorHandler<Error>((error, request, reply) => {
+    const statusCode = resolveStatusCode(error);
     const message = statusCode < 500 ? error.message : 'Internal server error';
+    if (statusCode >= 500) {
+      request.log.error(error);
+    }
     void reply.status(statusCode).send({
       error: error.name ?? 'Error',
       message,
@@ -43,4 +48,27 @@ export async function buildServer() {
   });
 
   return app;
+}
+
+/**
+ * Map known error types to HTTP status codes. Domain rule violations and
+ * auth/maker-checker errors become 4xx; everything unrecognized is 500.
+ * Matched by error name so this stays decoupled from the domain package.
+ */
+function resolveStatusCode(error: Error & { statusCode?: number }): number {
+  if (typeof error.statusCode === 'number') return error.statusCode;
+  switch (error.name) {
+    case 'PermissionDeniedError':
+    case 'MakerCheckerViolationError':
+      return 403;
+    case 'InvalidReasonError':
+      return 400;
+    case 'EditionStateError':
+    case 'InstrumentsNotFrozenError':
+    case 'CriticalActionStateError':
+    case 'DomainError':
+      return 409;
+    default:
+      return 500;
+  }
 }

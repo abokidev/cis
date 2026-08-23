@@ -49,7 +49,7 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 9
+          version: 10
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -72,7 +72,7 @@ jobs:
           DATABASE_URL: postgres://cis:cis_test_password@localhost:5432/cis_test
 
       - name: Test
-        run: pnpm vitest run --workspace vitest.workspace.ts
+        run: pnpm test
 
       - name: Dependency audit
         run: pnpm audit --audit-level=high

@@ -870,3 +870,83 @@ is lost and neither silently wins.
 - **Nothing here computes an official score.** Every candidate value is
   `TEST_UNAPPROVED` and cannot leave the framework until the methodology is
   approved and its `PENDING_VALIDATOR` parameters are set.
+
+## Regulator Engagement (Phase 12 — UX-OPS-007)
+
+The surface for engaging the three regulators (SEC, NGX, CSCS) that contribute
+the Institutional Perspectives section. **One page per regulator, two sections in
+fixed order** — the contact, then the survey — plus an append-only free-text
+history. Three states only: no contact → contact added → invited, with the
+terminal outcomes confirmed / declined. Reached from Study Operations; the
+`RegulatorsPage` admin tab is a faithful port of the approved v2.5 artefact, and
+the authoritative behaviour lives in `regulator-engagement-service.ts` + the
+`regulators.ts` API routes.
+
+### It closes Phase 10's `target_by` gap directly
+
+Phase 10 flagged `institution_engagement.target_by` as DECISION NEEDED with no
+owning UI. **This surface is that UI.** Issuing a survey link is where the study
+team sets that regulator's own lead time, and the write lands in the SAME
+`institution_engagement` row Phase 10's condition 16 reads — there is no second,
+parallel date field. This phase extends that one row with the named contact and
+the issued survey link, and formally takes over the two artefacts Phases 9/10 had
+left provisional (the raw institution-engagement setter that used to sit on the
+mission-board route is gone — a lead time is now only ever set through the gated
+`issue-link` flow). Condition 16, permanently inert while `target_by` was NULL,
+becomes evaluable the moment a real date is set here (gate test proves both
+halves).
+
+### Contact-before-survey ordering is a real server-side precondition
+
+`issueSurveyLink` refuses (`CONTACT_REQUIRED_FIRST`) unless a saved contact
+exists — the order on the page is the process, not just UI sequencing. Contact
+validation enforces name, role, a valid email, a valid phone (**≥10 digits after
+stripping non-numeric characters**) and a "how we got to them" note; the email
+and phone checks are independent hard failures with their own codes
+(`CONTACT_EMAIL_INVALID`, `CONTACT_PHONE_INVALID`) — "a number too short to send
+a text is worse than no number: it looks like a working channel."
+
+### Named individuals — the one deliberate exception
+
+This is the **only** place in the organiser estate that holds a named individual
+(who / role / email / phone) outside the firm register, because engagement is a
+relationship. It is **not** tokenised or anonymised. The respondent that backs
+the survey link, by contrast, stays anonymous — the named relationship lives on
+the engagement record, the survey token does not carry it.
+
+### A real per-regulator survey token (unblocks UX-INS-003)
+
+Issuing a link mints a genuine respondent for the regulator's `I-{code}`
+instrument and a `recovery_token` that resolves via `GET /journeys/resume/:token`
+(`getResumeByToken`) — a working entry into the Phase 3 survey runtime, not a
+placeholder URL.
+
+### Referral is cancel-and-restart; declined is terminal; reminders stay loose
+
+- **Referral**: changing the contact on an already-invited regulator IS the
+  referral — the earlier link dies (its token is revoked, any partial answers
+  lost), `target_by` is cleared, the survey resets to `none`, and the loss is
+  logged. No multi-hop chain is modelled — it's three phone calls, not a
+  workflow.
+- **Declined** is a distinct, terminal outcome for the edition: no reminder or
+  issue action is offered against a declined regulator.
+- **Reminders** are two loose channel actions (email+text together, or text-only
+  for a clearly-unread inbox) — deliberately NOT a numbered escalation tier.
+  Everything else about chasing is free text in the append-only history, which is
+  what a phone call produces — no typed contact-event taxonomy.
+
+### Internal "Regulators" label never reaches a reader
+
+The internal grouping label is loose ("Regulators", which is imprecise for CSCS —
+clearing and settlement infrastructure). That looseness is accepted deliberately
+for internal ops, and a regression test confirms Phase 6's published PUB_10
+Institutional Perspectives section still frames CSCS as **clearing and
+settlement** (market infrastructure), never mislabelling it a regulator.
+
+### ⚠️ Open item — declined-regulator re-approach (unresolved study decision)
+
+**Whether a regulator that declined in one edition can be re-approached in a
+later edition is a study decision, and is deliberately NOT built here.** No
+re-approach workflow and no permanent cross-edition lockout is invented — declined
+is simply terminal within its edition. Flagged as an open item, consistent with
+every other genuinely unresolved item on the programme.

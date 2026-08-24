@@ -31,6 +31,7 @@ export async function truncateAllTables(pool: Pool): Promise<void> {
   await pool.query(`
     TRUNCATE TABLE
       comparison_runs,
+      regulator_engagement_history,
       institution_engagement,
       message_recipients,
       message_batches,

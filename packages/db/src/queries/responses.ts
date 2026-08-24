@@ -339,6 +339,12 @@ export async function setReportDelivery(
   return mapRespondent(row);
 }
 
+/** Kill a respondent's recovery token so its survey link no longer resolves
+ *  (used by a regulator referral: the earlier link dies with its partial answers). */
+export async function revokeRespondentToken(pool: Pool, id: string): Promise<void> {
+  await query(pool, 'UPDATE respondents SET recovery_token = NULL WHERE id = $1', [id]);
+}
+
 export async function getRespondentByRecoveryToken(
   pool: Pool,
   token: string,

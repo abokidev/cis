@@ -13,6 +13,7 @@ import { ScoresSignoffPage } from './pages/ScoresSignoffPage';
 import { PeopleAccessPage } from './pages/PeopleAccessPage';
 import { InvitationsPage } from './pages/InvitationsPage';
 import { MissionBoardPage } from './pages/MissionBoardPage';
+import { RegulatorsPage } from './pages/RegulatorsPage';
 
 type Tab =
   | 'board'
@@ -22,6 +23,7 @@ type Tab =
   | 'firmteam'
   | 'people'
   | 'invitations'
+  | 'regulators'
   | 'scoring'
   | 'national'
   | 'firmreports';
@@ -149,6 +151,14 @@ export function App(): JSX.Element {
         <span aria-hidden="true">·</span>
         <button
           type="button"
+          onClick={() => setTab('regulators')}
+          style={tab === 'regulators' ? { color: 'var(--dragnet-black)' } : undefined}
+        >
+          Regulators
+        </button>
+        <span aria-hidden="true">·</span>
+        <button
+          type="button"
           onClick={() => setTab('scoring')}
           style={tab === 'scoring' ? { color: 'var(--dragnet-black)' } : undefined}
         >
@@ -188,6 +198,8 @@ export function App(): JSX.Element {
         <PeopleAccessPage />
       ) : tab === 'invitations' ? (
         <InvitationsPage />
+      ) : tab === 'regulators' ? (
+        <RegulatorsPage />
       ) : tab === 'scoring' ? (
         <ScoresSignoffPage />
       ) : tab === 'national' ? (

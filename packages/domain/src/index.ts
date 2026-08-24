@@ -243,3 +243,19 @@ export type {
   LikeForLike,
   CandidateRunResult,
 } from './candidate-scoring-service';
+
+// ── Phase 12: Regulator engagement (UX-OPS-007) ──────────────────────────────
+export {
+  listRegulators,
+  getRegulator,
+  saveContact,
+  issueSurveyLink,
+  sendReminder,
+  sendTextReminder,
+  markDeclined,
+  markSubmitted,
+  recordHistory,
+  REGULATOR_CODES,
+  REGULATOR_META,
+  RegulatorEngagementError,
+} from './regulator-engagement-service';

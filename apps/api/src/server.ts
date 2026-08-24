@@ -14,6 +14,7 @@ import { scoringRoutes } from './routes/scoring';
 import { peopleRoutes } from './routes/people';
 import { invitationsRoutes } from './routes/invitations';
 import { missionBoardRoutes } from './routes/mission-board';
+import { regulatorRoutes } from './routes/regulators';
 
 export async function buildServer() {
   const app = Fastify({
@@ -51,6 +52,7 @@ export async function buildServer() {
   await app.register(peopleRoutes);
   await app.register(invitationsRoutes);
   await app.register(missionBoardRoutes);
+  await app.register(regulatorRoutes);
 
   app.setErrorHandler<Error>((error, request, reply) => {
     const statusCode = resolveStatusCode(error);
@@ -101,6 +103,7 @@ function resolveStatusCode(error: Error & { statusCode?: number }): number {
     case 'ScoringBlockedError':
     case 'PeopleAccessError':
     case 'InvitationsError':
+    case 'RegulatorEngagementError':
     case 'DomainError':
       return 409;
     default:

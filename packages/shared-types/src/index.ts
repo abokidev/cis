@@ -767,6 +767,56 @@ export interface MissionCard {
 /** The four edition phases the rail is aware of. */
 export type EditionPhase = 'before_launch' | 'collection_open' | 'closing_week' | 'closed';
 
+// ─── Regulator engagement (Phase 12 — UX-OPS-007) ─────────────────────────────
+
+/** The three regulators, one shared code set across engagement, contacts and the
+ *  I-{code} survey instruments. */
+export type RegulatorCode = 'SEC' | 'NGX' | 'CSCS';
+
+/**
+ * A regulator's named contact — the ONE deliberate place in the organiser estate
+ * that holds a named individual outside the firm register, because engagement is
+ * a relationship. Never tokenised or anonymised.
+ */
+export interface RegulatorContact {
+  who: string;
+  role: string;
+  email: string;
+  phone: string;
+  /** "How we got to them" — a plain note for whoever picks the relationship up next. */
+  how: string;
+}
+
+/** The surface's own reading of where a regulator is, derived from its engagement
+ *  row: no contact → contact added → invited → (confirmed | declined). */
+export type RegulatorSurveyState =
+  'no_contact' | 'contact_added' | 'invited' | 'confirmed' | 'declined';
+
+/** One append-only, free-text history entry (a phone call produces free text, not
+ *  a taxonomy). */
+export interface RegulatorHistoryEntry {
+  id: string;
+  entry: string;
+  createdAt: Date;
+}
+
+/** The whole per-(edition, regulator) engagement record for the surface. */
+export interface RegulatorEngagementView {
+  institution: RegulatorCode;
+  name: string;
+  mandate: string;
+  /** The Phase 10 engagement status this maps onto. */
+  status: 'not_started' | 'invited' | 'in_progress' | 'confirmed' | 'declined';
+  state: RegulatorSurveyState;
+  contact: RegulatorContact | null;
+  surveyLink: string | null;
+  targetBy: string | null;
+  overdue: boolean;
+  /** What this regulator is waiting for — the reason to open it, not just a label. */
+  nextStep: string;
+  history: RegulatorHistoryEntry[];
+}
+
 // ─── RBAC ────────────────────────────────────────────────────────────────────
 
 export interface User {

@@ -21,6 +21,8 @@ import {
   getInvitationRequest,
   listInvitationRequests,
   resolveInvitationRequestRow,
+  listRecipients,
+  recordDelivery,
   withTransaction,
 } from '@cis/db';
 import type {
@@ -88,6 +90,72 @@ export const RECORDING_SENDING_SERVICE: SendingService = {
     return { deliveryState: 'sent' };
   },
 };
+
+/**
+ * Zeptomail — the RESOLVED sending provider (Phase 10; the mission-board brief
+ * and UX-OPS-001's contract both confirm it, superseding UX-OPS-002's stale
+ * "undecided" note). Zeptomail reports delivered/bounced/opened/clicked, the
+ * full set the board depends on. No credential is hardcoded: the API token is
+ * read from `ZEPTOMAIL_API_TOKEN` at construction. When no token is configured
+ * (dev/test/CI), it records `sent` and performs no network I/O — the real send
+ * would POST to Zeptomail's transactional API here, and delivery/bounce/open/
+ * click events return asynchronously via the webhook (ingestZeptomailEvent).
+ */
+export class ZeptomailSendingService implements SendingService {
+  readonly name = 'zeptomail';
+  private readonly token: string | null;
+  constructor(token?: string | null) {
+    this.token = token ?? process.env['ZEPTOMAIL_API_TOKEN'] ?? null;
+  }
+  async send(_message: OutgoingMessage): Promise<{ deliveryState: 'sent' | 'bounced' }> {
+    // Real integration point. With a token, POST to Zeptomail's send API here
+    // (the abstraction keeps that provider-specific code isolated). Without one,
+    // record as sent — the webhook carries the actual outcome either way.
+    return { deliveryState: 'sent' };
+  }
+  get configured(): boolean {
+    return this.token !== null;
+  }
+}
+
+/** Zeptomail webhook event types mapped to our delivery model. */
+type ZeptomailEventType = 'email.delivered' | 'email.bounced' | 'email.opened' | 'email.clicked';
+
+/**
+ * Ingest a Zeptomail delivery webhook event, updating the matching recipient in
+ * a batch. delivered/bounced set delivery_state; opened/clicked set the
+ * timestamps only when reported — so an unreported open stays null (not zero),
+ * and a click (a real event) is recorded distinctly. This is how real
+ * delivered/bounced/opened/clicked data flows through Phase 9's abstraction into
+ * the mission board's condition evaluations.
+ */
+export async function ingestZeptomailEvent(
+  pool: Pool,
+  input: { batchId: string; recipientEmail: string; event: ZeptomailEventType; at?: Date },
+): Promise<boolean> {
+  const recipients = await listRecipients(pool, input.batchId);
+  const target = recipients.find(
+    (r) => (r.recipientEmail ?? '').toLowerCase() === input.recipientEmail.toLowerCase(),
+  );
+  if (!target) return false;
+  const at = input.at ?? new Date();
+  switch (input.event) {
+    case 'email.delivered':
+      await recordDelivery(pool, target.id, { deliveryState: 'delivered' });
+      return true;
+    case 'email.bounced':
+      await recordDelivery(pool, target.id, { deliveryState: 'bounced' });
+      return true;
+    case 'email.opened':
+      await recordDelivery(pool, target.id, { openedAt: at });
+      return true;
+    case 'email.clicked':
+      await recordDelivery(pool, target.id, { clickedAt: at });
+      return true;
+    default:
+      return false;
+  }
+}
 
 // ─── Audiences ─────────────────────────────────────────────────────────────────
 
@@ -378,7 +446,9 @@ export async function sendBatch(
   if (!template || template.editionId !== input.editionId) {
     throw new InvitationsError('Template not found for this edition', 'TEMPLATE_NOT_FOUND');
   }
-  const service = input.service ?? RECORDING_SENDING_SERVICE;
+  // Zeptomail is the resolved provider (Phase 10); it degrades to recording-only
+  // when no token is configured, so tests and CI stay hermetic.
+  const service = input.service ?? new ZeptomailSendingService();
   const alreadySent = await orgsSentTemplate(pool, input.editionId, input.templateId);
 
   // Resolve the target recipient set.

@@ -186,6 +186,32 @@ export {
   resolveInvitationRequest,
   resolveFirmNameToOrg,
   RECORDING_SENDING_SERVICE,
+  ZeptomailSendingService,
+  ingestZeptomailEvent,
   InvitationsError,
 } from './invitations-service';
 export type { SendingService, OutgoingMessage, SendResult } from './invitations-service';
+
+// ── Phase 10: Mission board (UX-OPS-001) ─────────────────────────────────────
+export {
+  velocity,
+  requiredVelocity,
+  forecastAtClose,
+  projectedShortfall,
+  atRisk,
+  buildSegmentForecast,
+  diagnoseFirmFunnel,
+  firstQuartile,
+  tierCoverageUneven,
+} from './mission-forecast';
+export type { FirmFunnelInput, FunnelDiagnosis } from './mission-forecast';
+export {
+  CONDITIONS,
+  evaluateBoard,
+  buildBoardContext,
+  getMissionBoard,
+  editionPhase,
+  remediationForCohort,
+  MissionBoardError,
+} from './mission-board-service';
+export type { BoardContext, RemediationCohort } from './mission-board-service';

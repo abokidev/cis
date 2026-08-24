@@ -16,6 +16,8 @@ import {
   getPermissionByCode,
   grantPermissionToUser,
   seedInvitationDefaults,
+  seedInstitutionEngagement,
+  seedMissionBoardDependencies,
 } from '@cis/db';
 import { hashPassword } from '@cis/auth';
 import { EDITION_MANAGE_PERMISSION, EDITION_LOCK_ACTION } from './edition-service';
@@ -174,6 +176,12 @@ export async function seedReferenceData(pool: Pool): Promise<SeededReferenceData
   // ── Invitation templates + regulator contacts (Phase 9) ──────────────────────
   // Six per-firm-state templates and the three provisional regulator contacts.
   await seedInvitationDefaults(pool, edition.id);
+
+  // ── Mission board (Phase 10) ─────────────────────────────────────────────────
+  // Ten reporting-dependency rows (brief §3.3), and the three regulator
+  // engagement rows seeded structurally with NO target_by (DECISION NEEDED).
+  await seedMissionBoardDependencies(pool);
+  await seedInstitutionEngagement(pool, edition.id);
 
   // ── Controlled Survey Register (9 instruments, 90 questions) ──────────────────
   const instruments = await seedSurveyRegister(pool, maker.id);

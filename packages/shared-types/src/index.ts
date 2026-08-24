@@ -711,6 +711,46 @@ export interface InvitationRequestItem {
   createdAt: Date;
 }
 
+// ─── Mission board (Phase 10 — UX-OPS-001) ───────────────────────────────────
+
+export type MissionSegment = 'firm' | 'retail' | 'local_institution' | 'foreign_institution';
+
+/** A segment's forecast state, computed fresh each cycle — never stored. */
+export interface SegmentForecast {
+  segment: MissionSegment;
+  target: number;
+  current: number;
+  daysElapsed: number;
+  daysRemaining: number;
+  /** Undefined on day 0 (no forecast alerts that day). */
+  velocity: number | null;
+  requiredVelocity: number | null;
+  forecastAtClose: number | null;
+  projectedShortfall: number;
+  atRisk: boolean;
+}
+
+/** The six severity ranks (brief §5), rank 1 most consequential. */
+export type MissionSeverity = 1 | 2 | 3 | 4 | 5 | 6;
+
+/** One mission card — exactly six fields (brief §9). `expectedImpact` is omitted
+ *  (undefined) when there isn't enough history to compute it — never zero. A card
+ *  with no `recommendedAction` never reaches the board. */
+export interface MissionCard {
+  conditionId: number;
+  severity: MissionSeverity;
+  whatIsAtRisk: string;
+  evidence: string[];
+  consequence: string[];
+  why: string | null;
+  recommendedAction: { label: string; cohort: string; audienceId: string | null };
+  expectedImpact?: string;
+  projectedShortfall: number;
+}
+
+/** The four edition phases the rail is aware of. */
+export type EditionPhase = 'before_launch' | 'collection_open' | 'closing_week' | 'closed';
+
 // ─── RBAC ────────────────────────────────────────────────────────────────────
 
 export interface User {

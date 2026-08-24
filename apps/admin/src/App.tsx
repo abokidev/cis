@@ -12,8 +12,10 @@ import { FirmReportsPage } from './pages/FirmReportsPage';
 import { ScoresSignoffPage } from './pages/ScoresSignoffPage';
 import { PeopleAccessPage } from './pages/PeopleAccessPage';
 import { InvitationsPage } from './pages/InvitationsPage';
+import { MissionBoardPage } from './pages/MissionBoardPage';
 
 type Tab =
+  | 'board'
   | 'edition'
   | 'surveys'
   | 'renderer'
@@ -87,6 +89,14 @@ export function App(): JSX.Element {
       <nav className="crumbs" aria-label="Where you are">
         <span>Study operations</span>
         <span aria-hidden="true">›</span>
+        <button
+          type="button"
+          onClick={() => setTab('board')}
+          style={tab === 'board' ? { color: 'var(--dragnet-black)' } : undefined}
+        >
+          Mission board
+        </button>
+        <span aria-hidden="true">·</span>
         <span>Setup</span>
         <span aria-hidden="true">›</span>
         <button
@@ -164,6 +174,8 @@ export function App(): JSX.Element {
 
       {!editionId ? (
         <main>{loadError ? <div className="err">{loadError}</div> : <p>Loading…</p>}</main>
+      ) : tab === 'board' ? (
+        <MissionBoardPage />
       ) : tab === 'edition' ? (
         <EditionPage client={client} editionId={editionId} viewer={session.user} />
       ) : tab === 'surveys' ? (

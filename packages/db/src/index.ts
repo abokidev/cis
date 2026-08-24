@@ -24,6 +24,7 @@ export * from './queries/national-reports';
 export * from './queries/firm-reports';
 export * from './queries/scoring-signoffs';
 export * from './queries/invitations';
+export * from './queries/mission-board';
 export {
   seedSurveyRegister,
   getRegisterFixture,

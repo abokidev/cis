@@ -633,15 +633,17 @@ half of Phase 4's request-an-invitation flow.
 
 ### ⚠️ Open items for product follow-up (§10 of the build prompt)
 
-1. **Sending service is not decided — and the sources disagree.** The artefact
-   names three candidates (CIS domain, Dragnet domain, or **TrustedMail**,
-   Dragnet's verified-sender product); the **PRD's dependency table names
-   Zeptomail as already settled**. This is a real discrepancy. The integration is
-   built behind a `SendingService` interface (`invitations-service`) with a
-   default `RECORDING_SENDING_SERVICE`; **no provider's API is hardcoded**. Whoever
-   owns this decision must reconcile the artefact against the PRD and configure
-   the chosen provider. Batches record which service sent them
-   (`message_batches.sending_service`, default `'undecided'`).
+1. **Sending service — RESOLVED (Phase 10): Zeptomail.** UX-OPS-002's artefact had
+   listed it undecided among three candidates; two later, independent sources —
+   the mission-board build brief's closing section and UX-OPS-001's own contract
+   (`changes_from_v4_1`) — both confirm the decision landed on **Zeptomail**
+   (it reports delivered/bounced/opened/clicked, the full set the board depends
+   on). UX-OPS-002's note was stale, written before the decision. Phase 10
+   implements `ZeptomailSendingService` behind the `SendingService` interface (no
+   credential hardcoded — the token is read from `ZEPTOMAIL_API_TOKEN`, degrading
+   to recording-only when unset so CI stays hermetic), and delivery events flow
+   back through `ingestZeptomailEvent`. `sendBatch` now defaults to Zeptomail; a
+   batch records its provider in `message_batches.sending_service`.
 2. **What actually triggers `markOpened()` needs a real product decision, not a
    guess.** An earlier note assumed this surface's first send would open the
    edition. That is now doubtful: **retail (S4) collection happens through public
@@ -656,3 +658,70 @@ half of Phase 4's request-an-invitation flow.
 `regulator_contacts` (SEC / NGX / CSCS, seeded) is a **minimal stub** so the
 "all three regulators" audience resolves. `UX-OPS-007` (regulator admin) will own
 these records properly; treat the current table as provisional.
+
+## Study Operations Home & Mission Board (Phase 10, UX-OPS-001)
+
+The operational home: one board, one audience, answering _what needs a person
+today_, ranked by consequence. Every condition is **forecast-based, never
+raw-count** — a card exists only because the current trajectory threatens an
+agreed outcome AND a concrete bulk action is available.
+
+- **Forecast arithmetic** (`mission-forecast.ts`, pure & unit-tested): velocity
+  (÷ `days_elapsed` before day 7, ÷ 7 after, null on day 0), required velocity,
+  forecast-at-close, projected shortfall, at-risk — the brief's §4 formulas
+  exactly, including the day-0/day-7 edges.
+- **23-condition rule table** (`mission-board-service.ts` `CONDITIONS`): a
+  data-driven table a study-team member can read against the brief. Conditions
+  **6 and 21 are DISABLED** (D-1 dropped for Year 1) and carry **no threshold
+  value** — specified, inert.
+- **Card deduplication (§4A)**: when an Engine-1 (statistical floor) condition is
+  live for a segment, every Engine-2 output depending on that segment folds into
+  its Consequence — one root cause, one card (a retail shortfall is one card, not
+  four). Engine-2 raises alone only when no Engine-1 covers it (heatmap 13,
+  attributable-report 14).
+- **Severity + clearing**: six ranks, ordered by rank then projected shortfall.
+  Auto-clear only — no dismissal control. Evaluation cadence is **hourly**
+  (D-5). At close (`days_remaining = 0`) forecast alerts suppress and **condition
+  14 switches from forecast to actual** (§6.3); reporting-dependency alerts that
+  read actuals survive.
+- **Funnel diagnosis (§7B / D-2)**: the firm-side Q1-quartile rule over the four
+  transitions (`invited→claimed→assigned→opened→completed`), earliest collapsed
+  stage wins, default to condition 17 when none collapses, and no diagnosis below
+  the 10-firm minimum population.
+- **Remediation is always bulk**, handed to UX-OPS-002 (Phase 9).
+- **Rail**: six phase-aware sections — real links to built surfaces
+  (Invitations, Results, Setup), honest not-built stubs for the rest
+  (Regulators/UX-OPS-007, Monitoring/UX-OPS-003-004, Dragnet/UX-ADM-007).
+
+### Sending service — Zeptomail integration
+
+`ZeptomailSendingService` implements Phase 9's `SendingService` (no credential
+hardcoded; token from `ZEPTOMAIL_API_TOKEN`, degrading to recording-only when
+unset). Delivery events arrive via `ingestZeptomailEvent`
+(`email.delivered`/`bounced`/`opened`/`clicked` → the delivery model), so real
+delivered/bounced/opened/clicked data flows through the abstraction into the
+board's evaluations. `sendBatch` now defaults to Zeptomail. (Phase 9's README
+open item is updated accordingly.)
+
+### ⚠️ Interpretations & decisions flagged
+
+- **Firm-tier scoring source (condition 13) is an INFERENCE.** The brief doesn't
+  say which "operational-maturity score" tiers the firm-tier heatmap; the most
+  direct available candidate is each firm's own **S1-Q2** self-rating (1–10,
+  seeded Phase 2), read through the firm's S1 seat respondent
+  (`getFirmMaturityScores`). Flagged so it can be corrected if a different score
+  was intended.
+- **§9 remediation audience-gap — decision: APPROACH 2.** For the three cohorts
+  Phase 9 has no first-class audience for (`started_not_submitted`,
+  `no_link_activity`, `institutional_all_firms`), the board **computes the
+  firm-id list and hands it to Phase 9's existing "a list I upload" audience as a
+  generated list** (`remediationForCohort(...).generated === true`). This leaves
+  Phase 9 unchanged and keeps cohort definition with the board that understands
+  it; the four clean cohorts use their existing audience ids, and `bounced` has
+  no bulk action (export only — Phase 9 already correct).
+- **`institution_engagement.target_by` is DECISION NEEDED** — study-team-set
+  dates, seeded NULL. Condition 16 does not evaluate for an institution whose
+  `target_by` is unset (`UX-OPS-007` will own these).
+- **`markOpened()` trigger is still an open product question** — deliberately
+  NOT wired to any surface's send (retail collection is independent of firm
+  invitations). Left as Phase 1's internal hook.

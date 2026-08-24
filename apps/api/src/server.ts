@@ -13,6 +13,7 @@ import { reportingRoutes } from './routes/reporting';
 import { scoringRoutes } from './routes/scoring';
 import { peopleRoutes } from './routes/people';
 import { invitationsRoutes } from './routes/invitations';
+import { missionBoardRoutes } from './routes/mission-board';
 
 export async function buildServer() {
   const app = Fastify({
@@ -49,6 +50,7 @@ export async function buildServer() {
   await app.register(scoringRoutes);
   await app.register(peopleRoutes);
   await app.register(invitationsRoutes);
+  await app.register(missionBoardRoutes);
 
   app.setErrorHandler<Error>((error, request, reply) => {
     const statusCode = resolveStatusCode(error);

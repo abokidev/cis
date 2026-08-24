@@ -524,3 +524,69 @@ open product decision to be resolved and specified before it can be built. The
 index weighting shown on this surface is likewise **provisional pending
 methodology validation** (`metric_definitions.is_provisional = TRUE`) and is
 displayed as "pending validation", never as a final figure.
+
+## Setup — People & Access (Phase 8, UX-OPS-006)
+
+The RBAC admin surface: who can sign in to study operations, what each may do,
+and who holds the `request`/`approve` rights that gate the six critical actions.
+It adds **no** new critical action and changes **none** of the six's own logic —
+it only manages access to them.
+
+- **Seven rights, one per-person model.** `user_permissions` is a direct
+  (user, permission) grant, unioned with the role-based grants by
+  `getUserPermissions`, so this surface can grant a right to one named person
+  while the Phase 0/1 role-based maker-checker path keeps resolving the same set.
+  The seven rights map to canonical permission codes (`ACCESS_RIGHTS` in
+  `packages/db/src/queries/users.ts`): `setup` reuses Phase 1's real
+  `edition:manage`; `request`/`approve` reuse Phase 0's
+  `can_request`/`can_approve_critical_action` types with a NULL `action_scope`
+  (= any of the six). The three that gate not-yet-built surfaces
+  (`send`/`regs`/`dragnet`) exist now so no second RBAC migration is needed when
+  `UX-OPS-002`/`007`/`UX-ADM-007` arrive. `view` is universal and not editable.
+- **The two-approver floor is ENFORCED, not warned** — on BOTH breach routes,
+  server-side (`people-access-service`): a person who is one of exactly two
+  approvers cannot be removed, and their `approve` right cannot be un-ticked.
+  Below two approvers a maker can never get their own request approved (the
+  Phase 0 maker≠checker constraint), so **no** critical action of any kind could
+  complete — a genuine platform-wide deadlock. Both refusals say what to do
+  instead: give somebody else the approval right first.
+- **The Dragnet analysis right does not exist for a CIS person.** Rejected
+  server-side (`DRAGNET_CIS`); the form omits the checkbox entirely (not
+  shown-and-refused), and changing a person's org away from Dragnet clears it.
+- **A person cannot remove their own access** — refused server-side
+  (`SELF_REMOVAL`) against the JWT `sub`, and the action is never rendered for
+  the signed-in user's own row.
+- **Two distinct failure states.** _Too few approvers_ (people still present) is
+  recoverable from within the surface by granting someone else `approve`. _Zero
+  people_ is a different, more severe state — surfaced honestly with **no**
+  in-UI recovery path (see break-glass below).
+- **Auth is out of scope.** This surface establishes who has access and what
+  they may do, not how they prove who they are. A person added here is created
+  with an unusable placeholder password hash and cannot sign in until
+  credentials are established through a separate (Phase 0) flow.
+
+### ⚠️ Flagged default — pending-request rights snapshot
+
+Whether a person's rights can change while they have a critical action pending
+is **explicitly undecided** by the artefact. We implement its _safe reading_ as
+the default: **a pending request is evaluated against the rights held when it was
+made** — the approval path (`approveCriticalActionWithRbac`) checks only the
+_approver's_ rights and the maker≠checker constraint, never re-evaluating the
+_requester's_ current rights. This is a deliberate default, not a resolved
+product decision; if the product later wants rights re-checked at approval time,
+that is a small, localized change to the approval precondition.
+
+### 🔓 Break-glass recovery (zero-people state)
+
+Because this surface deliberately refuses to take the estate below two approvers
+and cannot recover the zero-people state, recovery from a locked-out estate is an
+**out-of-band, infrastructure-level** procedure, not a screen:
+
+1. An administrator with direct database access re-seeds an operator —
+   `seedReferenceData` (or a targeted equivalent) creates a user with an
+   argon2id password hash and grants the access rights directly via
+   `user_permissions` (the same rows this surface writes).
+2. That restored operator signs in and rebuilds the roster through the surface.
+
+This is intentionally not self-service: an estate where nobody can sign in cannot
+be the authority that restores its own access.

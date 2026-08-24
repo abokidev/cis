@@ -586,6 +586,28 @@ export interface ScoringSignoff {
   updatedAt: Date;
 }
 
+// ─── People & Access (Phase 8 — UX-OPS-006) ─────────────────────────────────────
+
+/** The seven access rights a person can hold. `view` is universal and not
+ *  editable; `dragnet` is Dragnet-organisation only. */
+export type AccessRightKey = 'view' | 'send' | 'regs' | 'setup' | 'request' | 'approve' | 'dragnet';
+
+/** The organisations that share the one operator pool. */
+export type AccessOrg = 'CIS' | 'Dragnet';
+
+/** A person who can sign in to study operations, with their resolved rights. */
+export interface PersonAccess {
+  userId: string;
+  name: string;
+  email: string;
+  organization: AccessOrg;
+  /** The seven rights, each true/false. `view` is always true. */
+  rights: Record<AccessRightKey, boolean>;
+  /** Convenience flags derived from rights. */
+  canRequest: boolean;
+  canApprove: boolean;
+}
+
 // ─── RBAC ────────────────────────────────────────────────────────────────────
 
 export interface User {

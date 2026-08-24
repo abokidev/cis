@@ -12,6 +12,9 @@ import {
   seedGovernedConfigDefaults,
   seedProvisionalMetricDefinitions,
   upsertReportDependency,
+  seedAccessRights,
+  getPermissionByCode,
+  grantPermissionToUser,
 } from '@cis/db';
 import { hashPassword } from '@cis/auth';
 import { EDITION_MANAGE_PERMISSION, EDITION_LOCK_ACTION } from './edition-service';
@@ -137,6 +140,35 @@ export async function seedReferenceData(pool: Pool): Promise<SeededReferenceData
     dependsOn: ['local_institution', 'foreign_institution'],
     sufficiencyRule: 'any_sufficient',
   });
+
+  // ── Access rights (Phase 8) ───────────────────────────────────────────────
+  // The seven canonical right→permission rows for the People & Access surface,
+  // plus the bootstrap grants that make the two operators proper "people" on it:
+  // both hold request + approve directly, so the estate opens at exactly the
+  // two-approver floor (a coherent starting roster the surface itself manages).
+  await seedAccessRights(pool);
+  const grant = async (userId: string, codes: string[]): Promise<void> => {
+    for (const code of codes) {
+      const perm = await getPermissionByCode(pool, code);
+      if (perm) await grantPermissionToUser(pool, userId, perm.id, null);
+    }
+  };
+  await grant(maker.id, [
+    'access:view',
+    'access:send',
+    'access:regs',
+    'edition:manage',
+    'critical:request',
+    'critical:approve',
+  ]);
+  await grant(checker.id, [
+    'access:view',
+    'access:send',
+    'edition:manage',
+    'critical:request',
+    'critical:approve',
+    'access:dragnet',
+  ]);
 
   // ── Controlled Survey Register (9 instruments, 90 questions) ──────────────────
   const instruments = await seedSurveyRegister(pool, maker.id);

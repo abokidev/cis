@@ -11,6 +11,7 @@ import { governedContentRoutes } from './routes/governed-content';
 import { firmPortalRoutes } from './routes/firm-portal';
 import { reportingRoutes } from './routes/reporting';
 import { scoringRoutes } from './routes/scoring';
+import { peopleRoutes } from './routes/people';
 
 export async function buildServer() {
   const app = Fastify({
@@ -45,6 +46,7 @@ export async function buildServer() {
   await app.register(firmPortalRoutes);
   await app.register(reportingRoutes);
   await app.register(scoringRoutes);
+  await app.register(peopleRoutes);
 
   app.setErrorHandler<Error>((error, request, reply) => {
     const statusCode = resolveStatusCode(error);
@@ -77,6 +79,7 @@ function resolveStatusCode(error: Error & { statusCode?: number }): number {
     case 'ResponseScopeError':
     case 'ReviewGapError':
     case 'FirmPortalError':
+    case 'SignoffPayloadError':
       return 400;
     case 'ConsentRequiredError':
     case 'PinVerificationError':
@@ -90,6 +93,9 @@ function resolveStatusCode(error: Error & { statusCode?: number }): number {
     case 'SeatConflictError':
     case 'NationalReportError':
     case 'FirmReportError':
+    case 'ScoringSignoffError':
+    case 'ScoringBlockedError':
+    case 'PeopleAccessError':
     case 'DomainError':
       return 409;
     default:

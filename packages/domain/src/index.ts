@@ -158,3 +158,16 @@ export {
   SignoffPayloadError,
 } from './scoring-signoff-service';
 export type { ScoringSurfaceState, IndexScoreView } from './scoring-signoff-service';
+
+// ── Phase 8: People & Access (UX-OPS-006) ────────────────────────────────────
+export {
+  listPeople,
+  countApprovers,
+  addPerson,
+  updatePersonRights,
+  removePerson,
+  CRITICAL_ACTIONS,
+  ACCESS_RIGHT_META,
+  APPROVER_FLOOR,
+  PeopleAccessError,
+} from './people-access-service';

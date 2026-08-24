@@ -393,3 +393,67 @@ mapping, documented in `funnel-service.ts`, pending that classification.
 > but neither was attached — only the phase prompt. The build followed the
 > prompt's extracted schemas and its DoD (written as literal acceptance tests);
 > if the controlled documents carry anything beyond those, reconcile against them.
+
+## AI reporting, review & publication (Phase 6, E08)
+
+Two surfaces with **deliberately different** guarantee semantics — never one
+shared pipeline, because conflating them is how the guarantee is lost.
+
+**National report (`UX-ADM-005`, `national-report-service`):**
+
+- The ten sections are a **closed set** of `EVIDENCE_PACK_CONTRACT` IDs
+  (`NATIONAL_SECTIONS`); the generator iterates the catalogue and cannot produce
+  an eleventh (a DB CHECK is the backstop).
+- Each section is gated by **its own rule**: §2 (segment cuts) is _caveated_ when
+  thin; §7 (local vs. foreign) is _suppressed_ outright below floor; §10
+  (Institutional Perspectives) requires **all three** regulators — two is not the
+  module. Suppressed sections are **named**, never just counted.
+- The draft is reviewed **sentence by sentence**. A sentence with no fact IDs is
+  unsupported _by construction_, not by adversary opinion. Three dispositions
+  (`ACCEPT_AND_EDIT` / `REJECT_WITH_REASON` / `SUPPRESS_CLAIM`); a rejection
+  requires a reason, enforced at the data layer (a CHECK constraint).
+- **Adversary health** is measured against a seeded set of known-unsupported
+  claims (`runAdversaryHealth`) and **gates approval** — a clean draft and a
+  broken checker look identical.
+- Approval requires **all four** preconditions simultaneously: a signed scoring
+  run, the draft opened, every finding dispositioned, and a healthy checker — and
+  the approver must differ from the requester. "Opened" is a real gate: a
+  consequential approval puts the artefact in front of the reviewer.
+
+**Firm reports (`UX-ADM-006`, `firm-report-service`):**
+
+- `FRM_01/02/03` are **guaranteed** to every participating firm regardless of
+  volume — never suppressible (the evidence-pack builder throws on a suppressed
+  guaranteed section). Only the retail cut `FRM_04` is gated, with **three
+  states**: below 10 nothing, 10–29 `directional`, 30+ `unlocked`.
+- Generation and reconciliation are their own tracked phase before release.
+- **Release is atomic per report.** A failed/unresolved report is **held, not
+  excluded** (with a reason, recorded in the permanent per-report release
+  history); every other approved report still releases.
+- Release is **blocked until the national report is approved**.
+- **Nothing released is ever recalled or edited** — a released `firm_reports` row
+  is immutable (a DB trigger blocks UPDATE/DELETE once released); a correction is
+  a **new version** row.
+- A firm never receives an institutional cut of itself — no code path produces
+  one. **Zero participating firms** is a distinct "nothing to produce" state,
+  never a suppression.
+
+### Part A — Phase 5 correctness fix
+
+`funnel_event.segment` for institutional completions is now **derived from the
+completed instrument** (`funnel-service.segmentForInstrument`): S5a →
+`local_institution`, S5b → `foreign_institution`, rather than a uniform default
+that silently corrupted the two distinct sufficiency floors in opposite
+directions.
+
+### ⚠️ Provisional thresholds & unlocated source documents
+
+- The firm-report retail-cut thresholds (**10 / 29 / 30**) are a signed-off Year 1
+  assumption, **provisional pending methodology validation** — held as governed
+  configuration (`reporting.retail_cut_thresholds`, `is_provisional`), never a
+  hardcoded constant. Same pattern as Phase 5's provisional scoring weighting.
+- **Two source documents could not be located** and were not fabricated:
+  `AI_REPORTING_ENGINE_BUILD_BRIEF.md` and `Report_Catalogue_closed.md` (the PRD's
+  "Reporting Specification"). This phase was built from `EVIDENCE_PACK_CONTRACT.md`
+  and the two design artefacts' embedded review contracts; if those documents
+  surface and contain anything beyond what is here, reconcile against them.

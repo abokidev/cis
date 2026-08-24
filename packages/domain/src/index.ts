@@ -98,3 +98,45 @@ export { buildEvidencePack, EvidencePackError } from './evidence-pack-service';
 export type { FactInput, BuildPackInput } from './evidence-pack-service';
 export { setReportDependency, evaluateReportDependencies } from './report-dependency-service';
 export type { DependencyEvaluation, SufficiencyRule } from './report-dependency-service';
+
+// ── Phase 6: AI reporting, review & publication ──────────────────────────────
+export {
+  NATIONAL_SECTIONS,
+  assertSectionId,
+  evaluateSection,
+  generateNationalReport,
+  isUnsupportedByConstruction,
+  checkSentence,
+  saveDraft,
+  runChecker,
+  runAdversaryHealth,
+  ADVERSARY_HEALTH_THRESHOLD,
+  disposeFinding,
+  nationalApprovalPreconditions,
+  openDraft,
+  requestNationalApproval,
+  approveNational,
+  getSections,
+  NationalReportError,
+} from './national-report-service';
+export type {
+  SectionSpec,
+  SufficiencyContext,
+  DraftFact,
+  DraftSentence,
+  SeededClaim,
+  ApprovalPreconditions,
+} from './national-report-service';
+
+export {
+  getRetailCutThresholds,
+  cutStateFor,
+  generateFirmReports,
+  approveFirmReport,
+  regenerateFirmReport,
+  releaseFirmReports,
+  correctFirmReport,
+  getFirmReports,
+  FirmReportError,
+} from './firm-report-service';
+export type { RetailCutThresholds, GenerationResult, ReleaseResult } from './firm-report-service';

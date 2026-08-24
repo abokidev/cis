@@ -15,11 +15,23 @@ import type {
  * One completed event per response — a respondent rating four firms is ONE
  * completed response, not four.
  *
- * The instrument→segment mapping below is explicit and documented rather than
- * inferred. The local vs. foreign institution split is a governed classification
- * that the controlled estate has not settled; institutional instruments default
- * to `local_institution` here, and the distinction is left to be supplied as
- * governed data later — no methodology is invented.
+ * The instrument→segment mapping below is explicit and fully determined by the
+ * completed instrument code — never a uniform default. The local vs. foreign
+ * institutional split is the whole reason S5a (UX-INS-001) and S5b (UX-INS-002)
+ * were built as separate journeys in Phase 3, and it drives two different
+ * sufficiency floors (25 distinct local vs. 15 distinct foreign institutions).
+ * A uniform default would silently corrupt both counts in opposite directions —
+ * exactly the class of silent sufficiency error the evidence-pack architecture
+ * exists to prevent — so segment is derived here, at the point the event is
+ * written:
+ *   S1/S2/S3 → firm            S4 → retail
+ *   S5a      → local_institution   S5b → foreign_institution
+ * The three regulator instruments (I-SEC/I-NGX/I-CSCS) are contextual
+ * "Institutional Perspectives" (PUB_10), not institutional-investor responses;
+ * their sufficiency is the separate all-three-regulators check, not the
+ * local/foreign investor floors. They are Nigerian bodies, so they map to
+ * `local_institution` for the funnel's fixed four-value segment, and are
+ * excluded from the investor-institution floor counts by instrument code.
  */
 
 const FIRM_INSTRUMENTS = new Set(['S1', 'S2', 'S3']);
@@ -28,8 +40,9 @@ const RETAIL_INSTRUMENTS = new Set(['S4']);
 export function segmentForInstrument(instrumentCode: string): FunnelSegment {
   if (FIRM_INSTRUMENTS.has(instrumentCode)) return 'firm';
   if (RETAIL_INSTRUMENTS.has(instrumentCode)) return 'retail';
-  // S5a/S5b and the institutional/regulator instruments (I-*) are institutional.
-  // Local vs foreign is a governed classification, not yet settled — default local.
+  if (instrumentCode === 'S5a') return 'local_institution';
+  if (instrumentCode === 'S5b') return 'foreign_institution';
+  // Regulator/contextual instruments (Institutional Perspectives) — see above.
   return 'local_institution';
 }
 

@@ -7,8 +7,10 @@ import { EditionPage } from './pages/EditionPage';
 import { SurveysPage } from './pages/SurveysPage';
 import { RendererPage } from './pages/RendererPage';
 import { FirmTeamPage } from './pages/FirmTeamPage';
+import { NationalReportPage } from './pages/NationalReportPage';
+import { FirmReportsPage } from './pages/FirmReportsPage';
 
-type Tab = 'edition' | 'surveys' | 'renderer' | 'firmteam';
+type Tab = 'edition' | 'surveys' | 'renderer' | 'firmteam' | 'national' | 'firmreports';
 
 export function App(): JSX.Element {
   const { session, signIn, signOut } = useSession();
@@ -106,6 +108,22 @@ export function App(): JSX.Element {
         >
           Firm team
         </button>
+        <span aria-hidden="true">·</span>
+        <button
+          type="button"
+          onClick={() => setTab('national')}
+          style={tab === 'national' ? { color: 'var(--dragnet-black)' } : undefined}
+        >
+          National report
+        </button>
+        <span aria-hidden="true">·</span>
+        <button
+          type="button"
+          onClick={() => setTab('firmreports')}
+          style={tab === 'firmreports' ? { color: 'var(--dragnet-black)' } : undefined}
+        >
+          Firm reports
+        </button>
       </nav>
 
       {!editionId ? (
@@ -116,8 +134,12 @@ export function App(): JSX.Element {
         <SurveysPage client={client} editionId={editionId} viewer={session.user} />
       ) : tab === 'renderer' ? (
         <RendererPage client={client} />
-      ) : (
+      ) : tab === 'firmteam' ? (
         <FirmTeamPage client={client} />
+      ) : tab === 'national' ? (
+        <NationalReportPage />
+      ) : (
+        <FirmReportsPage />
       )}
     </div>
   );

@@ -105,6 +105,24 @@ export async function getNumericAnswersForFirm(
   return result.rows.map((r) => Number(r.v)).filter((n) => Number.isFinite(n));
 }
 
+/** Distinct RETAIL (S4) respondents who rated a firm — the firm report's own
+ *  retail-cut sample (FRM_04 gating). */
+export async function countRetailRespondentsRatingFirm(
+  pool: Pool,
+  editionId: string,
+  firmId: string,
+): Promise<number> {
+  const result = await query<{ n: string }>(
+    pool,
+    `SELECT COUNT(DISTINCT r.respondent_id)::text AS n
+       FROM responses r
+       JOIN respondents rp ON rp.id = r.respondent_id
+      WHERE r.edition_id = $1 AND r.rated_firm_id = $2 AND rp.instrument_code = 'S4'`,
+    [editionId, firmId],
+  );
+  return parseInt(result.rows[0]?.n ?? '0', 10);
+}
+
 /** The DRG-OPS question codes — the single source of truth for the evidence-pack
  *  exclusion check (reuses the Phase 2 is_drg_ops flag, never re-derived). */
 export async function getDrgOpsQuestionCodes(pool: Pool): Promise<string[]> {

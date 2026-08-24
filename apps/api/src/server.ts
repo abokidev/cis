@@ -9,6 +9,7 @@ import { journeyRoutes } from './routes/journeys';
 import { firmTeamRoutes } from './routes/firm-team';
 import { governedContentRoutes } from './routes/governed-content';
 import { firmPortalRoutes } from './routes/firm-portal';
+import { reportingRoutes } from './routes/reporting';
 
 export async function buildServer() {
   const app = Fastify({
@@ -41,6 +42,7 @@ export async function buildServer() {
   await app.register(firmTeamRoutes);
   await app.register(governedContentRoutes);
   await app.register(firmPortalRoutes);
+  await app.register(reportingRoutes);
 
   app.setErrorHandler<Error>((error, request, reply) => {
     const statusCode = resolveStatusCode(error);
@@ -84,6 +86,8 @@ function resolveStatusCode(error: Error & { statusCode?: number }): number {
     case 'FirmTeamError':
     case 'AlreadyClaimedError':
     case 'SeatConflictError':
+    case 'NationalReportError':
+    case 'FirmReportError':
     case 'DomainError':
       return 409;
     default:

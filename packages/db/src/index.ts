@@ -20,6 +20,8 @@ export * from './queries/calculation-runs';
 export * from './queries/report-dependency';
 export * from './queries/evidence-packs';
 export * from './queries/analytics-queries';
+export * from './queries/national-reports';
+export * from './queries/firm-reports';
 export {
   seedSurveyRegister,
   getRegisterFixture,

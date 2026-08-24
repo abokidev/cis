@@ -76,6 +76,15 @@ export const GOVERNED_CONFIG_DEFAULTS: ReadonlyArray<{
     description: 'Year 1 content decision: whether the public results section is shown.',
     value: true,
   },
+  {
+    key: 'reporting.retail_cut_thresholds',
+    description:
+      'Firm-report retail category cut (FRM_04) sufficiency thresholds. PROVISIONAL — a ' +
+      'signed-off Year 1 assumption, pending methodology validation. Below `directional` ' +
+      'nothing at category level; `directional`..`reportable`-1 is DIRECTIONAL only; ' +
+      '`reportable`+ unlocks the cut. Held as configuration, never a hardcoded constant.',
+    value: { directional: 10, reportable: 30, provisional: true },
+  },
 ];
 
 export async function seedGovernedConfigDefaults(pool: Pool): Promise<void> {

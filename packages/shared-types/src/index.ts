@@ -424,6 +424,123 @@ export interface EvidencePackFact {
   createdAt: Date;
 }
 
+// ─── AI reporting, review & publication (Phase 6) ──────────────────────────────
+
+/** The ten national-report sections — the closed set of EVIDENCE_PACK_CONTRACT
+ *  IDs. Prose names drift between documents; IDs do not, and the generator may
+ *  not extend this set. */
+export type NationalReportSectionId =
+  | 'PUB_01_HEADLINE_INDICES'
+  | 'PUB_02_SEGMENT_IEI_ICI'
+  | 'PUB_03_OPERATIONAL_FRICTIONS'
+  | 'PUB_04_INVESTOR_FRUSTRATIONS'
+  | 'PUB_05_MATURITY_HEATMAP'
+  | 'PUB_06_CONFIDENCE_AND_PARTICIPATION'
+  | 'PUB_07_LOCAL_VS_FOREIGN'
+  | 'PUB_08_CROSS_INDUSTRY_BENCHMARK'
+  | 'PUB_09_SERVICE_EXCELLENCE_GAP'
+  | 'PUB_10_INSTITUTIONAL_PERSPECTIVES';
+
+/** publishable | caveated (§2, thin but shown) | suppressed (§7/§10, below floor). */
+export type SectionSufficiencyDisposition = 'publishable' | 'caveated' | 'suppressed';
+
+/** The three review dispositions, matching EVIDENCE_PACK_CONTRACT exactly. */
+export type ReviewDisposition = 'ACCEPT_AND_EDIT' | 'REJECT_WITH_REASON' | 'SUPPRESS_CLAIM';
+
+export type NationalReportStatus = 'draft' | 'approved';
+
+export interface NationalReport {
+  id: string;
+  editionId: string;
+  scoringRunId: string;
+  status: NationalReportStatus;
+  draftOpened: boolean;
+  requestedBy: string | null;
+  requestedReason: string | null;
+  requestedAt: Date | null;
+  approvedBy: string | null;
+  approvedAt: Date | null;
+  createdAt: Date;
+}
+
+export interface NationalReportSection {
+  id: string;
+  nationalReportId: string;
+  sectionId: NationalReportSectionId;
+  disposition: SectionSufficiencyDisposition;
+  reason: string | null;
+  createdAt: Date;
+}
+
+export interface NationalReportSentence {
+  id: string;
+  nationalReportId: string;
+  ordinal: number;
+  text: string;
+  factIds: string[];
+  createdAt: Date;
+}
+
+export interface NationalReportFinding {
+  id: string;
+  sentenceId: string;
+  kind: string;
+  why: string;
+  createdAt: Date;
+}
+
+export interface NationalReportDisposition {
+  id: string;
+  findingId: string;
+  disposition: ReviewDisposition;
+  reason: string | null;
+  disposedBy: string;
+  disposedAt: Date;
+}
+
+export interface AdversaryHealth {
+  id: string;
+  nationalReportId: string;
+  seededTotal: number;
+  detected: number;
+  thresholdRate: number;
+  healthy: boolean;
+  checkedAt: Date;
+}
+
+/** The retail-cut state for a firm report (FRM_04 gating). */
+export type FirmReportCutState = 'none' | 'directional' | 'unlocked';
+export type FirmReportGenerationState = 'pending' | 'generating' | 'generated' | 'failed';
+export type FirmReportApprovalState = 'pending' | 'approved';
+export type FirmReportReleaseState = 'unreleased' | 'held' | 'released';
+
+export interface FirmReport {
+  id: string;
+  editionId: string;
+  organizationId: string;
+  scoringRunId: string;
+  version: number;
+  retailN: number;
+  cutState: FirmReportCutState;
+  generationState: FirmReportGenerationState;
+  approvalState: FirmReportApprovalState;
+  releaseState: FirmReportReleaseState;
+  heldReason: string | null;
+  releasedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface FirmReportReleaseHistory {
+  id: string;
+  firmReportId: string;
+  editionId: string;
+  organizationId: string;
+  action: 'released' | 'held' | 'regenerated';
+  reason: string | null;
+  occurredAt: Date;
+}
+
 // ─── RBAC ────────────────────────────────────────────────────────────────────
 
 export interface User {

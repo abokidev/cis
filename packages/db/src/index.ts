@@ -14,6 +14,12 @@ export * from './queries/outreach';
 export * from './queries/governed-config';
 export * from './queries/firm-claims';
 export * from './queries/seat-assignments';
+export * from './queries/funnel-events';
+export * from './queries/metric-definitions';
+export * from './queries/calculation-runs';
+export * from './queries/report-dependency';
+export * from './queries/evidence-packs';
+export * from './queries/analytics-queries';
 export {
   seedSurveyRegister,
   getRegisterFixture,

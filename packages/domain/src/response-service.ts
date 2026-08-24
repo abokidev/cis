@@ -9,6 +9,7 @@ import {
 import { requiresConsent, type AnswerValue, type SurveyItem } from '@cis/survey';
 import type { Response } from '@cis/shared-types';
 import { DomainError } from './errors';
+import { emitCompletedForRespondent } from './funnel-service';
 
 /** A survey requiring consent was submitted without an accepted consent gate. */
 export class ConsentRequiredError extends DomainError {
@@ -130,6 +131,8 @@ export async function submitResponses(
       }
     }
     await markRespondentSubmitted(client as unknown as Pool, input.respondentId);
+    // One completed funnel event per response, in the same transaction.
+    await emitCompletedForRespondent(client as unknown as Pool, respondent, { source: 'direct' });
     return written;
   });
 }

@@ -72,3 +72,29 @@ export {
   SeatConflictError,
 } from './firm-portal-service';
 export type { ClaimInput, InvitationRequest } from './firm-portal-service';
+
+// ── Phase 5: scoring, sufficiency, analytics & evidence ──────────────────────
+export {
+  segmentForInstrument,
+  institutionRefFor,
+  emitCompletedForRespondent,
+} from './funnel-service';
+export {
+  computeSufficiency,
+  bandForProportion,
+  SUPPRESS_BELOW,
+  REPORTABLE_AT,
+} from './sufficiency-service';
+export {
+  isFirmEligible,
+  eligibleFirmIds,
+  runEligibility,
+  currentSegmentSufficiency,
+} from './eligibility-service';
+export type { EligibilityRunResult } from './eligibility-service';
+export { datasetHashFor, runScoring } from './calculation-service';
+export type { ScoringRunResult } from './calculation-service';
+export { buildEvidencePack, EvidencePackError } from './evidence-pack-service';
+export type { FactInput, BuildPackInput } from './evidence-pack-service';
+export { setReportDependency, evaluateReportDependencies } from './report-dependency-service';
+export type { DependencyEvaluation, SufficiencyRule } from './report-dependency-service';

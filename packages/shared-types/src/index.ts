@@ -282,6 +282,148 @@ export interface EditionInstrumentSnapshot {
   frozenBy: string | null;
 }
 
+// ─── Analytics, scoring, sufficiency & evidence (Phase 5) ──────────────────────
+
+export type FunnelEventType = 'invited' | 'opened' | 'started' | 'completed';
+export type FunnelSegment = 'retail' | 'local_institution' | 'foreign_institution' | 'firm';
+export type FunnelChannel = 'email' | 'sms' | 'qr' | 'portal' | 'direct';
+export type FunnelSource = 'invitation' | 'colleague_share' | 'participant_referral' | 'direct';
+
+/** One funnel event. Append-only; one `completed` per response. `firmId` is the
+ *  register identifier, never a name; `institutionRef` is an opaque token. */
+export interface FunnelEvent {
+  eventId: string;
+  eventType: FunnelEventType;
+  occurredAt: Date;
+  editionId: string;
+  segment: FunnelSegment;
+  firmId: string | null;
+  institutionRef: string | null;
+  channel: FunnelChannel;
+  source: FunnelSource;
+  responseId: string | null;
+}
+
+/** Versioned configuration for an index/sub-component — which question IDs feed
+ *  it and what aggregation/weighting applies. Not a formula in code. */
+export interface MetricDefinition {
+  id: string;
+  metricCode: string;
+  version: number;
+  config: {
+    questionIds: string[];
+    aggregation: string;
+    weights?: Record<string, number>;
+    [k: string]: unknown;
+  };
+  isProvisional: boolean;
+  isActive: boolean;
+  description: string | null;
+  createdAt: Date;
+}
+
+export type CalculationRunType = 'eligibility' | 'scoring';
+export type CalculationRunStatus = 'pending' | 'running' | 'complete' | 'failed';
+
+/** Immutable run record. A correction is a new run, never an edit. */
+export interface CalculationRun {
+  id: string;
+  editionId: string;
+  runType: CalculationRunType;
+  methodologyVersion: string | null;
+  datasetHash: string;
+  status: CalculationRunStatus;
+  startedAt: Date;
+  finishedAt: Date | null;
+  createdAt: Date;
+}
+
+/** The closed set of sufficiency states. */
+export type SufficiencyState = 'REPORTABLE' | 'DIRECTIONAL' | 'BANDED' | 'SUPPRESSED';
+
+export type SubjectType = 'firm' | 'segment' | 'market';
+
+/** Immutable calculation result. BANDED carries a band, never a point value;
+ *  SUPPRESSED carries neither value nor band. */
+export interface CalculatedResult {
+  id: string;
+  calculationRunId: string;
+  subjectType: SubjectType;
+  subjectId: string;
+  metricCode: string;
+  value: number | null;
+  band: string | null;
+  n: number;
+  denominator: number;
+  sufficiencyState: SufficiencyState;
+  reason: string | null;
+  createdAt: Date;
+}
+
+/** Per-firm / per-segment eligibility, computed and persisted before scoring. */
+export interface EligibilityResult {
+  id: string;
+  calculationRunId: string;
+  subjectType: 'firm' | 'segment';
+  subjectId: string;
+  segment: string | null;
+  counted: number;
+  floor: number;
+  eligible: boolean;
+  createdAt: Date;
+}
+
+/** Runtime config: which segments a report output depends on, and the rule. */
+export interface ReportDependency {
+  outputId: string;
+  dependsOn: string[];
+  sufficiencyRule: string;
+  enabled: boolean;
+  updatedAt: Date;
+}
+
+/** The closed set of report sections. */
+export type ReportSection =
+  | 'PUB_01'
+  | 'PUB_02'
+  | 'PUB_03'
+  | 'PUB_04'
+  | 'PUB_05'
+  | 'PUB_06'
+  | 'PUB_07'
+  | 'PUB_08'
+  | 'PUB_09'
+  | 'PUB_10'
+  | 'FRM_01'
+  | 'FRM_02'
+  | 'FRM_03'
+  | 'FRM_04';
+
+export type ReportType = 'PUBLIC_REPORT' | 'FIRM_REPORT';
+
+export interface EvidencePack {
+  id: string;
+  calculationRunId: string;
+  reportType: ReportType;
+  subjectType: 'firm' | 'market';
+  subjectId: string;
+  createdAt: Date;
+}
+
+/** One fact in an evidence pack, with its source chain for traceability. */
+export interface EvidencePackFact {
+  id: string;
+  packId: string;
+  sectionId: ReportSection;
+  metricCode: string | null;
+  sufficiencyState: SufficiencyState;
+  value: number | null;
+  band: string | null;
+  sourceResultId: string | null;
+  sourceQuestionIds: string[];
+  createdAt: Date;
+}
+
 // ─── RBAC ────────────────────────────────────────────────────────────────────
 
 export interface User {

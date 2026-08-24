@@ -25,6 +25,7 @@ import {
 import type { Respondent, RespondentDraft, Response } from '@cis/shared-types';
 import { DomainError } from './errors';
 import { ConsentRequiredError, ResponseScopeError } from './response-service';
+import { emitCompletedForRespondent } from './funnel-service';
 
 /** A required contact-collecting surface was progressed without accepted consent. */
 export { ConsentRequiredError };
@@ -245,6 +246,9 @@ export async function submitJourney(pool: Pool, respondentId: string): Promise<R
       );
     }
     await markRespondentSubmitted(client as unknown as Pool, respondentId);
+    // One completed funnel event per response, in the same transaction so the
+    // event stream can never drift from the finalized response.
+    await emitCompletedForRespondent(client as unknown as Pool, respondent, { source: 'direct' });
     return written;
   });
 }

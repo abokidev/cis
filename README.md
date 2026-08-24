@@ -330,3 +330,66 @@ not-built stub). The registry owner should reconcile the parent/child mismatch.
 > authoritative attachment, but only the artefact was supplied. The build followed
 > the prompt's extracted load-bearing rules and the artefact's embedded review
 > contract; if `PACKAGE.md` carries anything beyond those, reconcile against it.
+
+## Scoring, sufficiency, analytics & evidence (Phase 5, E07)
+
+A versioned, reproducible calculation framework. It runs whatever methodology
+gets approved — it never hardcodes a formula.
+
+- **Event stream** (`funnel_event`): append-only. A `completed` event fires from
+  the SAME transaction that finalizes a response (in both `submitJourney` and
+  `submitResponses`), so the two can never drift. **One completed event per
+  response** regardless of how many firms were rated (unique index enforced).
+  `firm_id` is the register identifier, never a name; institutions are counted by
+  distinct `institution_ref` (an opaque token), never by response count.
+- **Firm eligibility** (`isFirmEligible` / `eligibleFirmIds`): a firm is eligible
+  for scoring with at least one of S1/S2/S3 complete. Eligibility runs and is
+  persisted as its **own step** (`runEligibility`, `run_type='eligibility'`)
+  before any scoring pass touches response data. Segment floors come from Phase
+  1's `edition_sample_floors` (the single source of truth), not duplicated.
+- **Versioned calculation core**: `metric_definitions` (configuration — which
+  question IDs feed which index, and the aggregation rule — as data, versioned),
+  `calculation_runs` (immutable), `calculated_results` (immutable; a correction is
+  a new run). Two methodology versions can run against the same frozen dataset
+  (same `dataset_hash`) and **both result sets are retained** — Architecture Test
+  AT-02, implemented as a real test.
+- **Sufficiency** is a closed set (`REPORTABLE`/`DIRECTIONAL`/`BANDED`/
+  `SUPPRESSED`), computed before any evidence is built. A SUPPRESSED result never
+  stores its underlying value; a BANDED result carries a band, never a point
+  value (DB CHECK + write-path validation).
+- **Evidence packs** are the reporting-facing boundary. Report sections are a
+  closed set (`PUB_01`–`PUB_10`, `FRM_01`–`FRM_04`). Construction (`buildEvidencePack`)
+  **rejects**: any DRG-OPS source id (reusing the Phase 2 `is_drg_ops` flag), a
+  BANDED fact with a point value, a suppressed guaranteed firm section
+  (`FRM_01/02/03` — Acceptance Test 8), institutional data used as an index input
+  (and any institutional cut in a firm report), and any cross-firm leak in a
+  firm-scoped pack. Every fact carries a `source` chain back to
+  `calculated_results → calculation_run → the eligible raw responses`.
+- **Firm attribution**: a firm's scored results come from every response that
+  rated it (`rated_firm_id`), regardless of arrival route — never from
+  `firm_id`-tagged outreach. `firm_id`-tagged completions feed only the
+  participating-firm report-dependency check (`countAttributable`), never scoring.
+- **Report-dependency configuration** (`report_dependency`): study-team-editable
+  runtime config, evaluated against live per-segment sufficiency
+  (`evaluateReportDependencies`) so a section's viability is known during
+  collection, not at publication.
+
+### ⚠️ Provisional scoring methodology
+
+The OMI/DMI/IEI/ICI/SEI weighting **does not exist yet as a controlled artefact**
+(`UX-ADM-004`: "the weighting is Dragnet's methodology, pending validation"). The
+seeded `metric_definitions` are a clearly-flagged **provisional placeholder**
+(equal weighting, no settled question mapping; `is_provisional = TRUE`, and a
+`PLACEHOLDER` note in each config). They exist so the framework runs end-to-end
+and are **trivially replaceable without a code deploy** — a new
+`metric_definitions` version — once Dragnet's methodology is validated. No
+statistically-plausible formula has been invented or hardcoded (PRD §9). The
+local-vs-foreign institution split is likewise a governed classification not yet
+settled; institutional completions default to `local_institution` in the funnel
+mapping, documented in `funnel-service.ts`, pending that classification.
+
+> **Note on inputs:** the Phase 5 prompt referenced `EVIDENCE_PACK_CONTRACT.md`
+> and `OPS_RESPONSES_CALCULATION_BRIEF.md` as controlled sources to read in full,
+> but neither was attached — only the phase prompt. The build followed the
+> prompt's extracted schemas and its DoD (written as literal acceptance tests);
+> if the controlled documents carry anything beyond those, reconcile against them.

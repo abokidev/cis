@@ -10,6 +10,8 @@ import {
   updateClosingDate,
   seedSurveyRegister,
   seedGovernedConfigDefaults,
+  seedProvisionalMetricDefinitions,
+  upsertReportDependency,
 } from '@cis/db';
 import { hashPassword } from '@cis/auth';
 import { EDITION_MANAGE_PERMISSION, EDITION_LOCK_ACTION } from './edition-service';
@@ -111,6 +113,30 @@ export async function seedReferenceData(pool: Pool): Promise<SeededReferenceData
   // Consent copy (legally provisional, OPEN-003) and the recovery-link TTL are
   // governed data, not hardcoded constants — seed their defaults here.
   await seedGovernedConfigDefaults(pool);
+
+  // ── Provisional scoring methodology (Phase 5) ────────────────────────────────
+  // Clearly-marked placeholder (equal weighting, no settled question mapping).
+  // NOT Dragnet's validated methodology — replaced by a new metric_definitions
+  // version once approved, no code deploy needed.
+  await seedProvisionalMetricDefinitions(pool);
+
+  // ── Report-dependency configuration (Phase 5) ────────────────────────────────
+  // Editable runtime config; seeded with the guaranteed vs. gated report outputs.
+  await upsertReportDependency(pool, {
+    outputId: 'PUBLIC_REPORT',
+    dependsOn: ['retail'],
+    sufficiencyRule: 'all_sufficient',
+  });
+  await upsertReportDependency(pool, {
+    outputId: 'FIRM_REPORT.FRM_04',
+    dependsOn: ['retail'],
+    sufficiencyRule: 'all_sufficient',
+  });
+  await upsertReportDependency(pool, {
+    outputId: 'PUBLIC_REPORT.PUB_10',
+    dependsOn: ['local_institution', 'foreign_institution'],
+    sufficiencyRule: 'any_sufficient',
+  });
 
   // ── Controlled Survey Register (9 instruments, 90 questions) ──────────────────
   const instruments = await seedSurveyRegister(pool, maker.id);

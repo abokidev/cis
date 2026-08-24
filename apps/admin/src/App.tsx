@@ -11,6 +11,7 @@ import { NationalReportPage } from './pages/NationalReportPage';
 import { FirmReportsPage } from './pages/FirmReportsPage';
 import { ScoresSignoffPage } from './pages/ScoresSignoffPage';
 import { PeopleAccessPage } from './pages/PeopleAccessPage';
+import { InvitationsPage } from './pages/InvitationsPage';
 
 type Tab =
   | 'edition'
@@ -18,6 +19,7 @@ type Tab =
   | 'renderer'
   | 'firmteam'
   | 'people'
+  | 'invitations'
   | 'scoring'
   | 'national'
   | 'firmreports';
@@ -129,6 +131,14 @@ export function App(): JSX.Element {
         <span aria-hidden="true">·</span>
         <button
           type="button"
+          onClick={() => setTab('invitations')}
+          style={tab === 'invitations' ? { color: 'var(--dragnet-black)' } : undefined}
+        >
+          Invitations
+        </button>
+        <span aria-hidden="true">·</span>
+        <button
+          type="button"
           onClick={() => setTab('scoring')}
           style={tab === 'scoring' ? { color: 'var(--dragnet-black)' } : undefined}
         >
@@ -164,6 +174,8 @@ export function App(): JSX.Element {
         <FirmTeamPage client={client} />
       ) : tab === 'people' ? (
         <PeopleAccessPage />
+      ) : tab === 'invitations' ? (
+        <InvitationsPage />
       ) : tab === 'scoring' ? (
         <ScoresSignoffPage />
       ) : tab === 'national' ? (

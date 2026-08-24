@@ -12,6 +12,7 @@ import { firmPortalRoutes } from './routes/firm-portal';
 import { reportingRoutes } from './routes/reporting';
 import { scoringRoutes } from './routes/scoring';
 import { peopleRoutes } from './routes/people';
+import { invitationsRoutes } from './routes/invitations';
 
 export async function buildServer() {
   const app = Fastify({
@@ -47,6 +48,7 @@ export async function buildServer() {
   await app.register(reportingRoutes);
   await app.register(scoringRoutes);
   await app.register(peopleRoutes);
+  await app.register(invitationsRoutes);
 
   app.setErrorHandler<Error>((error, request, reply) => {
     const statusCode = resolveStatusCode(error);
@@ -96,6 +98,7 @@ function resolveStatusCode(error: Error & { statusCode?: number }): number {
     case 'ScoringSignoffError':
     case 'ScoringBlockedError':
     case 'PeopleAccessError':
+    case 'InvitationsError':
     case 'DomainError':
       return 409;
     default:

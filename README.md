@@ -590,3 +590,69 @@ and cannot recover the zero-people state, recovery from a locked-out estate is a
 
 This is intentionally not self-service: an estate where nobody can sign in cannot
 be the authority that restores its own access.
+
+## Study Operations — Invitations (Phase 9, UX-OPS-002)
+
+The operator surface for writing to firms, regulators and consented
+participants. Almost every audience is a **query** against state the platform
+already holds, so this phase adds only the messaging estate plus the operational
+half of Phase 4's request-an-invitation flow.
+
+- **Audiences (`invitations-service`)** — four categories, thirteen audiences,
+  all resolved live: the seven firm audiences are predicates over Phase 4
+  firm-claim / seat-assignment / outreach state (`all`, `newaddr2`, `unclaimed`,
+  `noassign`, `partial`, `noreach`, `complete`); regulators from the provisional
+  `regulator_contacts` stub; and four participant audiences that count the
+  **contact-consent subset** (Phase 3 PAT-011), never the raw response count —
+  "presenting the response count would imply a reach the study does not have".
+  **No audience targets respondents directly**, and none exposes
+  response-in-progress state (chasing participants belongs to UX-OPS-004).
+- **Per-template deduplication** — a firm cannot receive the _same_ template
+  twice across any earlier batch this edition, but may receive _different_
+  templates. Checked at send-time against all historical batches.
+- **File validation — exactly four checks** (no address / malformed / in-file
+  duplicate / already-sent-this-template). There is deliberately **no fifth
+  register-match check**: register/near-match resolution was removed in the
+  artefact's own v3.16 — a row that resolves to nothing still sends and shows in
+  the delivery report, not blocked before sending.
+- **Template `{{code}}` gate** — a firm code-bearing template (claim / reminder /
+  reissue) is blocked from saving unless its body contains `{{code}}`; participant
+  and regulator templates have no code concept and are never forced through it.
+- **Delivery reporting degrades gracefully** — sent / delivered / bounced always
+  populate; `opened_at` / `clicked_at` are nullable and populate only when the
+  configured provider reports them (null = _not reported_, never _zero_). An open
+  is a **floor, never a reader count** and must never be published/exported/quoted
+  as one; a click is a real event. Delivered-never-opened and opened-not-clicked
+  are kept distinct (channel/spam vs. content).
+- **Bounce handling** — there is **no resend-to-bounced action** by design; a
+  bounce is resolved outside this surface (CIS supplies a replacement, or the
+  firm self-serves via UX-FRM-001). The surface only lists bounced addresses.
+- **Access-request queue** — a Phase 4 request-an-invitation submission
+  (`submitInvitationRequest`) surfaces here with its contextual flag and is
+  resolved by issuing a code or marking done.
+
+### ⚠️ Open items for product follow-up (§10 of the build prompt)
+
+1. **Sending service is not decided — and the sources disagree.** The artefact
+   names three candidates (CIS domain, Dragnet domain, or **TrustedMail**,
+   Dragnet's verified-sender product); the **PRD's dependency table names
+   Zeptomail as already settled**. This is a real discrepancy. The integration is
+   built behind a `SendingService` interface (`invitations-service`) with a
+   default `RECORDING_SENDING_SERVICE`; **no provider's API is hardcoded**. Whoever
+   owns this decision must reconcile the artefact against the PRD and configure
+   the chosen provider. Batches record which service sent them
+   (`message_batches.sending_service`, default `'undecided'`).
+2. **What actually triggers `markOpened()` needs a real product decision, not a
+   guess.** An earlier note assumed this surface's first send would open the
+   edition. That is now doubtful: **retail (S4) collection happens through public
+   entry with no firm invitation at all**, so retail responses can begin before
+   any firm is invited here. Accordingly `markOpened()` is **left exactly as
+   Phase 1 built it — an internal hook with no caller** — and is **not** wired to
+   this surface's send. What should open an edition, given retail's independence
+   from firm invitations, is flagged back to product/design.
+
+### ⚠️ Provisional: regulator contacts
+
+`regulator_contacts` (SEC / NGX / CSCS, seeded) is a **minimal stub** so the
+"all three regulators" audience resolves. `UX-OPS-007` (regulator admin) will own
+these records properly; treat the current table as provisional.

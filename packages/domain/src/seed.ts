@@ -15,6 +15,7 @@ import {
   seedAccessRights,
   getPermissionByCode,
   grantPermissionToUser,
+  seedInvitationDefaults,
 } from '@cis/db';
 import { hashPassword } from '@cis/auth';
 import { EDITION_MANAGE_PERMISSION, EDITION_LOCK_ACTION } from './edition-service';
@@ -169,6 +170,10 @@ export async function seedReferenceData(pool: Pool): Promise<SeededReferenceData
     'critical:approve',
     'access:dragnet',
   ]);
+
+  // ── Invitation templates + regulator contacts (Phase 9) ──────────────────────
+  // Six per-firm-state templates and the three provisional regulator contacts.
+  await seedInvitationDefaults(pool, edition.id);
 
   // ── Controlled Survey Register (9 instruments, 90 questions) ──────────────────
   const instruments = await seedSurveyRegister(pool, maker.id);

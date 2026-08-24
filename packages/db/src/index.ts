@@ -23,6 +23,7 @@ export * from './queries/analytics-queries';
 export * from './queries/national-reports';
 export * from './queries/firm-reports';
 export * from './queries/scoring-signoffs';
+export * from './queries/invitations';
 export {
   seedSurveyRegister,
   getRegisterFixture,

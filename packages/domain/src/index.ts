@@ -171,3 +171,21 @@ export {
   APPROVER_FLOOR,
   PeopleAccessError,
 } from './people-access-service';
+
+// ── Phase 9: Invitations (UX-OPS-002) ────────────────────────────────────────
+export {
+  listAudiences,
+  listMessageTemplates,
+  saveTemplate,
+  validateUploadFile,
+  sendBatch,
+  getBatches,
+  getBatchReport,
+  submitInvitationRequest,
+  getInvitationRequests,
+  resolveInvitationRequest,
+  resolveFirmNameToOrg,
+  RECORDING_SENDING_SERVICE,
+  InvitationsError,
+} from './invitations-service';
+export type { SendingService, OutgoingMessage, SendResult } from './invitations-service';

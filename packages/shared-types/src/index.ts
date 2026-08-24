@@ -322,8 +322,14 @@ export interface MetricDefinition {
   createdAt: Date;
 }
 
-export type CalculationRunType = 'eligibility' | 'scoring';
+export type CalculationRunType = 'eligibility' | 'scoring' | 'comparison';
 export type CalculationRunStatus = 'pending' | 'running' | 'complete' | 'failed';
+
+/** Whether a run's methodology is approved for official use. NULL = a legacy/
+ *  normal run (pre-Phase-11, treated as usable). `TEST_UNAPPROVED` runs are
+ *  barred structurally from official evidence packs / AI generation / released
+ *  reports (Phase 11, CIS-SCORE-2026 v0.14 build note §2). */
+export type MethodologyStatus = 'TEST_UNAPPROVED' | 'APPROVED';
 
 /** Immutable run record. A correction is a new run, never an edit. */
 export interface CalculationRun {
@@ -333,13 +339,16 @@ export interface CalculationRun {
   methodologyVersion: string | null;
   datasetHash: string;
   status: CalculationRunStatus;
+  methodologyStatus: MethodologyStatus | null;
   startedAt: Date;
   finishedAt: Date | null;
   createdAt: Date;
 }
 
-/** The closed set of sufficiency states. */
-export type SufficiencyState = 'REPORTABLE' | 'DIRECTIONAL' | 'BANDED' | 'SUPPRESSED';
+/** The closed set of sufficiency states. NOT_CALCULABLE (Phase 11) is a
+ *  methodology block — distinct from SUPPRESSED (a data problem). */
+export type SufficiencyState =
+  'REPORTABLE' | 'DIRECTIONAL' | 'BANDED' | 'SUPPRESSED' | 'NOT_CALCULABLE';
 
 export type SubjectType = 'firm' | 'segment' | 'market';
 
@@ -734,8 +743,13 @@ export interface SegmentForecast {
 export type MissionSeverity = 1 | 2 | 3 | 4 | 5 | 6;
 
 /** One mission card — exactly six fields (brief §9). `expectedImpact` is omitted
- *  (undefined) when there isn't enough history to compute it — never zero. A card
- *  with no `recommendedAction` never reaches the board. */
+ *  (undefined) when there isn't enough history to compute it — never zero. A
+ *  `mission` card with no `recommendedAction` never reaches the board; a
+ *  `methodology_block` card (Phase 11) carries NO action and is exempt from that
+ *  filter — it must display so the team knows an output is blocked, not merely
+ *  low, and cannot be actioned by chasing respondents. */
+export type MissionCardKind = 'mission' | 'methodology_block';
+
 export interface MissionCard {
   conditionId: number;
   severity: MissionSeverity;
@@ -743,9 +757,11 @@ export interface MissionCard {
   evidence: string[];
   consequence: string[];
   why: string | null;
-  recommendedAction: { label: string; cohort: string; audienceId: string | null };
+  recommendedAction: { label: string; cohort: string; audienceId: string | null } | null;
   expectedImpact?: string;
   projectedShortfall: number;
+  /** Defaults to 'mission'. A 'methodology_block' card has no remediation. */
+  kind?: MissionCardKind;
 }
 
 /** The four edition phases the rail is aware of. */

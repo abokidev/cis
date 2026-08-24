@@ -25,6 +25,21 @@ export * from './queries/firm-reports';
 export * from './queries/scoring-signoffs';
 export * from './queries/invitations';
 export * from './queries/mission-board';
+export * from './queries/comparison-runs';
+export * from './queries/scoring-queries';
+export {
+  loadScoringConfig,
+  getMethodologyMeta,
+  methodologyVersionString,
+  getTransform,
+  getItemTransformBinding,
+  getDmiWeights,
+  getDmiRequiredItems,
+  getOmiRoleItemGroups,
+  getIndustrySeiFloor,
+  seedCandidateScoringConfig,
+} from './seed/scoring-config';
+export type { ScoringConfig, RawTransform } from './seed/scoring-config';
 export {
   seedSurveyRegister,
   getRegisterFixture,

@@ -27,6 +27,7 @@ import type {
   AdversaryHealth,
 } from '@cis/shared-types';
 import { DomainError } from './errors';
+import { assertRunOfficialUsable } from './candidate-scoring-service';
 
 /**
  * National report — one report, ten fixed sections, generator + adversarial
@@ -182,6 +183,10 @@ export async function generateNationalReport(
   pool: Pool,
   data: { editionId: string; scoringRunId: string; context: SufficiencyContext },
 ): Promise<{ report: NationalReport; sections: NationalReportSection[] }> {
+  // Hard methodology gate (Phase 11, build note §2): AI report generation is an
+  // official-output path. A TEST_UNAPPROVED scoring run can never be its input.
+  await assertRunOfficialUsable(pool, data.scoringRunId, 'national report generation');
+
   const report = await createNationalReport(pool, {
     editionId: data.editionId,
     scoringRunId: data.scoringRunId,

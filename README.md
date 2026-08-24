@@ -725,3 +725,148 @@ open item is updated accordingly.)
 - **`markOpened()` trigger is still an open product question** — deliberately
   NOT wired to any surface's send (retail collection is independent of firm
   invitations). Left as Phase 1's internal hook.
+
+## Candidate scoring methodology — CIS-SCORE-2026 v0.14 (Phase 11)
+
+The real candidate scoring methodology is now integrated as the framework that
+Phases 5–7 and 10 hang off. Its governing rule was **"Build the framework now.
+Do not invent the methodology."** — so every weight, transform, threshold and
+completeness rule is read from the single authoritative config, and where a
+value is genuinely undecided the framework refuses to compute rather than
+inventing one.
+
+**The methodology's status is `TEST_UNAPPROVED`.** The load-bearing guarantee is
+that a run produced under it can NEVER reach an official output — not by a flag a
+reader is trusted to honour, but by a hard validation gate at every boundary.
+
+### Sole authoritative config — the YAML was read, not reconstructed
+
+`packages/db/src/seed/CIS_SCORING_CONFIG_CANDIDATE_v0.14.yaml` is a **verbatim
+in-repo copy of the authoritative `CIS_SCORING_CONFIG_CANDIDATE_v0.14.yaml`
+artefact, read directly** (via `yaml` in `scoring-config.ts`) — there is no
+second, hand-transcribed copy of any weight or mapping in application code
+(methodology spec §18: "No embedded duplicate config"). The build step copies the
+file into `dist/seed` so runtime and tests read the same bytes. `metric_defini‑
+tions` gets a **provenance-only** v14 row per index (`is_active = FALSE`,
+`is_provisional = TRUE`) — live computation always reads the YAML through the
+accessors, and Phase 5's active v1 config is untouched (Phase 7 behaviour is
+unchanged).
+
+### The TEST_UNAPPROVED hard gate (structural, not a label)
+
+`assertRunOfficialUsable(pool, runId, useContext)` throws `TEST_UNAPPROVED_RUN`
+for any run whose `methodology_status = 'TEST_UNAPPROVED'`. It is called at the
+top of every official-output boundary, before any other work:
+
+- `buildEvidencePack` (evidence-pack construction),
+- `generateNationalReport` (AI generation input),
+- `generateFirmReports` / `correctFirmReport` / `releaseFirmReports`
+  (UX-ADM-006's generation and release path).
+
+A `methodology_status` of `NULL` is a legacy/normal run — Phases 5–7 keep their
+prior behaviour exactly. `runCandidateScoring` always stamps its run
+`TEST_UNAPPROVED`, so candidate output is barred by construction; each of the
+five boundaries has a test proving the specific failure.
+
+### Corrected DMI/OMI completeness — item-level, not seat-level
+
+Phase 7 approximated DMI/OMI completeness by seat state (a proxy). The candidate
+methodology defines completeness at the **item** level (OPS-003 clarification),
+and this phase corrects it:
+
+- **DMI-complete** = a firm has a VALID answer to **each of S1-Q3, S1-Q8, S3-Q2**
+  specifically. A firm that left **S1-Q8** unanswered is excluded **even if both
+  its S1 and S3 seats are marked complete** (`dmiCompleteFirmIds`, with a test).
+- **OMI-complete** = **all three role sub-indices** (CEO / Compliance /
+  Operations) are calculable. A firm with no Compliance-seat answers is excluded
+  and appears in the board's missing-role counts (`omiCompleteFirmIds`,
+  `missingOmiRoleCounts`).
+
+A missing / non-substantive answer (`Don't know`, `Not applicable`, blank, …) is
+**MISSING (null), never neutral** — no imputation (`missing_data.imputation:
+none`).
+
+### Direction lives only in the transform binding
+
+The eight normalisation transforms N1–N8 are read from the config; an item's
+direction is encoded **solely** in which transform it is bound to
+(`item_transform_binding`). There is deliberately **no `_reverse` flag and no
+inference from item names** — `scoreItem('S1-Q5', …)` is decreasing because
+S1-Q5 → N2 (`negative_1_10`), not because of anything about the item's name.
+
+### Firm-scope aggregation reuses the Phase 2 `scope` flag
+
+A firm-specific ICI/IEI never copies a shared market-level answer. `getFirmAttri‑
+butableInvestorAnswers(..., { firmSpecificOnly: true })` filters on
+`instrument_questions.scope = 'firm_specific'`, so e.g. **S5b-Q1 (shared) is
+excluded structurally** while S5b-Q2/Q3 (firm_specific) are kept — proven with a
+test.
+
+### Public pooled headline + mandatory composition disclosure
+
+`pooledHeadline` is a **plain arithmetic mean of all valid investor-unit scores
+from reportable segments** — NO equal-third weighting. A segment that fails its
+reportability floor is excluded from **both** the numerator and the denominator
+(not merely flagged), and every result carries a **mandatory composition
+disclosure** line as a structured field (never optional prose).
+
+### Industry SEI is NOT_CALCULABLE — a methodology block, not a shortfall
+
+The Industry-SEI minimum firm-investor-observation floor is `PENDING_VALIDATOR`
+in the config, and **`engineering_may_invent_value: false`**. So Industry SEI is
+recorded as `NOT_CALCULABLE` — a NEW sufficiency state, DISTINCT from
+`SUPPRESSED`. SUPPRESSED is a data problem (more fieldwork fixes it);
+NOT_CALCULABLE here is a methodology problem only a methodology-partner approval
+fixes. On the Mission Board it surfaces as a dedicated **methodology-block card**
+with **no cohort and no remediation** (chasing respondents cannot resolve it),
+exempt from the "no action → off board" filter so it always displays, and it
+survives close.
+
+### Mission Board conditions 7/8 now track the complete-forecasts
+
+Conditions **7 (OMI at risk)** and **8 (DMI at risk)** are evaluated against the
+item-level **OMI-complete / DMI-complete forecasts** — how many firms will be
+complete by close — **not raw firm participation**. A firm can participate yet be
+neither OMI- nor DMI-complete, so these fire (as their own cards, no longer
+folded into the firm participation card) even when firm participation is on
+track.
+
+### Like-for-like cross-edition comparison
+
+When two editions' reportable segment sets differ, a direct headline comparison
+is refused (`canCompareHeadlinesDirectly`). `recordLikeForLikeComparison`
+persists a new, separately-immutable **`LIKE_FOR_LIKE_RECALCULATED`**
+`comparison_runs` row that restates both editions on the common segment set and
+**preserves both original published headlines** — it never mutates a source run.
+
+### ⚠️ §8 threshold conflict — flagged for reconciliation, NOT silently merged
+
+The build prompt's §8 introduced firm/investor reporting thresholds that overlap
+the Phase 6 retail-cut thresholds already governed at
+`reporting.retail_cut_thresholds` (directional 10 / reportable 30). Rather than
+overwrite one with the other, the two are kept as **separate governed-config
+keys** pending a reconciliation decision:
+
+- `reporting.retail_cut_thresholds` — Phase 6's FRM_04 retail cut (unchanged:
+  10 / 30).
+- `reporting.firm_investor_thresholds` — the §8 firm/investor floors (headline
+  20, gap 30, binary 75–100, shared 15, sub-segment 15), marked
+  `provisional: true`.
+
+Both are provisional and configurable. **This conflict needs a
+methodology/product decision** on whether the retail cut is a special case of the
+firm/investor thresholds or a genuinely distinct rule; until then neither value
+is lost and neither silently wins.
+
+### ⚠️ Framework interpretations flagged pending methodology approval
+
+- **OMI role sub-index calculability bar.** The config mandates DMI's required
+  items explicitly but for OMI states only `all_three_role_subindices_required`
+  with a `mean` operator and no per-sub-index minimum-valid-item threshold. The
+  framework reads this as "a role sub-index is calculable when it has ≥1
+  substantive contributing item" (the standard mean-of-valid reading) and does
+  **not** invent a stricter threshold. Flagged in `getOmiRoleItemGroups` for
+  confirmation.
+- **Nothing here computes an official score.** Every candidate value is
+  `TEST_UNAPPROVED` and cannot leave the framework until the methodology is
+  approved and its `PENDING_VALIDATOR` parameters are set.

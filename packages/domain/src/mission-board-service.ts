@@ -20,6 +20,13 @@ import {
   tierCoverageUneven,
   type FirmFunnelInput,
 } from './mission-forecast';
+import {
+  omiCompleteFirmIds,
+  dmiCompleteFirmIds,
+  missingOmiRoleCounts,
+  industrySeiState,
+  type IndustrySeiState,
+} from './candidate-scoring-service';
 
 /**
  * UX-OPS-001 — the mission board evaluator. One board, one audience: what needs
@@ -374,6 +381,19 @@ export const CONDITIONS: readonly ConditionMeta[] = [
 
 export interface BoardContext {
   forecasts: Record<MissionSegment, SegmentForecast>;
+  /**
+   * Phase 11 correction: OMI/DMI at-risk (conditions 7/8) are evaluated against
+   * ITEM-LEVEL complete-firm forecasts — how many firms will be OMI-complete /
+   * DMI-complete by close — NOT raw firm participation. A firm can participate
+   * yet be neither OMI- nor DMI-complete, so these forecasts can be at risk while
+   * the firm participation forecast is on track.
+   */
+  omiCompleteForecast: SegmentForecast;
+  dmiCompleteForecast: SegmentForecast;
+  /** Firms missing each OMI role sub-index (zero substantive items for it). */
+  missingRoleCounts: Record<string, number>;
+  /** Industry SEI methodology state — NOT_CALCULABLE blocks it structurally. */
+  industrySei: IndustrySeiState;
   /** Raw response counts per segment (for condition 5, distinct-vs-volume). */
   responseCounts: Record<string, number>;
   attributable: { forecast: number; actual: number; required: number };
@@ -483,6 +503,72 @@ export function evaluateBoard(ctx: BoardContext): MissionCard[] {
         );
       }
     }
+  }
+
+  // ── Conditions 7 & 8: OMI / DMI at risk against ITEM-LEVEL complete forecasts ─
+  // Phase 11 correction: these track how many firms will be OMI-complete /
+  // DMI-complete by close, NOT raw firm participation. Forecast-based → suppressed
+  // at close. Raised as their own cards (never folded into the firm Engine-1 card).
+  if (!closed) {
+    const completeConds: Array<{ id: number; label: string; f: SegmentForecast; extra: string[] }> =
+      [
+        {
+          id: 7,
+          label: 'OMI',
+          f: ctx.omiCompleteForecast,
+          extra: Object.entries(ctx.missingRoleCounts)
+            .filter(([, n]) => n > 0)
+            .map(
+              ([role, n]) =>
+                `${n} participating firm${n > 1 ? 's' : ''} missing the ${role} sub-index`,
+            ),
+        },
+        { id: 8, label: 'DMI', f: ctx.dmiCompleteForecast, extra: [] },
+      ];
+    for (const { id, label, f, extra } of completeConds) {
+      if (!enabled(id) || !f.atRisk) continue;
+      const cond = CONDITIONS.find((c) => c.id === id)!;
+      const rem = remediationForCohort(cond.cohort);
+      const impact = expectedImpact(cohortCountFor(ctx, cond.cohort));
+      cards.push({
+        conditionId: id,
+        severity: cond.severity,
+        whatIsAtRisk: cond.what,
+        evidence: segForecastEvidence(f),
+        consequence: [
+          `Forecast ${f.forecastAtClose === null ? 'n/a' : Math.round(f.forecastAtClose)} of ${f.target} ${label}-complete firms required`,
+          ...extra,
+        ],
+        why: null,
+        recommendedAction: { label: rem.label, cohort: cond.cohort, audienceId: rem.audienceId },
+        ...(impact !== undefined ? { expectedImpact: impact } : {}),
+        projectedShortfall: f.projectedShortfall,
+      });
+    }
+  }
+
+  // ── Industry SEI methodology block (Phase 11) — NOT a data shortfall ─────────
+  // When the Industry-SEI minimum firm-investor-observation floor is unapproved,
+  // Industry SEI is NOT_CALCULABLE. No cohort can fix this — chasing respondents
+  // changes nothing — so the card carries NO recommended action and is EXEMPT
+  // from the "no action → off board" filter. It must display, and survives close.
+  if (ctx.industrySei.status === 'NOT_CALCULABLE') {
+    cards.push({
+      conditionId: -1,
+      severity: 3,
+      whatIsAtRisk: 'Industry SEI is not calculable',
+      evidence: [
+        `Blocked by unapproved methodology parameter: ${ctx.industrySei.blockingParameter ?? 'unknown'}`,
+        `Reason: ${ctx.industrySei.reason ?? 'methodology parameter pending approval'}`,
+      ],
+      consequence: [
+        'Industry SEI cannot be produced until its minimum firm-investor observation floor is approved. This is a methodology block, not a participation shortfall — no outreach resolves it.',
+      ],
+      why: null,
+      recommendedAction: null,
+      projectedShortfall: 0,
+      kind: 'methodology_block',
+    });
   }
 
   // ── Engine 2 that raise INDEPENDENTLY (not covered by a live Engine-1) ───────
@@ -604,15 +690,18 @@ export function evaluateBoard(ctx: BoardContext): MissionCard[] {
 
   // Rank by severity (1 highest), then projected shortfall descending.
   cards.sort((a, b) => a.severity - b.severity || b.projectedShortfall - a.projectedShortfall);
-  // A card with no recommended action does not belong on the board.
+  // A card with no recommended action does not belong on the board — EXCEPT a
+  // methodology-block card (Phase 11), which has no action by design and must
+  // still display.
   return cards.filter(
     (c) =>
-      c.recommendedAction &&
-      (c.recommendedAction.audienceId !== null ||
-        c.conditionId === 16 ||
-        c.conditionId === 5 ||
-        c.conditionId === 13 ||
-        c.conditionId === 14),
+      c.kind === 'methodology_block' ||
+      (c.recommendedAction !== null &&
+        (c.recommendedAction.audienceId !== null ||
+          c.conditionId === 16 ||
+          c.conditionId === 5 ||
+          c.conditionId === 13 ||
+          c.conditionId === 14)),
   );
 }
 
@@ -639,9 +728,10 @@ function makeSimpleCard(
 
 function dependsOnSegment(cond: ConditionMeta, seg: MissionSegment): boolean {
   // Engine-2 dependency by segment, matching the report_dependency map.
+  // OMI/DMI (conditions 7/8) are NOT folded here (Phase 11): they are evaluated
+  // against item-level complete-firm forecasts and raise their own cards, because
+  // firm participation being on track does not make OMI/DMI complete.
   const map: Record<string, MissionSegment[]> = {
-    OMI: ['firm'],
-    DMI: ['firm'],
     IEI_ICI_HEADLINE: ['retail'],
     IEI_ICI_BY_SEGMENT: ['retail', 'local_institution', 'foreign_institution'],
     SEI_GAP: ['firm', 'retail'],
@@ -770,6 +860,33 @@ export async function buildBoardContext(
     });
   }
 
+  // Item-level OMI/DMI complete forecasts (Phase 11): current vs as-of the window
+  // start, so the pace of firms BECOMING complete drives the forecast — not raw
+  // participation. Target is the firm floor (a complete-firm count is required).
+  const firmFloor = floorOf('firm');
+  const omiCompleteNow = (await omiCompleteFirmIds(pool, editionId)).length;
+  const omiCompleteThen = (await omiCompleteFirmIds(pool, editionId, windowStart)).length;
+  const dmiCompleteNow = (await dmiCompleteFirmIds(pool, editionId)).length;
+  const dmiCompleteThen = (await dmiCompleteFirmIds(pool, editionId, windowStart)).length;
+  const missingRoleCounts = await missingOmiRoleCounts(pool, editionId);
+  const omiCompleteForecast = buildSegmentForecast({
+    segment: 'firm',
+    target: firmFloor,
+    current: omiCompleteNow,
+    completesInWindow: Math.max(0, omiCompleteNow - omiCompleteThen),
+    daysElapsed,
+    daysRemaining,
+  });
+  const dmiCompleteForecast = buildSegmentForecast({
+    segment: 'firm',
+    target: firmFloor,
+    current: dmiCompleteNow,
+    completesInWindow: Math.max(0, dmiCompleteNow - dmiCompleteThen),
+    daysElapsed,
+    daysRemaining,
+  });
+  const industrySei = industrySeiState();
+
   const attributableCount = await countAttributable(pool, editionId);
   const funnelRows = await getFirmFunnelRows(pool, editionId);
   const firmFunnel: FirmFunnelInput[] = funnelRows.map((r) => ({
@@ -794,6 +911,10 @@ export async function buildBoardContext(
 
   return {
     forecasts,
+    omiCompleteForecast,
+    dmiCompleteForecast,
+    missingRoleCounts,
+    industrySei,
     responseCounts: {
       local_institution: completedBySeg['local_institution'] ?? 0,
       foreign_institution: completedBySeg['foreign_institution'] ?? 0,

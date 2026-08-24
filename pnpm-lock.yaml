@@ -182,6 +182,9 @@ importers:
       pg:
         specifier: ^8.12.0
         version: 8.23.0
+      yaml:
+        specifier: ^2.9.0
+        version: 2.9.0
     devDependencies:
       '@types/pg':
         specifier: ^8.11.6

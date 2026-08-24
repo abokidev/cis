@@ -19,6 +19,7 @@ interface RawRunRow {
   methodology_version: string | null;
   dataset_hash: string;
   status: CalculationRunStatus;
+  methodology_status: 'TEST_UNAPPROVED' | 'APPROVED' | null;
   started_at: Date;
   finished_at: Date | null;
   created_at: Date;
@@ -32,10 +33,17 @@ function mapRun(row: RawRunRow): CalculationRun {
     methodologyVersion: row.methodology_version,
     datasetHash: row.dataset_hash,
     status: row.status,
+    methodologyStatus: row.methodology_status,
     startedAt: row.started_at,
     finishedAt: row.finished_at,
     createdAt: row.created_at,
   };
+}
+
+/** A run may back official output only when it was NOT produced under a
+ *  TEST_UNAPPROVED methodology (build note §2). NULL status = legacy/normal run. */
+export function isRunOfficialUsable(run: CalculationRun): boolean {
+  return run.methodologyStatus !== 'TEST_UNAPPROVED';
 }
 
 /** Insert a run record. Runs are immutable — insert it already in its final
@@ -49,13 +57,14 @@ export async function createCalculationRun(
     methodologyVersion?: string | null;
     datasetHash: string;
     status?: CalculationRunStatus;
+    methodologyStatus?: 'TEST_UNAPPROVED' | 'APPROVED' | null;
   },
 ): Promise<CalculationRun> {
   const result = await query<RawRunRow>(
     pool,
     `INSERT INTO calculation_runs
-       (edition_id, run_type, methodology_version, dataset_hash, status, finished_at)
-     VALUES ($1,$2,$3,$4,$5, NOW())
+       (edition_id, run_type, methodology_version, dataset_hash, status, methodology_status, finished_at)
+     VALUES ($1,$2,$3,$4,$5,$6, NOW())
      RETURNING *`,
     [
       data.editionId,
@@ -63,6 +72,7 @@ export async function createCalculationRun(
       data.methodologyVersion ?? null,
       data.datasetHash,
       data.status ?? 'complete',
+      data.methodologyStatus ?? null,
     ],
   );
   const row = result.rows[0];

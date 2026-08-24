@@ -215,3 +215,31 @@ export {
   MissionBoardError,
 } from './mission-board-service';
 export type { BoardContext, RemediationCohort } from './mission-board-service';
+
+// ── Phase 11: Candidate scoring methodology (CIS-SCORE-2026 v0.14) ────────────
+export { isSubstantive, applyTransform, scoreItem, transformFor } from './scoring-transforms';
+export {
+  assertRunOfficialUsable,
+  dmiCompleteFirmIds,
+  omiCompleteFirmIds,
+  missingOmiRoleCounts,
+  firmDmiScores,
+  firmSpecificInvestorAnswers,
+  pooledHeadline,
+  industrySeiState,
+  canCompareHeadlinesDirectly,
+  computeLikeForLike,
+  recordLikeForLikeComparison,
+  runCandidateScoring,
+  CandidateScoringError,
+  INDUSTRY_SEI_BLOCKING_PARAMETER,
+  NOT_CALCULABLE_REASON,
+} from './candidate-scoring-service';
+export type {
+  PooledSegmentInput,
+  PooledHeadline,
+  IndustrySeiState,
+  EditionSegmentEvidence,
+  LikeForLike,
+  CandidateRunResult,
+} from './candidate-scoring-service';

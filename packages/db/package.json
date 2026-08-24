@@ -16,7 +16,8 @@
   "dependencies": {
     "@cis/shared-types": "workspace:*",
     "@cis/survey": "workspace:*",
-    "pg": "^8.12.0"
+    "pg": "^8.12.0",
+    "yaml": "^2.9.0"
   },
   "devDependencies": {
     "@types/pg": "^8.11.6",

@@ -16,6 +16,7 @@ import type {
   SufficiencyState,
 } from '@cis/shared-types';
 import { DomainError } from './errors';
+import { assertRunOfficialUsable } from './candidate-scoring-service';
 
 /**
  * Evidence-pack construction — the reporting-facing boundary. Every rule in
@@ -80,6 +81,11 @@ export async function buildEvidencePack(
   pool: Pool,
   input: BuildPackInput,
 ): Promise<{ pack: EvidencePack; facts: EvidencePackFact[] }> {
+  // Hard methodology gate (Phase 11, build note §2): a run produced under a
+  // TEST_UNAPPROVED methodology can never back an official evidence pack. This is
+  // a construction-time validation failure, structurally before any other check.
+  await assertRunOfficialUsable(pool, input.calculationRunId, 'an official evidence pack');
+
   const validSections = input.reportType === 'PUBLIC_REPORT' ? PUBLIC_SECTIONS : FIRM_SECTIONS;
   const drgOps = new Set(await getDrgOpsQuestionCodes(pool));
   const institutional = new Set(await getInstitutionalQuestionCodes(pool));

@@ -16,6 +16,7 @@ import {
   insertAdversaryHealth,
   getLatestAdversaryHealth,
   getCalculationRun,
+  hasSignedOffRun,
 } from '@cis/db';
 import type {
   NationalReport,
@@ -368,8 +369,16 @@ export async function nationalApprovalPreconditions(
   const report = await getNationalReport(pool, reportId);
   if (!report) throw new NationalReportError('Report not found', 'NOT_FOUND');
 
+  // A run backs a report only if it carries a GENUINE signed-off record from the
+  // UX-ADM-004 maker-checker flow — not merely a `completed` status (the Phase 6
+  // stopgap this replaces). Signing a run off is the deliberate act that makes
+  // its numbers official; a completed-but-unsigned run must not back a report.
   const run = await getCalculationRun(pool, report.scoringRunId);
-  const signedScoringRun = !!run && run.runType === 'scoring' && run.status === 'complete';
+  const signedScoringRun =
+    !!run &&
+    run.runType === 'scoring' &&
+    run.status === 'complete' &&
+    (await hasSignedOffRun(pool, run.id));
 
   const findings = await listFindingsForReport(pool, reportId);
   const dispositions = await listDispositionsForReport(pool, reportId);
@@ -380,7 +389,7 @@ export async function nationalApprovalPreconditions(
   const checkerHealthy = !!health && health.healthy;
 
   const reasons: string[] = [];
-  if (!signedScoringRun) reasons.push('No signed scoring run.');
+  if (!signedScoringRun) reasons.push('No signed-off scoring run.');
   if (!report.draftOpened) reasons.push('The draft has not been opened.');
   if (!allFindingsDisposed) reasons.push('Not every checker finding has a disposition.');
   if (!checkerHealthy) reasons.push('The checker is below its detection threshold.');

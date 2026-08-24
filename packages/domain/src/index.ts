@@ -140,3 +140,21 @@ export {
   FirmReportError,
 } from './firm-report-service';
 export type { RetailCutThresholds, GenerationResult, ReleaseResult } from './firm-report-service';
+
+// ── Phase 7: scoring sign-off (UX-ADM-004) ───────────────────────────────────
+export {
+  triggerScoringRun,
+  listScoringRuns,
+  validateCheckedAccount,
+  requestSignoff,
+  approveSignoff,
+  getScoreView,
+  hasSignedOffRun,
+  getAuthoritativeSignoff,
+  listSignoffs,
+  getSignoff,
+  ScoringSignoffError,
+  ScoringBlockedError,
+  SignoffPayloadError,
+} from './scoring-signoff-service';
+export type { ScoringSurfaceState, IndexScoreView } from './scoring-signoff-service';

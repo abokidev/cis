@@ -541,6 +541,51 @@ export interface FirmReportReleaseHistory {
   occurredAt: Date;
 }
 
+// ─── Scoring sign-off (Phase 7 — UX-ADM-004) ───────────────────────────────────
+
+/**
+ * The sign-off record's lifecycle. `requested` = a maker submitted the
+ * structured account; `signed_off` = a different person approved (this run is
+ * authoritative); `superseded` = a LATER run was signed off, so this one is no
+ * longer authoritative but stays visible in the history.
+ */
+export type ScoringSignoffState = 'requested' | 'signed_off' | 'superseded';
+
+/**
+ * The STRUCTURED account of what the signer verified — "the record is the
+ * check". Distinct from the generic maker-checker reason field used elsewhere:
+ * a bare free-text box is explicitly not enough. Each checklist item the signer
+ * confirms is a distinct boolean; `notes` is optional colour, never a substitute
+ * for the confirmations.
+ */
+export interface ScoringCheckedAccount {
+  /** The per-index effective population counts were reviewed. */
+  populationCountsReviewed: boolean;
+  /** Each index's floor-clear / sub-floor status was reviewed. */
+  floorStatusReviewed: boolean;
+  /** Any known data-quality flags were reviewed. */
+  dataQualityFlagsReviewed: boolean;
+  /** Optional free-text detail, kept with the run permanently. */
+  notes?: string;
+}
+
+/** A sign-off request/approval over a scoring calculation_run. */
+export interface ScoringSignoff {
+  id: string;
+  editionId: string;
+  calculationRunId: string;
+  state: ScoringSignoffState;
+  checkedAccount: ScoringCheckedAccount;
+  requestedBy: string;
+  requestedAt: Date;
+  approvedBy: string | null;
+  approvedAt: Date | null;
+  supersededBy: string | null;
+  supersededAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 // ─── RBAC ────────────────────────────────────────────────────────────────────
 
 export interface User {

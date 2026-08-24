@@ -9,8 +9,9 @@ import { RendererPage } from './pages/RendererPage';
 import { FirmTeamPage } from './pages/FirmTeamPage';
 import { NationalReportPage } from './pages/NationalReportPage';
 import { FirmReportsPage } from './pages/FirmReportsPage';
+import { ScoresSignoffPage } from './pages/ScoresSignoffPage';
 
-type Tab = 'edition' | 'surveys' | 'renderer' | 'firmteam' | 'national' | 'firmreports';
+type Tab = 'edition' | 'surveys' | 'renderer' | 'firmteam' | 'scoring' | 'national' | 'firmreports';
 
 export function App(): JSX.Element {
   const { session, signIn, signOut } = useSession();
@@ -111,6 +112,14 @@ export function App(): JSX.Element {
         <span aria-hidden="true">·</span>
         <button
           type="button"
+          onClick={() => setTab('scoring')}
+          style={tab === 'scoring' ? { color: 'var(--dragnet-black)' } : undefined}
+        >
+          Scoring
+        </button>
+        <span aria-hidden="true">·</span>
+        <button
+          type="button"
           onClick={() => setTab('national')}
           style={tab === 'national' ? { color: 'var(--dragnet-black)' } : undefined}
         >
@@ -136,6 +145,8 @@ export function App(): JSX.Element {
         <RendererPage client={client} />
       ) : tab === 'firmteam' ? (
         <FirmTeamPage client={client} />
+      ) : tab === 'scoring' ? (
+        <ScoresSignoffPage />
       ) : tab === 'national' ? (
         <NationalReportPage />
       ) : (

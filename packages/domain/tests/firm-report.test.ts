@@ -29,6 +29,8 @@ import {
   releaseFirmReports,
   correctFirmReport,
   buildEvidencePack,
+  requestSignoff,
+  approveSignoff,
 } from '../src';
 import { getTestPool, runMigrations, truncateAllTables, closeTestPool } from '../../db/tests/setup';
 
@@ -50,6 +52,18 @@ beforeEach(async () => {
     status: 'complete',
   });
   scoringRunId = run.id;
+  // Phase 7: firm reports can only be generated from a genuinely SIGNED-OFF run.
+  const so = await requestSignoff(pool, {
+    editionId,
+    calculationRunId: scoringRunId,
+    requestedBy: 'maker',
+    checkedAccount: {
+      populationCountsReviewed: true,
+      floorStatusReviewed: true,
+      dataQualityFlagsReviewed: true,
+    },
+  });
+  await approveSignoff(pool, { signoffId: so.id, approvedBy: 'checker' });
 });
 afterAll(async () => {
   await closeTestPool();

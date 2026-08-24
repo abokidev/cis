@@ -10,6 +10,7 @@ import { firmTeamRoutes } from './routes/firm-team';
 import { governedContentRoutes } from './routes/governed-content';
 import { firmPortalRoutes } from './routes/firm-portal';
 import { reportingRoutes } from './routes/reporting';
+import { scoringRoutes } from './routes/scoring';
 
 export async function buildServer() {
   const app = Fastify({
@@ -43,6 +44,7 @@ export async function buildServer() {
   await app.register(governedContentRoutes);
   await app.register(firmPortalRoutes);
   await app.register(reportingRoutes);
+  await app.register(scoringRoutes);
 
   app.setErrorHandler<Error>((error, request, reply) => {
     const statusCode = resolveStatusCode(error);

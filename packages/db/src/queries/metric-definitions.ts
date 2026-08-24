@@ -29,6 +29,47 @@ function mapMetric(row: RawMetricRow): MetricDefinition {
 /** The five top-level indices. Sub-components may be added as further rows. */
 export const INDEX_CODES = ['OMI', 'DMI', 'IEI', 'ICI', 'SEI'] as const;
 
+/**
+ * The per-index POPULATION predicate — which firms/respondents an index is
+ * computed over. This is configuration, not code: an index gated on a
+ * population it does not need withholds a measure the data supports, so each
+ * index states its own. Stored inside metric_definitions.config.population.
+ *
+ * `firm_seats_complete` counts firms whose named seats are ALL complete:
+ *   - OMI needs S1, S2 AND S3 (a fully-responding firm).
+ *   - DMI needs S1 and S3 only — S2 (compliance) is irrelevant to digital
+ *     maturity and must not be required.
+ * `investor_responses` / `matched_pairs` are investor-side and the artefact does
+ * not specify their exact predicate — they are marked `gap: true` so the surface
+ * shows them as an unresolved methodology item rather than inventing a rule.
+ * These are DISTINCT from the general ≥1-seat study-participation eligibility
+ * used for the 80-firm floor (see eligibility-service) — never reuse that set.
+ */
+export type IndexPopulationPredicate =
+  | { kind: 'firm_seats_complete'; seats: Array<'S1' | 'S2' | 'S3'>; gap?: false; note?: string }
+  | { kind: 'investor_responses'; gap: true; note: string }
+  | { kind: 'matched_pairs'; gap: true; note: string };
+
+const INDEX_POPULATION: Record<(typeof INDEX_CODES)[number], IndexPopulationPredicate> = {
+  OMI: { kind: 'firm_seats_complete', seats: ['S1', 'S2', 'S3'] },
+  DMI: { kind: 'firm_seats_complete', seats: ['S1', 'S3'] },
+  IEI: {
+    kind: 'investor_responses',
+    gap: true,
+    note: 'Investor-side population predicate not specified by UX-ADM-004 — pending methodology (flagged, not invented).',
+  },
+  ICI: {
+    kind: 'investor_responses',
+    gap: true,
+    note: 'Investor-side population predicate not specified by UX-ADM-004 — pending methodology (flagged, not invented).',
+  },
+  SEI: {
+    kind: 'matched_pairs',
+    gap: true,
+    note: 'Service-excellence gap is measured across matched firm/investor pairs; predicate pending methodology (flagged).',
+  },
+};
+
 export async function insertMetricDefinition(
   pool: Pool,
   data: {
@@ -103,6 +144,8 @@ export async function seedProvisionalMetricDefinitions(pool: Pool): Promise<void
           questionIds: [],
           aggregation: 'equal_weight_mean',
           provisional: true,
+          // Per-index population predicate (Phase 7) — configuration, not code.
+          population: INDEX_POPULATION[code],
           note: 'PLACEHOLDER — equal weighting, no settled question mapping. Replace with Dragnet validated methodology (new version).',
         }),
         `PROVISIONAL placeholder for ${code} — pending Dragnet validated weighting.`,

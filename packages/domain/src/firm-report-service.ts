@@ -10,6 +10,7 @@ import {
   setReleaseState,
   insertReleaseHistory,
   hasApprovedNationalReport,
+  hasSignedOffRun,
   countRetailRespondentsRatingFirm,
 } from '@cis/db';
 import type { FirmReport, FirmReportCutState } from '@cis/shared-types';
@@ -78,6 +79,15 @@ export async function generateFirmReports(
   pool: Pool,
   data: { editionId: string; scoringRunId: string; failFor?: string[] },
 ): Promise<GenerationResult> {
+  // A run may back a firm report only if it has a genuine signed-off record
+  // (UX-ADM-004) — the same rule that gates the national report. A merely
+  // completed run is not eligible.
+  if (!(await hasSignedOffRun(pool, data.scoringRunId))) {
+    throw new FirmReportError(
+      'Firm reports can only be generated from a signed-off scoring run',
+      'SCORING_RUN_NOT_SIGNED_OFF',
+    );
+  }
   const firms = await eligibleFirmIds(pool, data.editionId);
   if (firms.length === 0) {
     return { zeroFirms: true, reports: [], reconciled: true, expectedCount: 0, generatedCount: 0 };
@@ -208,6 +218,14 @@ export async function correctFirmReport(
   pool: Pool,
   data: { editionId: string; organizationId: string; scoringRunId: string },
 ): Promise<FirmReport> {
+  // A correction is generated from a NEW signed-off run (§ "nothing already
+  // released is recalled; a correction is a new, separately-versioned report").
+  if (!(await hasSignedOffRun(pool, data.scoringRunId))) {
+    throw new FirmReportError(
+      'A firm report correction can only be generated from a signed-off scoring run',
+      'SCORING_RUN_NOT_SIGNED_OFF',
+    );
+  }
   const thresholds = await getRetailCutThresholds(pool);
   const retailN = await countRetailRespondentsRatingFirm(pool, data.editionId, data.organizationId);
   const version = (await latestVersionFor(pool, data.editionId, data.organizationId)) + 1;

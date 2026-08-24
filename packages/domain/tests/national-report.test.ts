@@ -26,6 +26,8 @@ import {
   openDraft,
   requestNationalApproval,
   approveNational,
+  requestSignoff,
+  approveSignoff,
   NationalReportError,
   type SufficiencyContext,
   type DraftFact,
@@ -51,7 +53,25 @@ beforeEach(async () => {
     status: 'complete',
   });
   scoringRunId = run.id;
+  // Phase 7: a run backs a report only once it is genuinely SIGNED OFF (not
+  // merely completed). Sign it off through the real maker-checker flow.
+  await signOffRun(scoringRunId);
 });
+
+/** Request + approve a sign-off for a run via the real UX-ADM-004 flow. */
+async function signOffRun(runId: string): Promise<void> {
+  const so = await requestSignoff(pool, {
+    editionId,
+    calculationRunId: runId,
+    requestedBy: 'maker',
+    checkedAccount: {
+      populationCountsReviewed: true,
+      floorStatusReviewed: true,
+      dataQualityFlagsReviewed: true,
+    },
+  });
+  await approveSignoff(pool, { signoffId: so.id, approvedBy: 'checker' });
+}
 afterAll(async () => {
   await closeTestPool();
 });
@@ -247,6 +267,30 @@ describe('Approval preconditions — four, independently', () => {
         disposedBy: 'reviewer',
       }),
     ).rejects.toBeInstanceOf(NationalReportError);
+  });
+
+  it('a completed-but-unsigned run does NOT count as signed (Phase 6 integration fix)', async () => {
+    // A fresh completed run with no sign-off record — the old proxy would have
+    // treated `status === complete` as signed; the real check must not.
+    const unsigned = await createCalculationRun(pool, {
+      editionId,
+      runType: 'scoring',
+      datasetHash: 'ds-unsigned',
+      status: 'complete',
+    });
+    const { report } = await generateNationalReport(pool, {
+      editionId,
+      scoringRunId: unsigned.id,
+      context: fullContext(),
+    });
+    const pre = await nationalApprovalPreconditions(pool, report.id);
+    expect(pre.signedScoringRun).toBe(false);
+    expect(pre.reasons).toContain('No signed-off scoring run.');
+
+    // Once that run is signed off, the same report's precondition flips true.
+    await signOffRun(unsigned.id);
+    const after = await nationalApprovalPreconditions(pool, report.id);
+    expect(after.signedScoringRun).toBe(true);
   });
 
   it('forbids self-approval (maker ≠ checker)', async () => {

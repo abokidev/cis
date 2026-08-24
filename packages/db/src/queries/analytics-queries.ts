@@ -32,6 +32,33 @@ export async function getFirmSeatCompletionCounts(
 }
 
 /**
+ * Per-firm matrix of WHICH firm-survey seats (S1/S2/S3) are complete for an
+ * edition. Distinct from `getFirmSeatCompletionCounts` (which returns only a
+ * count): the per-index population predicates need to know exactly which seats
+ * cleared — OMI needs all three, DMI needs S1+S3 specifically. Only firms with
+ * at least one seat row appear.
+ */
+export async function getFirmSeatCompletionMatrix(
+  pool: Pool,
+  editionId: string,
+): Promise<Array<{ organizationId: string; completeSeats: string[] }>> {
+  const result = await query<{ organization_id: string; complete_seats: string[] | null }>(
+    pool,
+    `SELECT organization_id,
+            ARRAY_AGG(seat_code ORDER BY seat_code) FILTER (WHERE state = 'complete') AS complete_seats
+       FROM seat_assignments
+      WHERE edition_id = $1
+      GROUP BY organization_id
+      ORDER BY organization_id`,
+    [editionId],
+  );
+  return result.rows.map((r) => ({
+    organizationId: r.organization_id,
+    completeSeats: r.complete_seats ?? [],
+  }));
+}
+
+/**
  * The eligible responses that rated a specific firm — the scoring input for that
  * firm. Comes from every response that rated the firm, regardless of arrival
  * route (never firm_id-tagged outreach attribution). Returns respondent ids +

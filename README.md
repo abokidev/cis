@@ -457,3 +457,70 @@ directions.
   "Reporting Specification"). This phase was built from `EVIDENCE_PACK_CONTRACT.md`
   and the two design artefacts' embedded review contracts; if those documents
   surface and contain anything beyond what is here, reconcile against them.
+
+## Setup — Results, Scores (sign-off) (Phase 7, UX-ADM-004)
+
+The maker-checker gate on the single most consequential action in the platform:
+which scoring run becomes official. This surface closes the E07 gap that Phase 6
+had bridged with a stopgap.
+
+- **Scoring is blocked while collection is open.** `triggerScoringRun`
+  (`scoring-signoff-service`) hard-refuses unless the edition is `locked` — a
+  real precondition on the run trigger, not a disabled button. A run against a
+  changing dataset would score something that no longer exists by publication.
+- **A run is made authoritative by a sign-off record, not by its status.** The
+  new `scoring_signoffs` table designates which `calculation_run` is
+  authoritative. A run is only eligible to back a national or firm report when it
+  has a genuine `signed_off` record — enforced via `hasSignedOffRun`.
+- **The record is the check.** `checked_account` is a **structured** account of
+  what the signer verified (population counts reviewed, floor status reviewed,
+  data-quality flags reviewed) — each item explicitly confirmed — not the generic
+  4-character reason field used elsewhere. `checked_account` is `NOT NULL`.
+- **Maker ≠ checker.** Enforced at the service layer _and_ as a DB `CHECK`
+  (`approved_by <> requested_by`).
+- **Every run is kept; supersession happens at sign-off, not at run.** A later
+  run transitions the prior signed run to `superseded_run` **only when the new
+  one is itself signed off** (`supersedePriorSignoffs`, inside the approval
+  transaction). Superseded rows are never deleted — the who/when stays queryable
+  indefinitely. Nothing already released is recalled.
+- **Scores are shown before sign-off, flagged not hidden.** `getScoreView`
+  reports each index's score, effective population, and floor-clear status; a
+  sub-floor index is flagged (`subFloor: true`), never suppressed here — what is
+  reportable is decided at the national-report stage (UX-ADM-005).
+- **0–100 scale is structural.** `calculated_results.value` now carries a
+  `CHECK (value IS NULL OR value BETWEEN 0 AND 100)`; an out-of-range value is a
+  `validation_error`, never a silently-stored figure.
+
+### Per-index population predicates — configuration, not code
+
+Each index states its own population predicate in `metric_definitions.config.population`
+(see `metric-definitions.ts`), **distinct** from Phase 5's general ≥1-seat
+study-participation eligibility used for the 80-firm floor:
+
+- **OMI** — firms with **all three** seats (S1, S2, S3) complete.
+- **DMI** — firms with **S1 and S3** complete only (S2/compliance is irrelevant
+  to digital maturity and must not be required). A firm with S1+S2 (no S3) counts
+  for neither OMI nor DMI.
+- **IEI / ICI / SEI** — investor-side / matched-pair populations are **not
+  specified** by UX-ADM-004; they are flagged as an unresolved methodology gap
+  (`population.gap = true`), never given an invented rule.
+
+### Phase 6 integration fix (completed here)
+
+`national-report-service.nationalApprovalPreconditions` and firm-report
+generation (`generateFirmReports`, `correctFirmReport`) no longer accept a
+`calculation_run` with `status = completed` as a proxy for "signed". They now
+require a genuine `signed_off` record from this surface's maker-checker flow. The
+Phase 6 precondition tests were updated to sign runs off through the real flow,
+and a regression test asserts a completed-but-unsigned run does **not** count.
+
+### ⚠️ Open item — `SC-005` (DECISION_NEEDED)
+
+`SC-005` is recorded as `DECISION_NEEDED` in the requirement register and its
+verbatim text is unrecovered (consistent with every other backlog item marked
+this way across this programme). Per the artefact, **this surface does not invent
+a rule for it.** No behaviour has been implemented for `SC-005`; it remains an
+open product decision to be resolved and specified before it can be built. The
+index weighting shown on this surface is likewise **provisional pending
+methodology validation** (`metric_definitions.is_provisional = TRUE`) and is
+displayed as "pending validation", never as a final figure.

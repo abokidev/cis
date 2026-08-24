@@ -22,6 +22,7 @@ export * from './queries/evidence-packs';
 export * from './queries/analytics-queries';
 export * from './queries/national-reports';
 export * from './queries/firm-reports';
+export * from './queries/scoring-signoffs';
 export {
   seedSurveyRegister,
   getRegisterFixture,

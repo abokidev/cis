@@ -1,0 +1,327 @@
+import { useCallback, useEffect, useState } from 'react';
+import type { AdminClient } from '../api/client';
+import {
+  ApiError,
+  type AuthUser,
+  type EditionDetail,
+  type SampleFloorCategory,
+} from '../api/types';
+import { Pill, type PillKind } from '../components/Pill';
+import { CriticalActionRequest, CriticalActionReview } from '../components/MakerChecker';
+
+const LOCK_COPY = {
+  eyebrow: 'Needs a second person',
+  does: 'Collection ends and the dataset is fixed for scoring.',
+  undo: 'Surveys in progress are lost, and reopening does not recover them — those respondents have gone.',
+};
+
+const FLOOR_LABELS: Record<SampleFloorCategory, string> = {
+  firm: 'Participating firms',
+  retail: 'Retail investors',
+  local_institution: 'Local institutions',
+  foreign_institution: 'Foreign institutions',
+};
+
+const FLOOR_ORDER: SampleFloorCategory[] = [
+  'firm',
+  'retail',
+  'local_institution',
+  'foreign_institution',
+];
+
+type View = 'main' | 'request' | 'review';
+
+function formatDate(iso: string | null): string {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleDateString(undefined, {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  });
+}
+
+export function EditionPage({
+  client,
+  editionId,
+  viewer,
+}: {
+  client: AdminClient;
+  editionId: string;
+  viewer: AuthUser;
+}): JSX.Element {
+  const [edition, setEdition] = useState<EditionDetail | null>(null);
+  const [view, setView] = useState<View>('main');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [draftFloors, setDraftFloors] = useState<Record<string, number>>({});
+  const [draftClose, setDraftClose] = useState<string>('');
+
+  const load = useCallback(async () => {
+    setError(null);
+    try {
+      const detail = await client.getEdition(editionId);
+      setEdition(detail);
+      setDraftFloors(Object.fromEntries(detail.floors.map((f) => [f.category, f.floorValue])));
+      setDraftClose(detail.surveyCloseAt ? detail.surveyCloseAt.slice(0, 10) : '');
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not load the edition');
+    }
+  }, [client, editionId]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const run = useCallback(
+    async (fn: () => Promise<unknown>) => {
+      setBusy(true);
+      setError(null);
+      try {
+        await fn();
+        await load();
+        setView('main');
+      } catch (err) {
+        setError(err instanceof ApiError ? err.message : 'Something went wrong');
+      } finally {
+        setBusy(false);
+      }
+    },
+    [load],
+  );
+
+  if (!edition) {
+    return <main>{error ? <div className="err">{error}</div> : <p>Loading…</p>}</main>;
+  }
+
+  const isDraft = edition.status === 'draft';
+  const isOpen = edition.status === 'open';
+  const isLocked = edition.status === 'locked';
+  const eyebrow = isDraft ? 'Nothing sent yet' : isOpen ? 'Collecting' : 'Results locked';
+
+  if (view === 'request') {
+    return (
+      <main>
+        <CriticalActionRequest
+          eyebrow={LOCK_COPY.eyebrow}
+          title={`Lock the ${edition.label} results`}
+          doesText={LOCK_COPY.does}
+          undoText={LOCK_COPY.undo}
+          busy={busy}
+          onCancel={() => setView('main')}
+          onSubmit={(reason) => run(() => client.requestLock(editionId, reason))}
+        />
+        {error && <div className="err">{error}</div>}
+      </main>
+    );
+  }
+
+  if (view === 'review' && edition.pendingLock) {
+    return (
+      <main>
+        <CriticalActionReview
+          eyebrow="Someone has asked for this"
+          title={`Lock the ${edition.label} results`}
+          doesText={LOCK_COPY.does}
+          undoText={LOCK_COPY.undo}
+          pending={edition.pendingLock}
+          viewer={viewer}
+          busy={busy}
+          onBack={() => setView('main')}
+          onDecide={(approved) =>
+            run(() => client.decideLock(editionId, edition.pendingLock!.id, approved))
+          }
+        />
+        {error && <div className="err">{error}</div>}
+      </main>
+    );
+  }
+
+  const closingPill: [PillKind, string] = isLocked
+    ? ['muted', 'Passed']
+    : ['neutral', 'Can be changed'];
+  const floorsPill: [PillKind, string] = isDraft ? ['neutral', 'Can be changed'] : ['ok', 'Fixed'];
+
+  return (
+    <main>
+      <p className="eyebrow">{eyebrow}</p>
+      <h1 tabIndex={-1}>{edition.label} edition</h1>
+      <p className="lede">State of Stockbroking Operations and Investor Experience in Nigeria.</p>
+
+      {edition.pendingLock && (
+        <div className="warnbox">
+          <b>Lock the {edition.label} results — awaiting a second person</b>
+          <p style={{ margin: '6px 0 0' }}>
+            Requested by {edition.pendingLock.requestedBy.displayName} ·{' '}
+            {new Date(edition.pendingLock.requestedAt).toLocaleString()}
+          </p>
+          <div className="actions">
+            <button type="button" className="btn" onClick={() => setView('review')}>
+              Review the request
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Closing date */}
+      <section className={`stage${isLocked ? '' : ' now'}`}>
+        <div className="stagehead">
+          <h2>Last day for returns</h2>
+          <Pill kind={closingPill[0]}>{closingPill[1]}</Pill>
+        </div>
+        <div className="stagebody">
+          <p>
+            Anything not returned by this date is not in the {edition.label} edition. It can be
+            moved while collection is running.
+          </p>
+          {isLocked ? (
+            <dl className="kv">
+              <dt>Closed</dt>
+              <dd>{formatDate(edition.surveyCloseAt)}</dd>
+            </dl>
+          ) : (
+            <div className="field">
+              <label htmlFor="closingDate">Last day for returns</label>
+              <input
+                id="closingDate"
+                type="date"
+                value={draftClose}
+                onChange={(e) => setDraftClose(e.target.value)}
+              />
+              <div className="actions">
+                <button
+                  type="button"
+                  className="btn-2"
+                  disabled={
+                    busy || !draftClose || draftClose === edition.surveyCloseAt?.slice(0, 10)
+                  }
+                  onClick={() => run(() => client.setClosingDate(editionId, draftClose))}
+                >
+                  Save date
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* Sample floors */}
+      <section className={`stage${isDraft ? ' now' : ''}`}>
+        <div className="stagehead">
+          <h2>How much data is enough</h2>
+          <Pill kind={floorsPill[0]}>{floorsPill[1]}</Pill>
+        </div>
+        <div className="stagebody">
+          <p>
+            {isDraft
+              ? 'Below these a segment cannot be reported without exposing individuals. They decide what the edition can say, so they are set before collection rather than after the numbers arrive.'
+              : 'Fixed when the edition opened. Changing a floor once collection is under way would be choosing what is reportable while knowing what the data says.'}
+          </p>
+          <div className="floors">
+            {FLOOR_ORDER.map((cat) => {
+              const current = edition.floors.find((f) => f.category === cat);
+              return (
+                <div className="frow" key={cat}>
+                  <label htmlFor={`f-${cat}`}>{FLOOR_LABELS[cat]}</label>
+                  {isDraft ? (
+                    <input
+                      id={`f-${cat}`}
+                      type="number"
+                      min={1}
+                      value={draftFloors[cat] ?? ''}
+                      onChange={(e) =>
+                        setDraftFloors((prev) => ({
+                          ...prev,
+                          [cat]: parseInt(e.target.value, 10) || 0,
+                        }))
+                      }
+                    />
+                  ) : (
+                    <span className="fixed">{current?.floorValue ?? '—'}</span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          {isDraft && (
+            <div className="actions">
+              <button
+                type="button"
+                className="btn-2"
+                disabled={busy}
+                onClick={() =>
+                  run(() =>
+                    client.setFloors(
+                      editionId,
+                      FLOOR_ORDER.map((cat) => ({
+                        category: cat,
+                        floorValue: draftFloors[cat] ?? 0,
+                      })),
+                    ),
+                  )
+                }
+              >
+                Save floors
+              </button>
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* State */}
+      <section className={`stage${isLocked ? '' : ' now'}`}>
+        <div className="stagehead">
+          <h2>
+            {isDraft
+              ? 'Nothing has been sent yet'
+              : isOpen
+                ? 'Locking the results'
+                : 'Results are locked'}
+          </h2>
+          <Pill kind={isDraft ? 'neutral' : isOpen ? 'ok' : 'muted'}>
+            {isDraft ? 'Not started' : isOpen ? 'Collecting' : 'Locked'}
+          </Pill>
+        </div>
+        <div className="stagebody">
+          {isDraft && (
+            <>
+              <p>
+                The edition starts collecting when the first invitations go out. That is done from
+                Invitations — there is nothing to open here.
+              </p>
+              <div className="note">
+                <h3>Before anything is sent</h3>
+                <p>
+                  The survey instruments must be frozen, on Surveys under Setup. Floors should be
+                  set here first — they fix once collection begins.
+                </p>
+              </div>
+            </>
+          )}
+          {isOpen && (
+            <>
+              <p>Collection is running. Locking ends it and fixes the dataset for scoring.</p>
+              <div className="actions">
+                <button
+                  type="button"
+                  className="btn"
+                  disabled={!!edition.pendingLock}
+                  onClick={() => setView('request')}
+                >
+                  Lock the results
+                </button>
+              </div>
+            </>
+          )}
+          {isLocked && (
+            <p>
+              Collection has ended and the dataset is fixed. Scoring and reporting are under
+              Results.
+            </p>
+          )}
+        </div>
+      </section>
+
+      {error && <div className="err">{error}</div>}
+    </main>
+  );
+}

@@ -317,7 +317,7 @@ export const CONDITIONS: readonly ConditionMeta[] = [
     enabled: true,
     cohort: 'not_claimed',
     what: 'Distribution problem — not enough invitations sent',
-    inputs: 'no firm-side stage below Q1 (default)',
+    inputs: 'no firm stuck at any stage (deterministic default)',
   },
   {
     id: 18,
@@ -326,7 +326,7 @@ export const CONDITIONS: readonly ConditionMeta[] = [
     enabled: true,
     cohort: 'not_claimed',
     what: 'Message or channel problem',
-    inputs: 'invited→claimed below Q1',
+    inputs: 'firms invited but not claimed (deterministic state)',
   },
   {
     id: 19,
@@ -335,7 +335,7 @@ export const CONDITIONS: readonly ConditionMeta[] = [
     enabled: true,
     cohort: 'assigned_outstanding',
     what: 'Entry-friction problem',
-    inputs: 'assigned→opened below Q1',
+    inputs: 'claimed-not-assigned or assigned-not-opened (deterministic state)',
   },
   {
     id: 20,
@@ -344,7 +344,7 @@ export const CONDITIONS: readonly ConditionMeta[] = [
     enabled: true,
     cohort: 'started_not_submitted',
     what: 'Questionnaire problem',
-    inputs: 'opened→completed below Q1',
+    inputs: 'opened but not completed (deterministic state)',
   },
   // DISABLED — D-1 dropped for Year 1. NO threshold value exists here.
   {
@@ -604,14 +604,18 @@ export function evaluateBoard(ctx: BoardContext): MissionCard[] {
     }
   }
 
-  // ── Funnel-diagnosis cards raised ALONE (stage collapsed, no firm target card) ─
-  if (!closed && diagnosis.reason === 'collapsed_stage' && !engine1LiveSegments.has('firm')) {
+  // ── Funnel-diagnosis cards raised ALONE (a firm-side stage is stuck, no firm
+  // target card). The firm-side diagnosis is now a deterministic state, not a
+  // quartile collapse (UX-OPS-003 correction). ─
+  if (!closed && diagnosis.reason === 'stuck_stage' && !engine1LiveSegments.has('firm')) {
     if (enabled(diagnosis.conditionId)) {
       cards.push(
         makeSimpleCard(
           diagnosis.conditionId,
           0,
-          ['A firm-side stage ratio has collapsed below its first quartile'],
+          [
+            `${diagnosis.count} firm${diagnosis.count > 1 ? 's' : ''} in this state — ${diagnosis.remedy}.`,
+          ],
           [diagnosis.label],
         ),
       );

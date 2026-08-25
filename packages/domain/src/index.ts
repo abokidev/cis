@@ -204,7 +204,7 @@ export {
   firstQuartile,
   tierCoverageUneven,
 } from './mission-forecast';
-export type { FirmFunnelInput, FunnelDiagnosis } from './mission-forecast';
+export type { FirmFunnelInput, FunnelDiagnosis, FirmFunnelState } from './mission-forecast';
 export {
   CONDITIONS,
   evaluateBoard,
@@ -243,6 +243,38 @@ export type {
   LikeForLike,
   CandidateRunResult,
 } from './candidate-scoring-service';
+
+// ── Phase 13: Responses monitoring (UX-OPS-003) ──────────────────────────────
+export { getResponsesMonitor, getRetailCutForDisplay } from './responses-monitoring-service';
+export type {
+  SegmentCard,
+  SegmentCardState,
+  CompleteFirmLine,
+  DependencyRow,
+  DependencyDisplayState,
+  ResponsesMonitor,
+} from './responses-monitoring-service';
+
+// ── Phase 13: Reminder timing (UX-OPS-004) ───────────────────────────────────
+export {
+  getReminderSchedule,
+  setReminderSchedule,
+  getReminderCap,
+  setReminderCap,
+  triggerTimeFor,
+  nextDueReminder,
+  scheduleDueReminders,
+  getUnfinishedStats,
+  getDropoffHistogram,
+  ReminderTimingError,
+} from './reminder-timing-service';
+export type {
+  ReminderStepConfig,
+  ReminderSchedule,
+  DueReminder,
+  UnfinishedStats,
+  DropoffBucket,
+} from './reminder-timing-service';
 
 // ── Phase 12: Regulator engagement (UX-OPS-007) ──────────────────────────────
 export {

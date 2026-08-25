@@ -30,6 +30,7 @@ export async function truncateAllTables(pool: Pool): Promise<void> {
   // Order respects FK dependencies. audit_log TRUNCATE is allowed (trigger only blocks UPDATE/DELETE).
   await pool.query(`
     TRUNCATE TABLE
+      reminder_send,
       comparison_runs,
       regulator_engagement_history,
       institution_engagement,

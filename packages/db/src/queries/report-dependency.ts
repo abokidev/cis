@@ -7,6 +7,7 @@ interface RawDepRow {
   depends_on: string[];
   sufficiency_rule: string;
   enabled: boolean;
+  required_instruments: string[] | null;
   updated_at: Date;
 }
 
@@ -16,26 +17,43 @@ function mapDep(row: RawDepRow): ReportDependency {
     dependsOn: row.depends_on,
     sufficiencyRule: row.sufficiency_rule,
     enabled: row.enabled,
+    requiredInstruments: row.required_instruments,
     updatedAt: row.updated_at,
   };
 }
 
-/** Runtime config the study team edits without a deploy. */
+/** Runtime config the study team edits without a deploy. A firm-referencing
+ *  output must declare `requiredInstruments` (UX-OPS-003 §B7). */
 export async function upsertReportDependency(
   pool: Pool,
-  data: { outputId: string; dependsOn: string[]; sufficiencyRule: string; enabled?: boolean },
+  data: {
+    outputId: string;
+    dependsOn: string[];
+    sufficiencyRule: string;
+    enabled?: boolean;
+    requiredInstruments?: string[] | null;
+  },
 ): Promise<ReportDependency> {
   const result = await query<RawDepRow>(
     pool,
-    `INSERT INTO report_dependency (output_id, depends_on, sufficiency_rule, enabled)
-     VALUES ($1,$2,$3,$4)
+    `INSERT INTO report_dependency (output_id, depends_on, sufficiency_rule, enabled, required_instruments)
+     VALUES ($1,$2,$3,$4,$5)
      ON CONFLICT (output_id) DO UPDATE
        SET depends_on = EXCLUDED.depends_on,
            sufficiency_rule = EXCLUDED.sufficiency_rule,
            enabled = EXCLUDED.enabled,
+           required_instruments = EXCLUDED.required_instruments,
            updated_at = NOW()
      RETURNING *`,
-    [data.outputId, JSON.stringify(data.dependsOn), data.sufficiencyRule, data.enabled ?? true],
+    [
+      data.outputId,
+      JSON.stringify(data.dependsOn),
+      data.sufficiencyRule,
+      data.enabled ?? true,
+      data.requiredInstruments === undefined || data.requiredInstruments === null
+        ? null
+        : JSON.stringify(data.requiredInstruments),
+    ],
   );
   const row = result.rows[0];
   if (!row) throw new Error('Report dependency upsert returned no rows');

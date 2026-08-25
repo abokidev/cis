@@ -950,3 +950,106 @@ later edition is a study decision, and is deliberately NOT built here.** No
 re-approach workflow and no permanent cross-edition lockout is invented — declined
 is simply terminal within its edition. Flagged as an open item, consistent with
 every other genuinely unresolved item on the programme.
+
+## Responses Monitoring & Reminder Timing (Phase 13 — UX-OPS-003 / UX-OPS-004)
+
+Two monitoring surfaces plus two corrections to already-shipped Phase 10 code.
+
+### Part A — two corrections to shipped Phase 10 code
+
+**A1. The firm-side funnel diagnosis is now FOUR DETERMINISTIC STATES, not
+quartiles.** UX-OPS-003's external QA found that "with one invitation and three
+respondents per firm, conversion takes four possible values — 0, 33, 67, 100 per
+cent — and a quartile over four values is not a diagnosis." `diagnoseFirmFunnel`
+(`mission-forecast.ts`) previously computed each stage's Q1 across firms and
+flagged firms below it. It now names the earliest deterministic state a firm is
+stuck in — **not_claimed → claimed_not_assigned → assigned_not_opened →
+opened_not_completed** — each with its own remedy (chase the firm / coordinator /
+respondents), no comparison and no minimum population. **Q1 quartiles are
+preserved for the investor side only** (`firstQuartile` stays exported and
+documented as investor-only). A regression test proves the firm side no longer
+re-derives from quartile math: uniform failure (every firm equally stuck) — which
+the old Q1 rule hid as `healthy_default` because nothing was an outlier — is now
+named as the stuck state.
+
+**A2. No investor-side rate uses a "sent" denominator.** The investor funnel is
+`opened → started → completed`; the platform cannot know a firm's send volume, so
+an open-rate against sends is not calculable. A sweep confirmed no investor-side
+ratio ever divided by a sent/invited count — investor monitoring is entirely
+forecast-based on completed counts, and velocity divides by DAYS, never sends. A
+regression test asserts this (`buildSegmentForecast` has no sent input; velocity =
+completes ÷ days).
+
+### Part B — UX-OPS-003 Responses monitoring
+
+- **Single source of truth (§B2).** `getResponsesMonitor` reuses
+  `buildBoardContext` — the mission board's OWN computation — so the complete-firm
+  risk it shows and the board's conditions 7/8 read one function, not two. A test
+  changes the seeded data once and asserts both surfaces reflect it identically.
+- **Complete-firm status is a STRUCTURED line (§B3),** not prose: the
+  participating-firms card carries OMI-complete and DMI-complete as their own
+  `{metric, requiredInstruments, current, forecast, state}` lines, so
+  "participating on track / completion projected to miss" can never disappear into
+  a paragraph.
+- **The firm report is TWO dependency rows (§B4).** The **combined** report is
+  always `guaranteed` (Phase 6 guarantees FRM_01/02/03 regardless of volume — "at
+  risk means thin, not withheld"); the per-firm **category cuts** read **"Some
+  suppressed"**, never "At risk", because per-firm suppression is designed
+  sufficiency gating, not a failure. A seeded `PARTICIPATING_FIRM_REPORT_CATEGORY_CUTS`
+  row makes the split real, and a test asserts neither firm-report row ever uses
+  at-risk vocabulary.
+- **Net-new distinct institutions (§B5).** Institutional current/velocity count
+  `COUNT(DISTINCT institution_ref)` — a test proves a second response from an
+  already-counted institution does not inflate `current` or `velocity`.
+- **Cards report; the board acts (§B6).** Each segment card links to its board
+  condition (firm→1, retail→2, local→3, foreign→4) and carries NO action of its
+  own — two places offering the same action is how they drift apart.
+- **`report_dependency.required_instruments` (§B7).** A new explicit column: any
+  firm-referencing output declares exactly which firm-side instruments it needs
+  (OMI = S1+S2+S3 complete; DMI = S1+S3 DMI-complete), never falling back to
+  whichever population is convenient at write time.
+
+### Part C — UX-OPS-004 Reminder timing (investor-side only)
+
+- **Relative timing (§C1).** Each reminder fires at `last_activity_at + N days`
+  (derived from the latest autosave), never against a shared calendar date.
+- **Drop-off by last question (§C2).** `getDropoffHistogram` buckets every
+  in-progress response by its last-answered `question_id` — a cluster is a
+  question doing damage, actionable in a way an aggregate rate is not.
+- **The unreachable ceiling is stated, not hidden (§C3).** `getUnfinishedStats`
+  surfaces the unreachable cohort as a number, using the same contact-consent
+  predicate Phase 9 uses for participant audiences.
+- **STOP after the first only (§C4).** `carries_stop` is a send-sequence flag
+  (false on the first ever reminder to a person, true on every subsequent one) —
+  message content stays UX-RET-007's, which isn't built yet; a clearly-labelled
+  placeholder stands in.
+- **Governed cap and schedule (§C5).** `reminders.cap` and `reminders.schedule`
+  are governed config, seeded with the starting position (2 days, 7 days, and a
+  final step 3 days before close) and editable during fieldwork — never hardcoded.
+- **Live close-date reference (§C6).** The closing-week step is computed as
+  `edition.closes − N days` on every run, so moving the close date (allowed while
+  the edition is open) moves the reminder without any re-save. A test proves it.
+- **Completion boundary (§C8).** The engine schedules sends into an append-only
+  `reminder_send` ledger and never touches response state; a completed (submitted)
+  response is never reminded.
+
+### ⚠️ Open item — firm-side respondent reminders (unresolved)
+
+**Whether a firm-side respondent (someone answering S1, S2 or S3) is reminded on
+the same schedule as an investor is NOT decided,** because they are reached
+through the firm rather than directly. This reminder engine is deliberately built
+for **investor-side (retail/local/foreign) participants only**; firm-side
+seat-holders remain UX-OPS-002's bulk, coordinator-routed messaging (Phase 9). A
+test asserts no reminder fires for an S1/S2/S3 seat response under this engine.
+Flagged, not guessed at.
+
+### 📄 Calculation-brief note for future readers
+
+`OPS_RESPONSES_CALCULATION_BRIEF.md` v1.0 predates UX-OPS-003 by one day and
+misses two of that artefact's own corrections. Its **§6.3 (firm-side quartile/Q1
+diagnosis)** is superseded by the four deterministic firm-side states above, and
+its investor-funnel wording that could imply a **"sent" denominator** is
+superseded by the `opened → started → completed` investor funnel. The artefact is
+the executable authority where the two conflict (the same precedent applied across
+this programme); the brief remains correct for the segment cards, the distinct-
+institution rule, the dependency map, and the edge cases.

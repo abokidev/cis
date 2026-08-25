@@ -15,6 +15,7 @@ import { peopleRoutes } from './routes/people';
 import { invitationsRoutes } from './routes/invitations';
 import { missionBoardRoutes } from './routes/mission-board';
 import { regulatorRoutes } from './routes/regulators';
+import { monitoringRoutes } from './routes/monitoring';
 
 export async function buildServer() {
   const app = Fastify({
@@ -53,6 +54,7 @@ export async function buildServer() {
   await app.register(invitationsRoutes);
   await app.register(missionBoardRoutes);
   await app.register(regulatorRoutes);
+  await app.register(monitoringRoutes);
 
   app.setErrorHandler<Error>((error, request, reply) => {
     const statusCode = resolveStatusCode(error);
@@ -104,6 +106,7 @@ function resolveStatusCode(error: Error & { statusCode?: number }): number {
     case 'PeopleAccessError':
     case 'InvitationsError':
     case 'RegulatorEngagementError':
+    case 'ReminderTimingError':
     case 'DomainError':
       return 409;
     default:

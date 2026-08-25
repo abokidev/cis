@@ -181,49 +181,73 @@ describe('After close — forecast suppressed, condition 14 switches to actual (
   });
 });
 
-describe('Funnel diagnosis — Q1 collapse (§7B / D-2)', () => {
-  it('firstQuartile interpolates correctly', () => {
+describe('Investor-side forecasting uses NO "sent" denominator (UX-OPS-003 A2)', () => {
+  it('velocity is completes-per-DAY, never completes-over-sends', () => {
+    // The investor funnel is opened → started → completed; the platform cannot
+    // know send volume, so a rate against sends is not calculable. The pace is
+    // completes in the window over DAYS — never divided by any invited/sent count.
+    for (const seg of ['retail', 'local_institution', 'foreign_institution'] as MissionSegment[]) {
+      const f = buildSegmentForecast({
+        segment: seg,
+        target: 1000,
+        current: 100,
+        completesInWindow: 70,
+        daysElapsed: 10,
+        daysRemaining: 20,
+      });
+      // 70 completes over min(10,7)=7 days = 10/day. If any "sent" denominator
+      // were involved the number would differ; it is purely completes ÷ days.
+      expect(f.velocity).toBeCloseTo(10);
+      expect(f.forecastAtClose).toBeCloseTo(100 + 10 * 20);
+    }
+    // buildSegmentForecast's input surface has no sent/invited field at all —
+    // the only denominators in the forecast are days.
+  });
+});
+
+describe('Firm-side funnel diagnosis — FOUR DETERMINISTIC STATES (UX-OPS-003 fix)', () => {
+  const complete = (i: number): FirmFunnelInput => ({
+    firmId: `f${i}`,
+    invited: true,
+    claimed: true,
+    assignedSeats: 3,
+    openedSeats: 3,
+    completedSeats: 3,
+  });
+
+  it('firstQuartile is preserved for the investor side only (still exported, still correct)', () => {
     expect(firstQuartile([0, 1, 1, 1, 1, 1, 1, 1, 1, 1])).toBeCloseTo(1);
     expect(firstQuartile([0, 1, 2, 3, 4])).toBeCloseTo(1);
   });
 
-  it('withholds diagnosis below the 10-firm minimum population', () => {
-    const firms: FirmFunnelInput[] = Array.from({ length: 5 }, (_, i) => ({
+  it('diagnoses even below 10 firms — no minimum population, no quartiles', () => {
+    // Three firms, all invited-not-claimed. The old quartile rule refused a
+    // diagnosis under 10 firms; the deterministic rule names the state.
+    const firms: FirmFunnelInput[] = [0, 1, 2].map((i) => ({
       firmId: `f${i}`,
       invited: true,
-      claimed: true,
-      assignedSeats: 3,
-      openedSeats: 3,
-      completedSeats: 3,
-    }));
-    expect(diagnoseFirmFunnel(firms).reason).toBe('insufficient_population');
-  });
-
-  it('defaults to condition 17 when no stage is below Q1', () => {
-    const firms: FirmFunnelInput[] = Array.from({ length: 12 }, (_, i) => ({
-      firmId: `f${i}`,
-      invited: true,
-      claimed: true,
-      assignedSeats: 3,
-      openedSeats: 3,
-      completedSeats: 3,
+      claimed: false,
+      assignedSeats: 0,
+      openedSeats: 0,
+      completedSeats: 0,
     }));
     const d = diagnoseFirmFunnel(firms);
+    expect(d.state).toBe('not_claimed');
+    expect(d.reason).toBe('stuck_stage');
+    expect(d.count).toBe(3);
+    expect(d.remedy).toBe('Chase the firm');
+  });
+
+  it('is healthy (condition 17) only when no firm is stuck at any stage', () => {
+    const d = diagnoseFirmFunnel(Array.from({ length: 12 }, (_, i) => complete(i)));
+    expect(d.state).toBe('healthy');
     expect(d.conditionId).toBe(17);
     expect(d.reason).toBe('healthy_default');
   });
 
-  it('names the EARLIEST collapsed stage when several qualify', () => {
-    const firms: FirmFunnelInput[] = Array.from({ length: 12 }, (_, i) => ({
-      firmId: `f${i}`,
-      invited: true,
-      claimed: true,
-      assignedSeats: 3,
-      openedSeats: 3,
-      completedSeats: 3,
-    }));
-    // One firm collapses claimed→assigned (assignedSeats 0); another collapses
-    // assigned→opened (opened 0 of 3). Earliest (claimed→assigned) must win.
+  it('names the EARLIEST stuck state when several apply', () => {
+    const firms = Array.from({ length: 12 }, (_, i) => complete(i));
+    // One firm claimed-not-assigned, another assigned-not-opened. Earliest wins.
     firms[0] = {
       firmId: 'a',
       invited: true,
@@ -241,7 +265,27 @@ describe('Funnel diagnosis — Q1 collapse (§7B / D-2)', () => {
       completedSeats: 0,
     };
     const d = diagnoseFirmFunnel(firms);
-    expect(d.stage).toBe('claimed_assigned');
+    expect(d.state).toBe('claimed_not_assigned');
+    expect(d.remedy).toBe('Chase the coordinator');
+  });
+
+  it('REGRESSION: never re-derives from quartile math — uniform failure is named, not hidden', () => {
+    // Every firm is equally stuck at opened→completed (uniform failure). The old
+    // Q1 rule found NO outlier (nothing below Q1) and returned healthy_default,
+    // hiding the cause. The deterministic rule names the stuck state instead —
+    // proving the diagnosis no longer depends on a distribution/quartile.
+    const firms: FirmFunnelInput[] = Array.from({ length: 12 }, (_, i) => ({
+      firmId: `f${i}`,
+      invited: true,
+      claimed: true,
+      assignedSeats: 3,
+      openedSeats: 3,
+      completedSeats: 0, // all opened, none completed — identical across firms
+    }));
+    const d = diagnoseFirmFunnel(firms);
+    expect(d.state).toBe('opened_not_completed');
+    expect(d.reason).toBe('stuck_stage'); // NOT healthy_default
+    expect(d.count).toBe(12);
   });
 });
 

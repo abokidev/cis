@@ -203,9 +203,19 @@ export async function getFirmMaturityScores(
  * refine it without a build. Idempotent (upsert per output).
  */
 export async function seedMissionBoardDependencies(pool: Pool): Promise<void> {
-  const rows: Array<{ outputId: string; dependsOn: string[]; rule: string }> = [
-    { outputId: 'OMI', dependsOn: ['firm'], rule: 'at_risk(firm)' },
-    { outputId: 'DMI', dependsOn: ['firm'], rule: 'at_risk(firm)' },
+  // `required` names the firm-side instruments a firm-referencing output needs
+  // (UX-OPS-003 §B7): OMI = complete firms (S1+S2+S3); DMI = DMI-complete (S1+S3).
+  // Investor-only outputs declare none (null). The firm report is split into TWO
+  // rows (§B4): the guaranteed combined report, and the per-firm category cuts —
+  // which are DESIGNED suppression, never an "at risk" state.
+  const rows: Array<{
+    outputId: string;
+    dependsOn: string[];
+    rule: string;
+    required?: string[] | null;
+  }> = [
+    { outputId: 'OMI', dependsOn: ['firm'], rule: 'at_risk(firm)', required: ['S1', 'S2', 'S3'] },
+    { outputId: 'DMI', dependsOn: ['firm'], rule: 'at_risk(firm)', required: ['S1', 'S3'] },
     { outputId: 'IEI_ICI_HEADLINE', dependsOn: ['retail'], rule: 'at_risk(retail)' },
     {
       outputId: 'IEI_ICI_BY_SEGMENT',
@@ -216,17 +226,33 @@ export async function seedMissionBoardDependencies(pool: Pool): Promise<void> {
       outputId: 'SEI_GAP',
       dependsOn: ['firm', 'retail'],
       rule: 'at_risk(firm) OR at_risk(retail)',
+      required: ['S1', 'S2', 'S3'],
     },
     {
       outputId: 'LOCAL_VS_FOREIGN',
       dependsOn: ['local_institution', 'foreign_institution'],
       rule: 'at_risk(local_institution) OR at_risk(foreign_institution)',
     },
-    { outputId: 'FIRM_TIER_HEATMAP', dependsOn: ['firm'], rule: 'tier_coverage_uneven' },
     {
+      outputId: 'FIRM_TIER_HEATMAP',
+      dependsOn: ['firm'],
+      rule: 'tier_coverage_uneven',
+      required: ['S1'],
+    },
+    {
+      // The guaranteed combined firm report — FRM_01/02/03 to every participating
+      // firm regardless of volume. "At risk" here means THIN, not withheld.
       outputId: 'PARTICIPATING_FIRM_REPORT',
       dependsOn: ['firm'],
-      rule: 'forecast(attributable) < required; actual(attributable) < required after close',
+      rule: 'guaranteed_combined_report_thin_not_withheld',
+      required: ['S1', 'S2', 'S3'],
+    },
+    {
+      // The per-firm category cuts (FRM_04 retail cut). Per-firm suppression is
+      // DESIGNED sufficiency gating — it reads "Some suppressed", never "At risk".
+      outputId: 'PARTICIPATING_FIRM_REPORT_CATEGORY_CUTS',
+      dependsOn: ['retail'],
+      rule: 'per_firm_category_suppression_by_design',
     },
     { outputId: 'TOP_INVESTOR_FRUSTRATIONS', dependsOn: ['retail'], rule: 'at_risk(retail)' },
     {
@@ -238,12 +264,17 @@ export async function seedMissionBoardDependencies(pool: Pool): Promise<void> {
   for (const r of rows) {
     await query(
       pool,
-      `INSERT INTO report_dependency (output_id, depends_on, sufficiency_rule, enabled)
-       VALUES ($1,$2,$3,TRUE)
+      `INSERT INTO report_dependency (output_id, depends_on, sufficiency_rule, enabled, required_instruments)
+       VALUES ($1,$2,$3,TRUE,$4)
        ON CONFLICT (output_id) DO UPDATE
          SET depends_on = EXCLUDED.depends_on, sufficiency_rule = EXCLUDED.sufficiency_rule,
-             updated_at = NOW()`,
-      [r.outputId, JSON.stringify(r.dependsOn), r.rule],
+             required_instruments = EXCLUDED.required_instruments, updated_at = NOW()`,
+      [
+        r.outputId,
+        JSON.stringify(r.dependsOn),
+        r.rule,
+        r.required ? JSON.stringify(r.required) : null,
+      ],
     );
   }
 }

@@ -388,6 +388,10 @@ export interface ReportDependency {
   dependsOn: string[];
   sufficiencyRule: string;
   enabled: boolean;
+  /** For a firm-referencing output: the exact firm-side instruments it needs
+   *  (UX-OPS-003 §B7). e.g. OMI = [S1,S2,S3] (complete firms), DMI = [S1,S3]
+   *  (DMI-complete). Null for investor-only outputs. */
+  requiredInstruments: string[] | null;
   updatedAt: Date;
 }
 

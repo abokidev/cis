@@ -14,9 +14,13 @@ import { PeopleAccessPage } from './pages/PeopleAccessPage';
 import { InvitationsPage } from './pages/InvitationsPage';
 import { MissionBoardPage } from './pages/MissionBoardPage';
 import { RegulatorsPage } from './pages/RegulatorsPage';
+import { ResponsesPage } from './pages/ResponsesPage';
+import { UnfinishedPage } from './pages/UnfinishedPage';
 
 type Tab =
   | 'board'
+  | 'responses'
+  | 'unfinished'
   | 'edition'
   | 'surveys'
   | 'renderer'
@@ -97,6 +101,24 @@ export function App(): JSX.Element {
           style={tab === 'board' ? { color: 'var(--dragnet-black)' } : undefined}
         >
           Mission board
+        </button>
+        <span aria-hidden="true">·</span>
+        <span>Monitoring</span>
+        <span aria-hidden="true">›</span>
+        <button
+          type="button"
+          onClick={() => setTab('responses')}
+          style={tab === 'responses' ? { color: 'var(--dragnet-black)' } : undefined}
+        >
+          Responses
+        </button>
+        <span aria-hidden="true">·</span>
+        <button
+          type="button"
+          onClick={() => setTab('unfinished')}
+          style={tab === 'unfinished' ? { color: 'var(--dragnet-black)' } : undefined}
+        >
+          Unfinished
         </button>
         <span aria-hidden="true">·</span>
         <span>Setup</span>
@@ -186,6 +208,10 @@ export function App(): JSX.Element {
         <main>{loadError ? <div className="err">{loadError}</div> : <p>Loading…</p>}</main>
       ) : tab === 'board' ? (
         <MissionBoardPage />
+      ) : tab === 'responses' ? (
+        <ResponsesPage />
+      ) : tab === 'unfinished' ? (
+        <UnfinishedPage />
       ) : tab === 'edition' ? (
         <EditionPage client={client} editionId={editionId} viewer={session.user} />
       ) : tab === 'surveys' ? (

@@ -105,6 +105,30 @@ export const GOVERNED_CONFIG_DEFAULTS: ReadonlyArray<{
       note: 'Candidate/provisional per Reporting_Sufficiency_Specification — TO VALIDATE.',
     },
   },
+  {
+    key: 'reminders.schedule',
+    description:
+      'UX-OPS-004 investor-side reminder schedule. A STARTING POSITION, not a decision — set here ' +
+      'and adjustable during fieldwork. Steps are relative to when a person STOPPED ' +
+      '(last_activity_at + days), except the final step which is timed against the edition close ' +
+      '(closes − beforeCloseDays), a LIVE reference that moves if the close date moves. STOP ' +
+      'language is carried on every reminder after the first (a send-sequence flag, not content).',
+    value: {
+      steps: [
+        { step: 1, kind: 'relative', days: 2, enabled: true },
+        { step: 2, kind: 'relative', days: 7, enabled: true },
+        { step: 3, kind: 'before_close', beforeCloseDays: 3, enabled: true },
+      ],
+    },
+  },
+  {
+    key: 'reminders.cap',
+    description:
+      'UX-OPS-004 maximum total reminders to any one person. Governed configuration, never a ' +
+      'hardcoded limit — without a cap a schedule with several steps and a long field period ' +
+      'sends indefinitely to someone who has already decided.',
+    value: 3,
+  },
 ];
 
 export async function seedGovernedConfigDefaults(pool: Pool): Promise<void> {

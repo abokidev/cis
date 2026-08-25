@@ -80,7 +80,17 @@ export function buildSegmentForecast(input: {
   };
 }
 
-// ─── Firm-side funnel diagnosis (brief §7B / D-2) ─────────────────────────────
+// ─── Firm-side funnel diagnosis — FOUR DETERMINISTIC STATES (UX-OPS-003) ──────
+//
+// The calculation brief's §6.3 quartile/Q1 diagnosis was written for a
+// continuous-ish distribution and does NOT fit the firm side, and UX-OPS-003's
+// external QA corrected it: "With one invitation and three respondents per firm,
+// conversion takes four possible values — 0, 33, 67, 100 per cent — and a
+// quartile over four values is not a diagnosis." So the firm side names its state
+// deterministically, each state saying exactly what is wrong with NO comparison
+// and NO quartile. (Q1 quartiles are preserved for the investor side only, where
+// there are enough distinct firms/respondents for a quartile to mean something —
+// see `firstQuartile` below.)
 
 export interface FirmFunnelInput {
   firmId: string;
@@ -91,31 +101,61 @@ export interface FirmFunnelInput {
   completedSeats: number;
 }
 
-/** The four firm-side transitions, earliest first. */
-const FIRM_STAGES = [
+/** The four deterministic firm-side states, earliest first (earliest wins:
+ *  fixing a later stall is pointless while an earlier one still loses firms). */
+export type FirmFunnelState =
+  | 'not_claimed'
+  | 'claimed_not_assigned'
+  | 'assigned_not_opened'
+  | 'opened_not_completed'
+  | 'healthy';
+
+interface FirmStateDef {
+  state: FirmFunnelState;
+  conditionId: number;
+  label: string;
+  remedy: string;
+  /** Whether a firm is stuck in exactly this deterministic state. */
+  stuck: (f: FirmFunnelInput) => boolean;
+}
+
+const FIRM_STATES: readonly FirmStateDef[] = [
   {
-    key: 'invited_claimed',
+    state: 'not_claimed',
     conditionId: 18,
-    label: 'Wrong contact or nobody acted — chase the firm',
+    label: 'Invited but not claimed — wrong person, dead address, or nobody acted.',
+    remedy: 'Chase the firm',
+    stuck: (f) => f.invited && !f.claimed,
   },
   {
-    key: 'claimed_assigned',
+    state: 'claimed_not_assigned',
     conditionId: 19,
-    label: 'Coordinator is in but has named nobody — chase the coordinator',
+    label: 'Claimed but nobody assigned — the coordinator is in and has named nobody.',
+    remedy: 'Chase the coordinator',
+    stuck: (f) => f.claimed && f.assignedSeats === 0,
   },
   {
-    key: 'assigned_opened',
+    state: 'assigned_not_opened',
     conditionId: 19,
-    label: 'A named respondent has not looked — chase the respondents',
+    label: 'Assigned but not opened — a named respondent has not looked.',
+    remedy: 'Chase the respondents',
+    stuck: (f) => f.assignedSeats > 0 && f.openedSeats === 0,
   },
   {
-    key: 'opened_completed',
+    state: 'opened_not_completed',
     conditionId: 20,
-    label: 'A named respondent started and stopped — chase the respondents',
+    label: 'Opened but not completed — started and stopped.',
+    remedy: 'Chase the respondents',
+    stuck: (f) => f.openedSeats > 0 && f.completedSeats < f.openedSeats,
   },
 ] as const;
 
-/** First quartile of a distribution (linear interpolation). */
+/**
+ * First quartile of a distribution (linear interpolation). INVESTOR-SIDE ONLY —
+ * retail/local/foreign have enough distinct firms/respondents for a quartile to
+ * be meaningful. It is deliberately NOT used by the firm-side diagnosis, which is
+ * the four deterministic states above.
+ */
 export function firstQuartile(values: number[]): number {
   if (values.length === 0) return 0;
   const sorted = [...values].sort((a, b) => a - b);
@@ -126,70 +166,49 @@ export function firstQuartile(values: number[]): number {
   return sorted[lo]! + (sorted[hi]! - sorted[lo]!) * frac;
 }
 
-/** Per-firm rate for a stage, or null when the firm has no denominator there. */
-function stageRate(f: FirmFunnelInput, stage: string): number | null {
-  switch (stage) {
-    case 'invited_claimed':
-      return f.invited ? (f.claimed ? 1 : 0) : null;
-    case 'claimed_assigned':
-      return f.claimed ? f.assignedSeats / 3 : null;
-    case 'assigned_opened':
-      return f.assignedSeats > 0 ? f.openedSeats / f.assignedSeats : null;
-    case 'opened_completed':
-      return f.openedSeats > 0 ? f.completedSeats / f.openedSeats : null;
-    default:
-      return null;
-  }
-}
-
 export interface FunnelDiagnosis {
+  /** The stuck state's key, or null when healthy (kept for compatibility). */
   stage: string | null;
+  state: FirmFunnelState;
   conditionId: number;
   label: string;
-  reason?: 'insufficient_population' | 'healthy_default' | 'collapsed_stage';
+  remedy: string;
+  /** How many firms are in this state (0 when healthy). */
+  count: number;
+  reason?: 'healthy_default' | 'stuck_stage';
 }
 
 /**
- * Diagnose the firm-side funnel (brief D-2, RESOLVED). A stage is collapsed for a
- * firm when its rate falls below the FIRST QUARTILE of that stage's distribution
- * across all firms — a self-calibrating boundary, no invented number. When more
- * than one stage is below Q1, the EARLIEST wins (fixing a later stage is
- * pointless while an earlier one still loses people). When none is below Q1, the
- * funnel is healthy and volume is simply short — condition 17, the default, not a
- * gap. Below the 10-firm minimum, no diagnosis is offered (quartiles need data).
+ * Diagnose the firm-side funnel by DETERMINISTIC STATE, not quartile. The cohort's
+ * diagnosis is the earliest state (not_claimed → claimed_not_assigned →
+ * assigned_not_opened → opened_not_completed) in which any firm is stuck; each
+ * names exactly what is wrong and its remedy, with no comparison and no minimum
+ * population (there is no distribution to compute). When no firm is stuck at any
+ * stage, the funnel is healthy and volume is simply short — condition 17, the
+ * default, not a gap.
  */
-export function diagnoseFirmFunnel(firms: FirmFunnelInput[], minPopulation = 10): FunnelDiagnosis {
-  const invitedFirms = firms.filter((f) => f.invited);
-  if (invitedFirms.length < minPopulation) {
-    return {
-      stage: null,
-      conditionId: 17,
-      label: 'Shortfall stated without diagnosis — too few firms to compute stage quartiles.',
-      reason: 'insufficient_population',
-    };
-  }
-  for (const stage of FIRM_STAGES) {
-    const rates: Array<{ firmId: string; rate: number }> = [];
-    for (const f of firms) {
-      const r = stageRate(f, stage.key);
-      if (r !== null) rates.push({ firmId: f.firmId, rate: r });
-    }
-    if (rates.length === 0) continue;
-    const q1 = firstQuartile(rates.map((r) => r.rate));
-    const collapsed = rates.filter((r) => r.rate < q1);
-    if (collapsed.length > 0) {
+export function diagnoseFirmFunnel(firms: FirmFunnelInput[]): FunnelDiagnosis {
+  for (const s of FIRM_STATES) {
+    const count = firms.filter(s.stuck).length;
+    if (count > 0) {
       return {
-        stage: stage.key,
-        conditionId: stage.conditionId,
-        label: stage.label,
-        reason: 'collapsed_stage',
+        stage: s.state,
+        state: s.state,
+        conditionId: s.conditionId,
+        label: s.label,
+        remedy: s.remedy,
+        count,
+        reason: 'stuck_stage',
       };
     }
   }
   return {
     stage: null,
+    state: 'healthy',
     conditionId: 17,
     label: 'Distribution problem — the funnel is healthy, not enough invitations sent.',
+    remedy: 'Send more invitations',
+    count: 0,
     reason: 'healthy_default',
   };
 }

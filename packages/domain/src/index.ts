@@ -244,6 +244,23 @@ export type {
   CandidateRunResult,
 } from './candidate-scoring-service';
 
+// ── Phase 14: Firm private results (UX-FRM-RES-001) ──────────────────────────
+export {
+  getFirmResults,
+  standing,
+  isGapIndex,
+  withinActiveBrokerWindow,
+  ACTIVE_BROKER_MONTHS,
+  FirmResultsError,
+  FirmResultsAccessError,
+} from './firm-results-service';
+export type {
+  FirmResults,
+  FirmIndexResult,
+  FirmRetailCut,
+  StandingLabel,
+} from './firm-results-service';
+
 // ── Phase 13: Responses monitoring (UX-OPS-003) ──────────────────────────────
 export { getResponsesMonitor, getRetailCutForDisplay } from './responses-monitoring-service';
 export type {

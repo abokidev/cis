@@ -1053,3 +1053,91 @@ superseded by the `opened → started → completed` investor funnel. The artefa
 the executable authority where the two conflict (the same precedent applied across
 this programme); the brief remains correct for the segment cards, the distinct-
 institution rule, the dependency map, and the edge cases.
+
+## Firm Private Results (Phase 14 — UX-FRM-RES-001)
+
+The display surface that finally lets a firm SEE the report Phase 6 built the
+pipeline to produce. It READS existing scoring output — it computes no new scores
+and applies NO secondary scaling.
+
+### Comparison direction is DERIVED, never hand-set (the v1.0 defect)
+
+The artefact's own history records a serious correctness bug: v1.0 hand-set a
+"better-than" flag per index, so the SEI **gap** index got a **score** index's
+comparison and read a gap of 1.3 against 1.8 as _above the benchmark_ — the exact
+inversion. The fix, implemented verbatim: `standing(you, industry, gap, margin)`
+returns `true` (better) / `false` (worse) / `null` (inside the margin), and the
+`gap` argument comes from **one** derivation point — `isGapIndex(code) === (code
+=== 'SEI')`. SEI is structurally the service-excellence gap (lower/narrower is
+better); OMI/DMI/IEI/ICI are scores (higher is better). There is deliberately **no
+per-index `is_better_if_higher` flag in any schema or config** — a second hand-set
+flag is exactly the mismatch that recurred as the "third instance of the same
+class" across this estate. A test drives both a gap and a score index through the
+same `standing()` with no per-index override.
+
+### 0–100 shown verbatim; provenance from the real composition
+
+The signed framework scores every index 0–100 so results compare across firms,
+segments and years. `getFirmResults` reads `calculated_results.value` directly and
+applies **no** transform (a test asserts a stored 68 renders as 68). Each index
+states which side it comes from, **derived from its `metric_definitions`
+composition** (`config.population.kind`): firm-seat indices → "From your own three
+surveys", investor-response indices → "From investors who rated you", the
+matched-pair index (SEI) → "Your answers against what investors reported" — not
+hardcoded prose disconnected from the calculation inputs.
+
+### Reuse, single source, permanent nevers
+
+- The **retail category cut** reuses Phase 6's `cutStateFor` + governed
+  thresholds (10/30) — no second threshold check. The **combined report is
+  unconditional**: it renders regardless of response volume; only how far it can
+  be broken down varies, and the copy says so.
+- The **industry benchmark** is the anonymised aggregate from the shared
+  `getScoreView` (mean of per-firm values) — there is **no** ranking, no other
+  firm named, and no endpoint that could return another firm's score, name, or
+  rank.
+- **No institutional cut at firm level, ever** — arithmetic, not policy (25 local
+  / 15 foreign institutions nationally; no single firm reaches a credible
+  institutional sample). The service structurally returns only the five indices.
+- Figures reflect investors who **rated** the firm (`rated_firm_id`), regardless
+  of arrival route — never investors who merely came through the firm's outreach
+  link. A test seeds a respondent arriving via a _different_ firm's link that
+  rates this firm, and one arriving via this firm's link that rates another, and
+  proves attribution (not route) decides inclusion.
+- A difference **inside the margin makes no claim** (`standing()` → null),
+  rendered as neutral, informational text — never styled good or below.
+
+### ⚠️ Governed `MARGIN` (§6)
+
+`reporting.comparison_margin` is governed config seeded at **3** (matching the
+artefact), never a literal and never per-index — one margin for all indices. It is
+provisional and **flagged for reconciliation alongside the other still-open
+sufficiency-threshold questions** (`retail_cut_thresholds`,
+`firm_investor_thresholds`, and the Industry-SEI floor from Phase 11).
+
+### ⚠️ Interim access default (§9)
+
+Access is **coordinator-only** for this phase — the more conservative choice,
+consistent with the coordinator being the platform's addressable party. It is
+verified by the firm's coordinator access code (there is no coordinator login
+surface yet; this is the estate's first coordinator-authenticated surface). Whether
+the coordinator alone sees this or all three respondents is an access question
+owned by UX-FRM-007 and **not decided here** — this is an interim default, flagged,
+not a resolved design choice. A test proves only a coordinator of the firm can
+view it (a different firm's coordinator, or any other code, is refused).
+
+### 📐 Twelve-month active-broker scoping readiness (§8)
+
+Investors answer firm-specific questions only for brokers actively used in the
+past twelve months, so a firm sees its recent clients free of dormant accounts.
+No such recency window existed anywhere (Phase 2/3 rating eligibility only checks
+active-participant status), so a pure, structurally-ready `withinActiveBrokerWindow`
+helper (`ACTIVE_BROKER_MONTHS = 12`) is added for 2027+. In **Year 1 this is moot**
+— with a single edition, every rating is within the only window that exists — so it
+has no visible effect now, but the concept is present rather than absent.
+
+### 🅿️ Parked, per the artefact (not built)
+
+The premium "why you sit here" diagnostic, a firm-level shared-investor
+(multi-broker) comparison, and an investor subsegment-by-portfolio-band view are
+all explicitly parked for Year 1 and deliberately not built.

@@ -129,6 +129,17 @@ export const GOVERNED_CONFIG_DEFAULTS: ReadonlyArray<{
       'sends indefinitely to someone who has already decided.',
     value: 3,
   },
+  {
+    key: 'reporting.comparison_margin',
+    description:
+      'UX-FRM-RES-001 firm-vs-industry comparison margin (points). A difference smaller than ' +
+      'this makes NO claim either way — reporting a difference the data cannot support is the ' +
+      'failure the sufficiency specification exists to prevent. The artefact hardcodes 3; kept ' +
+      'here as governed config, PROVISIONAL, to be reconciled alongside the other open ' +
+      'sufficiency-threshold questions (retail_cut_thresholds, firm_investor_thresholds, ' +
+      'industry_sei floor). Never a per-index value — one margin for all indices.',
+    value: 3,
+  },
 ];
 
 export async function seedGovernedConfigDefaults(pool: Pool): Promise<void> {

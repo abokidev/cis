@@ -16,6 +16,7 @@ import { invitationsRoutes } from './routes/invitations';
 import { missionBoardRoutes } from './routes/mission-board';
 import { regulatorRoutes } from './routes/regulators';
 import { monitoringRoutes } from './routes/monitoring';
+import { firmResultsRoutes } from './routes/firm-results';
 
 export async function buildServer() {
   const app = Fastify({
@@ -55,6 +56,7 @@ export async function buildServer() {
   await app.register(missionBoardRoutes);
   await app.register(regulatorRoutes);
   await app.register(monitoringRoutes);
+  await app.register(firmResultsRoutes);
 
   app.setErrorHandler<Error>((error, request, reply) => {
     const statusCode = resolveStatusCode(error);
@@ -92,6 +94,7 @@ function resolveStatusCode(error: Error & { statusCode?: number }): number {
     case 'ConsentRequiredError':
     case 'PinVerificationError':
     case 'PrivacyConsentRequiredError':
+    case 'FirmResultsAccessError':
       return 403;
     case 'EditionStateError':
     case 'InstrumentsNotFrozenError':
@@ -107,6 +110,7 @@ function resolveStatusCode(error: Error & { statusCode?: number }): number {
     case 'InvitationsError':
     case 'RegulatorEngagementError':
     case 'ReminderTimingError':
+    case 'FirmResultsError':
     case 'DomainError':
       return 409;
     default:

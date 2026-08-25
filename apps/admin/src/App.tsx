@@ -16,6 +16,7 @@ import { MissionBoardPage } from './pages/MissionBoardPage';
 import { RegulatorsPage } from './pages/RegulatorsPage';
 import { ResponsesPage } from './pages/ResponsesPage';
 import { UnfinishedPage } from './pages/UnfinishedPage';
+import { FirmResultsPage } from './pages/FirmResultsPage';
 
 type Tab =
   | 'board'
@@ -30,7 +31,8 @@ type Tab =
   | 'regulators'
   | 'scoring'
   | 'national'
-  | 'firmreports';
+  | 'firmreports'
+  | 'firmresults';
 
 export function App(): JSX.Element {
   const { session, signIn, signOut } = useSession();
@@ -202,6 +204,14 @@ export function App(): JSX.Element {
         >
           Firm reports
         </button>
+        <span aria-hidden="true">·</span>
+        <button
+          type="button"
+          onClick={() => setTab('firmresults')}
+          style={tab === 'firmresults' ? { color: 'var(--dragnet-black)' } : undefined}
+        >
+          Firm results
+        </button>
       </nav>
 
       {!editionId ? (
@@ -230,6 +240,8 @@ export function App(): JSX.Element {
         <ScoresSignoffPage />
       ) : tab === 'national' ? (
         <NationalReportPage />
+      ) : tab === 'firmresults' ? (
+        <FirmResultsPage />
       ) : (
         <FirmReportsPage />
       )}

@@ -22,9 +22,9 @@ import { DomainError } from './errors';
  *    from when someone STOPPED), never against a shared calendar date. The final
  *    step is timed against the edition CLOSE (`closes − N days`), a LIVE reference
  *    that moves if the close date moves.
- *  - STOP language is carried on every reminder AFTER the first (a send-sequence
- *    flag, not content) — the first asks a decision the person has no reason to
- *    make yet.
+ *  - STOP language is carried on every scheduled reminder without exception. The
+ *    only STOP-free message is the separate one-time initial link delivery (Phase
+ *    3/9), which is not part of this engine's cadence at all.
  *  - A configurable CAP bounds total reminders; the schedule and cap are governed
  *    config (`reminders.schedule` / `reminders.cap`), editable during fieldwork.
  *  - INVESTOR-SIDE ONLY (retail/local/foreign). Firm-side seat-holders (S1/S2/S3)
@@ -108,8 +108,7 @@ export interface DueReminder {
 /**
  * The single reminder (if any) due for one response at `asOf`: the earliest
  * enabled, not-yet-sent step whose trigger time has passed, provided the cap is
- * not reached. STOP is carried when at least one reminder has already been sent.
- * Pure — no DB, no clock.
+ * not reached. STOP is carried on every scheduled reminder. Pure — no DB, no clock.
  */
 export function nextDueReminder(params: {
   schedule: ReminderSchedule;
@@ -129,8 +128,7 @@ export function nextDueReminder(params: {
       return {
         step: s.step,
         scheduledFor: trigger,
-        // First reminder ever (nothing sent yet) carries NO STOP; any later one does.
-        carriesStop: params.sentSteps.length >= 1,
+        carriesStop: true,
       };
     }
   }

@@ -44,6 +44,7 @@ export const CONTENT_AREAS = [
   'invitation_landing',
   'organisation_descriptions',
   'help_text',
+  'reminder_content',
 ] as const;
 
 export type ContentArea = (typeof CONTENT_AREAS)[number];
@@ -52,6 +53,27 @@ const TEMPLATE_AUDIENCE: Partial<Record<ContentArea, 'participant' | 'firm'>> = 
   participant_templates: 'participant',
   firm_outreach_copy: 'firm',
 };
+
+// SMS sub-keys: body must stay within one segment when the recovery URL is
+// substituted. Use 70 chars as the URL budget (conservative real-world value).
+const SMS_SUB_KEYS = new Set(['first_message_text', 'reminder_text']);
+const SMS_MAX_CHARS = 160;
+const SMS_URL_BUDGET = 70;
+
+function validateSmsLength(subKey: string, body: string): void {
+  if (!SMS_SUB_KEYS.has(subKey)) return;
+  const withUrl = body.replace('{{recovery_url}}', 'x'.repeat(SMS_URL_BUDGET));
+  // Remove other placeholders for length check (progress_wording etc. are brief)
+  const measured = withUrl.replace(/\{\{[^}]+\}\}/g, '');
+  if (measured.length > SMS_MAX_CHARS) {
+    throw new ManagedContentError(
+      `SMS template "${subKey}" would exceed ${SMS_MAX_CHARS} characters when assembled ` +
+        `(${measured.length} chars with a ${SMS_URL_BUDGET}-char URL). ` +
+        `A split link is a broken link — shorten the body.`,
+      'SMS_TOO_LONG',
+    );
+  }
+}
 
 export class ManagedContentError extends Error {
   readonly code: string;
@@ -180,6 +202,7 @@ export async function saveDraft(
     throw new ManagedContentError('Body cannot be empty.', 'EMPTY_BODY');
   }
   await enforceRequiredClauses(pool, area, subKey, body);
+  if (area === 'reminder_content') validateSmsLength(subKey, body);
   return insertContentVersion(pool, area, subKey, body, userId);
 }
 

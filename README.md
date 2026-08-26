@@ -1202,3 +1202,106 @@ Until the floor is set, the friction tab is displayed without a minimum-volume
 gate. A governed-config key (`dragnet.friction_min_population`) should be
 introduced when the floor value is agreed, following the same pattern as
 `reporting.retail_cut_thresholds`.
+
+---
+
+## Phase 17 — UX-RET-007 v2.3: Reminder & Recovery Message Content
+
+### §2 STOP-language verification (Phase 13 bug corrected)
+
+Phase 13's `nextDueReminder` contained a bug:
+
+```typescript
+// WRONG (Phase 13 original)
+carriesStop: params.sentSteps.length >= 1;
+```
+
+This made step 1 (the 2-day relative reminder) carry `carriesStop = false`, incorrectly
+exempting the first scheduled reminder from STOP language.
+
+Per the UX-RET-007 v2.3 artefact, the **only** STOP-free message is the separate one-time
+initial link delivery at consent time (Phase 3/9). That message is not produced by the Phase 13
+reminder engine at all — it is sent once, at the moment a participant provides contact details,
+and is not part of the scheduled cadence. Every step the Phase 13 engine dispatches is a
+reminder, and every reminder must carry STOP.
+
+The fix:
+
+```typescript
+// CORRECT (Phase 17)
+carriesStop: true;
+```
+
+All three timing-test assertions that expected `carriesStop = false` for step 1 have been
+updated to `true`, and the Gate 1 DoD test in `reminder-content.test.ts` explicitly exercises
+each step including step 1.
+
+### WhatsApp (DEC-010)
+
+No WhatsApp message variants were built. DEC-010 superseded the WhatsApp channel with
+text/SMS. The `ReminderSubKey` type has no WhatsApp entries; the seed migration creates
+no WhatsApp content rows.
+
+### `reminders_opted_out` — structural separation from consent and participation
+
+The `reminders_opted_out BOOLEAN NOT NULL DEFAULT FALSE` column on `respondents` (added in
+migration `20260907000000_phase17-reminder-content.js`) is the only field that STOP/opt-out
+touches.
+
+- `optOutReminders` updates only `reminders_opted_out`. It does not touch `consent_accepted`,
+  `submitted_at`, `contact_channel`, `contact_email`, `contact_phone`, or any other column.
+- A respondent who opts out of reminders remains fully eligible to complete and submit their
+  response. Their token is still valid; they can return and submit normally.
+- Gate 5 in `reminder-content.test.ts` asserts this explicitly: after `optOutReminders`, the
+  test queries `consent_accepted` and `submitted_at` directly and asserts they are unchanged,
+  then asserts `markRespondentSubmitted` still succeeds for the same respondent.
+
+### SMS single-segment constraint
+
+All SMS sub-keys (`first_message_text`, `reminder_text`) must produce a body of ≤ 160 characters
+when the longest expected recovery URL is substituted. The `saveDraft` domain function enforces
+this at write time via a private validator that:
+
+1. Replaces `{{recovery_url}}` with a 70-character representative URL.
+2. Strips any remaining `{{…}}` placeholders.
+3. Asserts the result is ≤ 160 characters.
+
+Both seeded SMS templates fit comfortably within this budget:
+
+- `first_message_text`: ~138 characters (68 fixed + 70 URL).
+- `reminder_text`: ~143 characters (62 fixed + 11 STOP suffix + 70 URL).
+
+Gate 2 in `reminder-content.test.ts` reads the live seeded content from the database and
+verifies both fit within the limit.
+
+### Content managed through Phase 15 admin UI
+
+Phase 17 adds `reminder_content` as the seventh managed-content area, reusing Phase 15's
+`content_versions` + `content_live` tables, `saveDraft` / `publishDraft` / `getLiveContent`
+functions, and the admin UI at `/managed-content`. No new content store was introduced.
+
+The seven sub-keys seeded at migration time:
+
+| Sub-key               | Channel | Notes                                                                    |
+| --------------------- | ------- | ------------------------------------------------------------------------ |
+| `first_message_email` | Email   | JSON — subject, body, cta. No STOP (one-time delivery at consent).       |
+| `first_message_text`  | SMS     | Plain text with `{{recovery_url}}`. No STOP.                             |
+| `reminder_email`      | Email   | JSON — subject, body, cta, stop_link_text. Carries STOP.                 |
+| `reminder_text`       | SMS     | Plain text with `{{recovery_url}}`. Carries STOP via inline STOP suffix. |
+| `reminders_stopped`   | Web     | JSON — heading, body, study_home_cta, recovery_link_cta.                 |
+| `already_submitted`   | Web     | JSON — heading, body.                                                    |
+| `link_tapped`         | Web     | JSON — heading, body.                                                    |
+
+### Progress wording is computed, not fixed
+
+`computeProgressWording(answered, total)` in `reminder-content-service.ts` derives a human
+phrase from the respondent's actual answered-item count relative to the total items for their
+instrument. It returns different phrases for different completion ratios. Gate 3 asserts that
+two respondents at ~15% and ~54% completion receive different wording.
+
+### Channel inheritance
+
+The reminder delivery channel is the `contact_channel` set at Phase 3/9 consent time. The
+Phase 17 service reads it from the respondent record and never overrides it. Gate 4 asserts
+that after setting `channel: 'text'` at consent time, the same value is present on a
+subsequent fetch by recovery token.

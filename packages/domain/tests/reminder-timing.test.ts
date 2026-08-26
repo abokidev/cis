@@ -1,7 +1,7 @@
 /**
- * UX-OPS-004 Reminder timing — Phase 13 DoD.
+ * UX-OPS-004 Reminder timing — Phase 13 DoD (corrected in Phase 17).
  *  - Relative timing: fires at last_activity_at + N days, independent of calendar.
- *  - STOP flag on every reminder AFTER the first (send-sequence, not content).
+ *  - STOP flag on every scheduled reminder without exception (§2 Phase 17 verified).
  *  - Configurable cap bounds total reminders.
  *  - Closing-week reminder is a LIVE reference to the edition close date.
  *  - Unreachable participants excluded and counted; firm-side seat responses
@@ -70,10 +70,13 @@ describe('Relative timing, STOP flag, cap (pure)', () => {
     expect(nextDueReminder({ ...base, asOf: new Date(last.getTime() + 1 * DAY) })).toBeNull();
     const due = nextDueReminder({ ...base, asOf: new Date(last.getTime() + 2 * DAY) });
     expect(due?.step).toBe(1);
-    expect(due?.carriesStop).toBe(false); // first reminder: no STOP
+    // Phase 17 §2 verified: every scheduled reminder carries STOP. The only
+    // STOP-free message is the one-time initial link delivery (Phase 3/9), which
+    // is not part of this engine's cadence at all.
+    expect(due?.carriesStop).toBe(true);
   });
 
-  it('carries STOP on every reminder after the first', () => {
+  it('carries STOP on every reminder, including the second', () => {
     const due = nextDueReminder({
       schedule: SCHEDULE,
       cap: 3,
@@ -167,12 +170,12 @@ describe('Eligibility — investor-side, reachable, not completed', () => {
     expect(sent).toHaveLength(1);
     expect(sent[0]!.responseId).toBe(reachable);
     expect(sent[0]!.step).toBe(1);
-    expect(sent[0]!.carriesStop).toBe(false);
+    expect(sent[0]!.carriesStop).toBe(true); // all scheduled reminders carry STOP
   });
 });
 
-describe('Sequence — STOP after the first, cap enforced across runs', () => {
-  it('first send has no STOP, the second does, and the cap holds', async () => {
+describe('Sequence — STOP on all, cap enforced across runs', () => {
+  it('all sends carry STOP and the cap holds', async () => {
     // Two relative steps, cap 2.
     await setReminderSchedule(pool, {
       steps: [
@@ -191,7 +194,8 @@ describe('Sequence — STOP after the first, cap enforced across runs', () => {
     expect(all).toHaveLength(2); // cap 2 — no third send
     const s1 = all.find((s) => s.step === 1)!;
     const s2 = all.find((s) => s.step === 2)!;
-    expect(s1.carriesStop).toBe(false);
+    // Phase 17 §2: every scheduled reminder carries STOP
+    expect(s1.carriesStop).toBe(true);
     expect(s2.carriesStop).toBe(true);
   });
 });

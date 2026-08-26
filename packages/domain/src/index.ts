@@ -329,3 +329,14 @@ export {
   ManagedContentPermissionError,
 } from './managed-content-service';
 export type { ContentArea, ContentState, TemplateSubKey } from './managed-content-service';
+
+// ── Phase 17: Reminder content (UX-RET-007) ──────────────────────────────────
+export {
+  computeProgressWording,
+  getReminderContent,
+  stopReminders,
+  assembleReminderText,
+  assembleFirstMessageText,
+  ReminderContentError,
+} from './reminder-content-service';
+export type { ReminderSubKey, RespondentProgress } from './reminder-content-service';

@@ -54,6 +54,7 @@ export async function getInProgressResponses(
        ) d ON TRUE
       WHERE r.edition_id = $1
         AND r.submitted_at IS NULL
+        AND r.reminders_opted_out = FALSE
         AND d.last_activity_at IS NOT NULL`,
     [editionId],
   );
@@ -143,4 +144,48 @@ export async function listReminderSends(pool: Pool, editionId: string): Promise<
     [editionId],
   );
   return res.rows.map(mapReminder);
+}
+
+// ─── Opt-out (UX-RET-007) ─────────────────────────────────────────────────────
+
+/** Set reminders_opted_out = true for a respondent. Never touches consent or
+ *  participation-status fields — a stopped respondent remains fully eligible. */
+export async function optOutReminders(pool: Pool, respondentId: string): Promise<void> {
+  await query(pool, `UPDATE respondents SET reminders_opted_out = TRUE WHERE id = $1`, [
+    respondentId,
+  ]);
+}
+
+export async function isReminderOptedOut(pool: Pool, respondentId: string): Promise<boolean> {
+  const res = await query<{ reminders_opted_out: boolean }>(
+    pool,
+    `SELECT reminders_opted_out FROM respondents WHERE id = $1`,
+    [respondentId],
+  );
+  return res.rows[0]?.reminders_opted_out ?? false;
+}
+
+// ─── Progress for dynamic wording ─────────────────────────────────────────────
+
+export interface RespondentProgress {
+  answered: number;
+  total: number;
+}
+
+/** Count of draft answers for a respondent vs total items for their instrument. */
+export async function getRespondentProgress(
+  pool: Pool,
+  respondentId: string,
+): Promise<RespondentProgress> {
+  const res = await query<{ answered: number; total: number }>(
+    pool,
+    `SELECT
+       (SELECT COUNT(DISTINCT question_id) FROM respondent_drafts WHERE respondent_id = $1)::int AS answered,
+       (SELECT COUNT(*) FROM instrument_questions iq
+          JOIN respondents r ON r.instrument_code = iq.instrument_code
+         WHERE r.id = $1)::int AS total`,
+    [respondentId],
+  );
+  const row = res.rows[0];
+  return { answered: row?.answered ?? 0, total: row?.total ?? 0 };
 }

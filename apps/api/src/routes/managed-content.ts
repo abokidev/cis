@@ -38,6 +38,7 @@ export const managedContentRoutes: FastifyPluginAsyncZod = async (app) => {
       invitation_landing: 'Invitation landing statements',
       organisation_descriptions: 'Organisation descriptions',
       help_text: 'Help text',
+      reminder_content: 'Reminder message content',
     };
 
     for (const area of CONTENT_AREAS) {

@@ -1141,3 +1141,64 @@ has no visible effect now, but the concept is present rather than absent.
 The premium "why you sit here" diagnostic, a firm-level shared-investor
 (multi-broker) comparison, and an investor subsegment-by-portfolio-band view are
 all explicitly parked for Year 1 and deliberately not built.
+
+## Dragnet Internal Analysis (Phase 16 — UX-ADM-007)
+
+Dragnet's own commercial analysis tool, built on the MOU's revenue-sharing terms
+with CIS. Gated to users with `access:dragnet` — CIS-org users are structurally
+refused this right (Phase 8). The surface is absent from navigation (not shown as
+"access denied") for users without the right.
+
+### The join boundary is structural, not conventional
+
+**Firm-level maturity and DRG-OPS operational friction data are NEVER joined.**
+Two entirely separate query paths — `getFirmMaturityRows` and `getDrgOpsAggregate`
+in `packages/db/src/queries/dragnet.ts` — enforce this at the function signature
+level: neither function touches the other's tables, and no shared JOIN path
+exists. The domain service (`packages/domain/src/dragnet-service.ts`) routes each
+API endpoint to exactly one of these paths. Tests in
+`packages/domain/tests/dragnet.test.ts` actively assert the impossibility of
+querying DRG-OPS content alongside any firm-identifying column (§1,
+join-impossibility).
+
+**Why this matters:** combining them would turn the benchmark into a product that
+profiles individual firms for selling, which is what CIS declined. The separation
+is a condition of the MOU, not a UI preference.
+
+### Consent boundary — absent, not masked
+
+Contact details appear only for firms that gave follow-up consent (Phase 4's
+`firm_claims.follow_up_consent`). A non-consented firm has `contact: null` in the
+query result — the field is genuinely absent, not an empty string, not masked, not
+greyed out. The CSV export uses the **same** `getFirmMaturityRows` call as the
+screen (not a separate export query), so the consent boundary is identical in both
+paths.
+
+### Tier is a fixed property of the OMI score
+
+`assignTiers()` in `dragnet-service.ts` partitions firms by their OMI value —
+top third, bottom third, middle third — and records the tier as a stable property
+of the `FirmMaturityEntry`. It never derives tier from row position in a sorted
+list. The UI can re-sort the table in any order without changing any firm's tier.
+
+### ⚠️ Open item — DRG-OPS friction minimum-population floor (UNRESOLVED)
+
+The operational friction views aggregate DRG-OPS responses across all respondents
+for an edition, but at low response volume the aggregate is statistically
+less meaningful. **No minimum-population floor has been set for this view.**
+
+This threshold should follow the same reasoning as the platform's other
+sufficiency floors — the reporting floors (retail cut 10/30, directional vs.
+reportable thresholds), the institutional-completions floor, and the sample floor
+configuration in `edition_sample_floors` — rather than being invented
+unilaterally in this phase. Setting it requires the same kind of methodology and
+legal alignment those floors went through.
+
+**This is an open item for the study team and Dragnet to resolve jointly.** The
+friction view computes and displays correctly at any volume; the floor decision
+controls when it is safe to act on the result, not whether the arithmetic runs.
+
+Until the floor is set, the friction tab is displayed without a minimum-volume
+gate. A governed-config key (`dragnet.friction_min_population`) should be
+introduced when the floor value is agreed, following the same pattern as
+`reporting.retail_cut_thresholds`.

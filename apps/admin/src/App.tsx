@@ -18,6 +18,7 @@ import { ResponsesPage } from './pages/ResponsesPage';
 import { UnfinishedPage } from './pages/UnfinishedPage';
 import { FirmResultsPage } from './pages/FirmResultsPage';
 import { WordingPage } from './pages/WordingPage';
+import { DragnetPage } from './pages/DragnetPage';
 
 type Tab =
   | 'board'
@@ -34,7 +35,8 @@ type Tab =
   | 'national'
   | 'firmreports'
   | 'firmresults'
-  | 'wording';
+  | 'wording'
+  | 'dragnet';
 
 export function App(): JSX.Element {
   const { session, signIn, signOut } = useSession();
@@ -222,6 +224,18 @@ export function App(): JSX.Element {
         >
           Wording
         </button>
+        {session.user.hasDragnetRight && (
+          <>
+            <span aria-hidden="true">·</span>
+            <button
+              type="button"
+              onClick={() => setTab('dragnet')}
+              style={tab === 'dragnet' ? { color: 'var(--dragnet-black)' } : undefined}
+            >
+              Dragnet analysis
+            </button>
+          </>
+        )}
       </nav>
 
       {!editionId ? (
@@ -254,6 +268,8 @@ export function App(): JSX.Element {
         <FirmResultsPage />
       ) : tab === 'wording' ? (
         <WordingPage client={client} />
+      ) : tab === 'dragnet' && editionId && session.user.hasDragnetRight ? (
+        <DragnetPage client={client} editionId={editionId} />
       ) : (
         <FirmReportsPage />
       )}

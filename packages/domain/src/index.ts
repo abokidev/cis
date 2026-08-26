@@ -309,6 +309,15 @@ export {
   RegulatorEngagementError,
 } from './regulator-engagement-service';
 
+// ── Phase 16: Dragnet Internal Analysis (UX-ADM-007) ─────────────────────────
+export {
+  getDragnetMaturity,
+  getDragnetFriction,
+  getDragnetMaturityCsv,
+  DragnetPermissionError,
+} from './dragnet-service';
+export type { FirmMaturityEntry, FirmTier } from './dragnet-service';
+
 // ── Phase 15: Managed wording (UX-ADM-CNT-001) ───────────────────────────────
 export {
   CONTENT_AREAS,

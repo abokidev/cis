@@ -1,7 +1,7 @@
 import type { FastifyReply } from 'fastify';
 import { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
-import { getPool, getUserByEmail, updateLastLogin } from '@cis/db';
+import { getPool, getUserByEmail, updateLastLogin, getDirectPermissionCodes } from '@cis/db';
 import { verifyPassword } from '@cis/auth';
 import { writeAudit } from '@cis/audit';
 
@@ -17,6 +17,7 @@ const LoginResponse = z.object({
     email: z.string(),
     displayName: z.string(),
     org: z.string().nullable(),
+    hasDragnetRight: z.boolean(),
   }),
 });
 
@@ -54,6 +55,9 @@ export const authRoutes: FastifyPluginAsyncZod = async (app) => {
 
       await updateLastLogin(pool, user.id);
 
+      const permCodes = await getDirectPermissionCodes(pool, user.id);
+      const hasDragnetRight = permCodes.includes('access:dragnet');
+
       await writeAudit(pool, {
         actorId: user.id,
         actionType: 'user.login',
@@ -77,6 +81,7 @@ export const authRoutes: FastifyPluginAsyncZod = async (app) => {
           email: user.email,
           displayName: user.displayName,
           org: user.organization,
+          hasDragnetRight,
         },
       });
     },

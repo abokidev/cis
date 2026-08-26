@@ -18,6 +18,7 @@ import { regulatorRoutes } from './routes/regulators';
 import { monitoringRoutes } from './routes/monitoring';
 import { firmResultsRoutes } from './routes/firm-results';
 import { managedContentRoutes } from './routes/managed-content';
+import { dragnetRoutes } from './routes/dragnet';
 
 export async function buildServer() {
   const app = Fastify({
@@ -59,6 +60,7 @@ export async function buildServer() {
   await app.register(monitoringRoutes);
   await app.register(firmResultsRoutes);
   await app.register(managedContentRoutes);
+  await app.register(dragnetRoutes);
 
   app.setErrorHandler<Error>((error, request, reply) => {
     const statusCode = resolveStatusCode(error);
@@ -98,6 +100,7 @@ function resolveStatusCode(error: Error & { statusCode?: number }): number {
     case 'PrivacyConsentRequiredError':
     case 'FirmResultsAccessError':
     case 'ManagedContentPermissionError':
+    case 'DragnetPermissionError':
       return 403;
     case 'EditionStateError':
     case 'InstrumentsNotFrozenError':

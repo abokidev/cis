@@ -16,15 +16,6 @@ import type { AdminClient } from '../api/client';
  * No maker-checker gate — wording changes are reversible via version history.
  */
 
-const AREA_LABELS: Record<string, string> = {
-  privacy_notice: 'Privacy notice',
-  participant_templates: 'Participant message templates',
-  firm_outreach_copy: 'Firm outreach copy',
-  invitation_landing: 'Invitation landing statements',
-  organisation_descriptions: 'Organisation descriptions',
-  help_text: 'Help text',
-};
-
 const LOAD_BEARING = new Set(['privacy_notice', 'participant_templates', 'invitation_landing']);
 
 interface AreaInfo {

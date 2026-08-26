@@ -19,6 +19,7 @@ import {
   seedInstitutionEngagement,
   seedMissionBoardDependencies,
   seedCandidateScoringConfig,
+  seedManagedContentDefaults,
 } from '@cis/db';
 import { hashPassword } from '@cis/auth';
 import { EDITION_MANAGE_PERMISSION, EDITION_LOCK_ACTION } from './edition-service';
@@ -188,6 +189,10 @@ export async function seedReferenceData(pool: Pool): Promise<SeededReferenceData
   // CIS-SCORE-2026 v0.14 candidate config, persisted from its authoritative YAML
   // as version 14 / is_active=FALSE (TEST_UNAPPROVED — never the active config).
   await seedCandidateScoringConfig(pool);
+
+  // ── Managed wording defaults (Phase 15) ──────────────────────────────────────
+  // Required clauses, participant templates, and initial invitation_landing live version.
+  await seedManagedContentDefaults(pool, edition.id, maker.id);
 
   // ── Controlled Survey Register (9 instruments, 90 questions) ──────────────────
   const instruments = await seedSurveyRegister(pool, maker.id);

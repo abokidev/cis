@@ -260,7 +260,7 @@ export function checkSentence(
 }
 
 /** Persist a generated draft (the AI generator's output; it computes nothing). */
-export async function saveDraft(
+export async function saveNationalDraft(
   pool: Pool,
   nationalReportId: string,
   sentences: DraftSentence[],

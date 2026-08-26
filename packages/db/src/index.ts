@@ -29,6 +29,7 @@ export * from './queries/monitoring';
 export * from './queries/regulator-engagement';
 export * from './queries/comparison-runs';
 export * from './queries/scoring-queries';
+export * from './queries/managed-content';
 export {
   loadScoringConfig,
   getMethodologyMeta,

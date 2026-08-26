@@ -20,6 +20,12 @@ export default defineWorkspace([
       testTimeout: 30_000,
       hookTimeout: 60_000,
       fileParallelism: false,
+      pool: 'forks',
+      poolOptions: {
+        forks: {
+          singleFork: true,
+        },
+      },
       env: {
         DATABASE_URL: DB_URL,
         JWT_SECRET: 'test-secret-at-least-32-characters-long-for-tests',

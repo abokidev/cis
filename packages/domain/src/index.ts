@@ -107,7 +107,7 @@ export {
   generateNationalReport,
   isUnsupportedByConstruction,
   checkSentence,
-  saveDraft,
+  saveNationalDraft,
   runChecker,
   runAdversaryHealth,
   ADVERSARY_HEALTH_THRESHOLD,
@@ -308,3 +308,15 @@ export {
   REGULATOR_META,
   RegulatorEngagementError,
 } from './regulator-engagement-service';
+
+// ── Phase 15: Managed wording (UX-ADM-CNT-001) ───────────────────────────────
+export {
+  CONTENT_AREAS,
+  getContentState,
+  listTemplateSubKeys,
+  saveDraft,
+  publishDraft,
+  ManagedContentError,
+  ManagedContentPermissionError,
+} from './managed-content-service';
+export type { ContentArea, ContentState, TemplateSubKey } from './managed-content-service';

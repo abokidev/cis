@@ -17,6 +17,7 @@ import { RegulatorsPage } from './pages/RegulatorsPage';
 import { ResponsesPage } from './pages/ResponsesPage';
 import { UnfinishedPage } from './pages/UnfinishedPage';
 import { FirmResultsPage } from './pages/FirmResultsPage';
+import { WordingPage } from './pages/WordingPage';
 
 type Tab =
   | 'board'
@@ -32,7 +33,8 @@ type Tab =
   | 'scoring'
   | 'national'
   | 'firmreports'
-  | 'firmresults';
+  | 'firmresults'
+  | 'wording';
 
 export function App(): JSX.Element {
   const { session, signIn, signOut } = useSession();
@@ -212,6 +214,14 @@ export function App(): JSX.Element {
         >
           Firm results
         </button>
+        <span aria-hidden="true">·</span>
+        <button
+          type="button"
+          onClick={() => setTab('wording')}
+          style={tab === 'wording' ? { color: 'var(--dragnet-black)' } : undefined}
+        >
+          Wording
+        </button>
       </nav>
 
       {!editionId ? (
@@ -242,6 +252,8 @@ export function App(): JSX.Element {
         <NationalReportPage />
       ) : tab === 'firmresults' ? (
         <FirmResultsPage />
+      ) : tab === 'wording' ? (
+        <WordingPage client={client} />
       ) : (
         <FirmReportsPage />
       )}

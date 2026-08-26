@@ -18,7 +18,7 @@ import {
   generateNationalReport,
   isUnsupportedByConstruction,
   checkSentence,
-  saveDraft,
+  saveNationalDraft,
   runChecker,
   runAdversaryHealth,
   disposeFinding,
@@ -221,7 +221,7 @@ describe('Approval preconditions — four, independently', () => {
       scoringRunId,
       context: fullContext(),
     });
-    await saveDraft(pool, report.id, [
+    await saveNationalDraft(pool, report.id, [
       { ordinal: 1, text: 'The weakest performers are the smaller firms.', factIds: [] },
     ]);
     await runChecker(pool, report.id, []);

@@ -91,6 +91,28 @@ export async function getTemplate(pool: Pool, id: string): Promise<MessageTempla
   return row ? mapTemplate(row) : null;
 }
 
+export async function getTemplateByName(pool: Pool, name: string): Promise<MessageTemplate | null> {
+  const res = await query<RawTemplateRow>(
+    pool,
+    'SELECT * FROM message_templates WHERE name = $1 ORDER BY created_at LIMIT 1',
+    [name],
+  );
+  const row = res.rows[0];
+  return row ? mapTemplate(row) : null;
+}
+
+export async function listTemplatesByAudience(
+  pool: Pool,
+  audienceKind: MessageAudienceKind,
+): Promise<MessageTemplate[]> {
+  const res = await query<RawTemplateRow>(
+    pool,
+    'SELECT * FROM message_templates WHERE audience_kind = $1 ORDER BY created_at',
+    [audienceKind],
+  );
+  return res.rows.map(mapTemplate);
+}
+
 export async function listTemplates(pool: Pool, editionId: string): Promise<MessageTemplate[]> {
   const res = await query<RawTemplateRow>(
     pool,

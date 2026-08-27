@@ -132,12 +132,31 @@ const MONTHS = [
   'December',
 ];
 
+/** For a genuine instant (e.g. `asOf`, an ISO timestamp off the wire, or a
+ *  UTC-constructed in-memory Date such as `parseTargetBy`'s `targetDate`) —
+ *  UTC is the least-ambiguous way to reduce it to a calendar day. */
 function dateStr(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 function fmtHuman(d: Date): string {
   const s = dateStr(d).split('-');
   return `${parseInt(s[2]!, 10)} ${MONTHS[parseInt(s[1]!, 10) - 1]}`;
+}
+/**
+ * For a value read back from a `DATE` column (`row.targetBy`) — never
+ * `dateStr`. A calendar date has no timezone, and node-postgres parses a
+ * plain "YYYY-MM-DD" DATE value as LOCAL midnight (`new Date(year, month,
+ * day)` — see the `postgres-date` package it depends on, deliberately: "will
+ * be parsed as local time"). Reading it back through `dateStr`'s UTC
+ * `.toISOString()` recombines a local-time construction with a UTC read,
+ * which flips the day in any timezone ahead of UTC. Local getters are the
+ * correct, symmetric inverse of how the value was constructed.
+ */
+function dbDateStr(d: Date): string {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 function deriveState(row: RegulatorEngagementRow): RegulatorSurveyState {
@@ -166,7 +185,7 @@ function nextStepFor(state: RegulatorSurveyState): string {
 function isOverdue(row: RegulatorEngagementRow, asOf: Date): boolean {
   if (!row.targetBy) return false;
   if (!['not_started', 'invited', 'in_progress'].includes(row.status)) return false;
-  return dateStr(asOf) > dateStr(row.targetBy);
+  return dateStr(asOf) > dbDateStr(row.targetBy);
 }
 
 async function toView(
@@ -188,7 +207,7 @@ async function toView(
     state,
     contact: row.contact,
     surveyLink: row.surveyLink,
-    targetBy: row.targetBy ? dateStr(row.targetBy) : null,
+    targetBy: row.targetBy ? dbDateStr(row.targetBy) : null,
     overdue: isOverdue(row, asOf),
     nextStep: nextStepFor(state),
     history,
@@ -353,7 +372,9 @@ export async function issueSurveyLink(
   const surveyLink = `/journeys/resume/${token}`;
 
   await setRegulatorSurveyIssued(pool, editionId, institution, {
-    targetBy: targetDate,
+    // The validated string, not `targetDate` — see setRegulatorSurveyIssued's
+    // own comment on why a Date object must never cross this boundary.
+    targetBy: input.targetBy,
     surveyLink,
     respondentId: respondent.id,
   });

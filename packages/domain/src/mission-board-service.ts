@@ -29,6 +29,22 @@ import {
 } from './candidate-scoring-service';
 
 /**
+ * Format a value read from `institution_engagement.target_by` (a DATE
+ * column) for display. Never `.toISOString()` here: node-postgres parses a
+ * plain "YYYY-MM-DD" DATE value as LOCAL midnight (no timezone exists on a
+ * calendar date), so reading it back through a UTC method flips the day in
+ * any timezone ahead of UTC (see the identical fix in
+ * regulator-engagement-service.ts's `dbDateStr`, condition 16's own data
+ * source). Local getters are the correct, symmetric inverse.
+ */
+function dbDateStr(d: Date): string {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+/**
  * UX-OPS-001 — the mission board evaluator. One board, one audience: what needs
  * a person today, ranked by consequence. Every condition is forecast-based (§2):
  * a card exists because the trajectory threatens an agreed outcome AND a concrete
@@ -648,9 +664,7 @@ export function evaluateBoard(ctx: BoardContext): MissionCard[] {
           makeSimpleCard(
             16,
             0,
-            [
-              `${inst.institution} not engaged past its target of ${inst.targetBy.toISOString().slice(0, 10)}`,
-            ],
+            [`${inst.institution} not engaged past its target of ${dbDateStr(inst.targetBy)}`],
             ['Institutional Perspectives at risk'],
           ),
         );

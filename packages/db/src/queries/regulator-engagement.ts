@@ -115,12 +115,22 @@ export async function saveRegulatorContact(
  * Record the issued survey link: status → 'invited', the study-team `targetBy`
  * date, the survey link string and the respondent id that backs it. `targetBy`
  * is set explicitly (no COALESCE) so it is exactly the study-team value.
+ *
+ * `targetBy` is a plain 'YYYY-MM-DD' string, deliberately never a JS `Date`
+ * object, here. `target_by` is a DATE column — a calendar date, not an
+ * instant — and `pg` serializes an outgoing `Date` parameter using the
+ * process's LOCAL timezone components (see node-postgres's `dateToString`).
+ * In any timezone behind UTC, a UTC-midnight `Date` for "2026-09-01" formats
+ * as local "2026-08-31 …-05", and a DATE column silently drops that trailing
+ * offset — storing the wrong day. Passing the already-validated string
+ * bypasses that serialization entirely, so the day stored is exactly the day
+ * the study team typed.
  */
 export async function setRegulatorSurveyIssued(
   pool: Pool,
   editionId: string,
   institution: RegulatorCode,
-  data: { targetBy: Date; surveyLink: string; respondentId: string },
+  data: { targetBy: string; surveyLink: string; respondentId: string },
 ): Promise<RegulatorEngagementRow> {
   const res = await query<RawRow>(
     pool,

@@ -66,6 +66,21 @@ export async function createCoordinator(
   return mapCoordinator(row);
 }
 
+/** An active (non-revoked) coordinator identified by their access code — the
+ *  interim addressable-party check for firm-facing surfaces. */
+export async function getCoordinatorByAccessCode(
+  pool: Pool,
+  accessCode: string,
+): Promise<FirmCoordinator | null> {
+  const result = await query<RawCoordinatorRow>(
+    pool,
+    'SELECT * FROM firm_coordinators WHERE access_code = $1 AND revoked_at IS NULL',
+    [accessCode],
+  );
+  const row = result.rows[0];
+  return row ? mapCoordinator(row) : null;
+}
+
 export async function getCoordinatorById(pool: Pool, id: string): Promise<FirmCoordinator | null> {
   const result = await query<RawCoordinatorRow>(
     pool,

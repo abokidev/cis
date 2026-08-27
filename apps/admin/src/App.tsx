@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createClient } from './api/client';
 import { ApiError } from './api/types';
+import { ErrorState } from './shared/ErrorState';
 import { useSession } from './auth/useSession';
 import { LoginPage } from './pages/LoginPage';
 import { EditionPage } from './pages/EditionPage';
@@ -10,8 +11,33 @@ import { FirmTeamPage } from './pages/FirmTeamPage';
 import { NationalReportPage } from './pages/NationalReportPage';
 import { FirmReportsPage } from './pages/FirmReportsPage';
 import { ScoresSignoffPage } from './pages/ScoresSignoffPage';
+import { PeopleAccessPage } from './pages/PeopleAccessPage';
+import { InvitationsPage } from './pages/InvitationsPage';
+import { MissionBoardPage } from './pages/MissionBoardPage';
+import { RegulatorsPage } from './pages/RegulatorsPage';
+import { ResponsesPage } from './pages/ResponsesPage';
+import { UnfinishedPage } from './pages/UnfinishedPage';
+import { FirmResultsPage } from './pages/FirmResultsPage';
+import { WordingPage } from './pages/WordingPage';
+import { DragnetPage } from './pages/DragnetPage';
 
-type Tab = 'edition' | 'surveys' | 'renderer' | 'firmteam' | 'scoring' | 'national' | 'firmreports';
+type Tab =
+  | 'board'
+  | 'responses'
+  | 'unfinished'
+  | 'edition'
+  | 'surveys'
+  | 'renderer'
+  | 'firmteam'
+  | 'people'
+  | 'invitations'
+  | 'regulators'
+  | 'scoring'
+  | 'national'
+  | 'firmreports'
+  | 'firmresults'
+  | 'wording'
+  | 'dragnet';
 
 export function App(): JSX.Element {
   const { session, signIn, signOut } = useSession();
@@ -20,6 +46,7 @@ export function App(): JSX.Element {
   const [editionId, setEditionId] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>('edition');
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [serviceDown, setServiceDown] = useState(false);
 
   useEffect(() => {
     if (!session) {
@@ -34,13 +61,20 @@ export function App(): JSX.Element {
         const current = editions.find((e) => e.label === '2026') ?? editions[0];
         setEditionId(current ? current.id : null);
         setLoadError(current ? null : 'No edition exists yet — seed the database.');
+        setServiceDown(false);
       } catch (err) {
         if (cancelled) return;
         if (err instanceof ApiError && err.statusCode === 401) {
           signOut();
           return;
         }
-        setLoadError(err instanceof ApiError ? err.message : 'Could not load editions');
+        // A genuine service failure (5xx, network) gets the shared error state;
+        // a recognized 4xx keeps its specific message (e.g. an empty database).
+        if (!(err instanceof ApiError) || err.statusCode >= 500) {
+          setServiceDown(true);
+        } else {
+          setLoadError(err.message);
+        }
       }
     })();
     return () => {
@@ -76,6 +110,32 @@ export function App(): JSX.Element {
       <nav className="crumbs" aria-label="Where you are">
         <span>Study operations</span>
         <span aria-hidden="true">›</span>
+        <button
+          type="button"
+          onClick={() => setTab('board')}
+          style={tab === 'board' ? { color: 'var(--dragnet-black)' } : undefined}
+        >
+          Mission board
+        </button>
+        <span aria-hidden="true">·</span>
+        <span>Monitoring</span>
+        <span aria-hidden="true">›</span>
+        <button
+          type="button"
+          onClick={() => setTab('responses')}
+          style={tab === 'responses' ? { color: 'var(--dragnet-black)' } : undefined}
+        >
+          Responses
+        </button>
+        <span aria-hidden="true">·</span>
+        <button
+          type="button"
+          onClick={() => setTab('unfinished')}
+          style={tab === 'unfinished' ? { color: 'var(--dragnet-black)' } : undefined}
+        >
+          Unfinished
+        </button>
+        <span aria-hidden="true">·</span>
         <span>Setup</span>
         <span aria-hidden="true">›</span>
         <button
@@ -112,6 +172,30 @@ export function App(): JSX.Element {
         <span aria-hidden="true">·</span>
         <button
           type="button"
+          onClick={() => setTab('people')}
+          style={tab === 'people' ? { color: 'var(--dragnet-black)' } : undefined}
+        >
+          People
+        </button>
+        <span aria-hidden="true">·</span>
+        <button
+          type="button"
+          onClick={() => setTab('invitations')}
+          style={tab === 'invitations' ? { color: 'var(--dragnet-black)' } : undefined}
+        >
+          Invitations
+        </button>
+        <span aria-hidden="true">·</span>
+        <button
+          type="button"
+          onClick={() => setTab('regulators')}
+          style={tab === 'regulators' ? { color: 'var(--dragnet-black)' } : undefined}
+        >
+          Regulators
+        </button>
+        <span aria-hidden="true">·</span>
+        <button
+          type="button"
           onClick={() => setTab('scoring')}
           style={tab === 'scoring' ? { color: 'var(--dragnet-black)' } : undefined}
         >
@@ -133,10 +217,52 @@ export function App(): JSX.Element {
         >
           Firm reports
         </button>
+        <span aria-hidden="true">·</span>
+        <button
+          type="button"
+          onClick={() => setTab('firmresults')}
+          style={tab === 'firmresults' ? { color: 'var(--dragnet-black)' } : undefined}
+        >
+          Firm results
+        </button>
+        <span aria-hidden="true">·</span>
+        <button
+          type="button"
+          onClick={() => setTab('wording')}
+          style={tab === 'wording' ? { color: 'var(--dragnet-black)' } : undefined}
+        >
+          Wording
+        </button>
+        {session.user.hasDragnetRight && (
+          <>
+            <span aria-hidden="true">·</span>
+            <button
+              type="button"
+              onClick={() => setTab('dragnet')}
+              style={tab === 'dragnet' ? { color: 'var(--dragnet-black)' } : undefined}
+            >
+              Dragnet analysis
+            </button>
+          </>
+        )}
       </nav>
 
       {!editionId ? (
-        <main>{loadError ? <div className="err">{loadError}</div> : <p>Loading…</p>}</main>
+        <main>
+          {serviceDown ? (
+            <ErrorState kind="service_unavailable" />
+          ) : loadError ? (
+            <div className="err">{loadError}</div>
+          ) : (
+            <p>Loading…</p>
+          )}
+        </main>
+      ) : tab === 'board' ? (
+        <MissionBoardPage />
+      ) : tab === 'responses' ? (
+        <ResponsesPage />
+      ) : tab === 'unfinished' ? (
+        <UnfinishedPage />
       ) : tab === 'edition' ? (
         <EditionPage client={client} editionId={editionId} viewer={session.user} />
       ) : tab === 'surveys' ? (
@@ -144,11 +270,23 @@ export function App(): JSX.Element {
       ) : tab === 'renderer' ? (
         <RendererPage client={client} />
       ) : tab === 'firmteam' ? (
-        <FirmTeamPage client={client} />
+        <FirmTeamPage client={client} editionId={editionId} />
+      ) : tab === 'people' ? (
+        <PeopleAccessPage />
+      ) : tab === 'invitations' ? (
+        <InvitationsPage />
+      ) : tab === 'regulators' ? (
+        <RegulatorsPage />
       ) : tab === 'scoring' ? (
         <ScoresSignoffPage />
       ) : tab === 'national' ? (
         <NationalReportPage />
+      ) : tab === 'firmresults' ? (
+        <FirmResultsPage />
+      ) : tab === 'wording' ? (
+        <WordingPage client={client} />
+      ) : tab === 'dragnet' && editionId && session.user.hasDragnetRight ? (
+        <DragnetPage client={client} editionId={editionId} />
       ) : (
         <FirmReportsPage />
       )}

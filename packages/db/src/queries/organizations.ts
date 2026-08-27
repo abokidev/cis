@@ -1,5 +1,5 @@
 import { Pool } from 'pg';
-import type { Organization, OrganizationType } from '@cis/shared-types';
+import type { InvestorCategoryServed, Organization, OrganizationType } from '@cis/shared-types';
 import { query } from '../client';
 
 interface RawOrgRow {
@@ -9,6 +9,7 @@ interface RawOrgRow {
   org_type: string;
   is_active: boolean;
   metadata: Record<string, unknown>;
+  investor_categories_served: string[];
   created_at: Date;
   updated_at: Date;
 }
@@ -21,6 +22,7 @@ function mapOrg(row: RawOrgRow): Organization {
     orgType: row.org_type as OrganizationType,
     isActive: row.is_active,
     metadata: row.metadata,
+    investorCategoriesServed: (row.investor_categories_served ?? []) as InvestorCategoryServed[],
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -51,6 +53,32 @@ export async function getOrganizationById(pool: Pool, id: string): Promise<Organ
 export async function listOrganizations(pool: Pool): Promise<Organization[]> {
   const result = await query<RawOrgRow>(pool, 'SELECT * FROM organizations ORDER BY display_name');
   return result.rows.map(mapOrg);
+}
+
+// ─── Investor categories served (UX-FRM-002) ────────────────────────────────
+
+/**
+ * Set the firm's own declaration of investor categories served. This is the
+ * ONLY function that writes this column — it is a self-service field edited
+ * by the firm's coordinator at any time, with no gate and no downstream
+ * effect. Callers must never wire this value into any scoring, eligibility
+ * or evidence-pack query.
+ */
+export async function setInvestorCategoriesServed(
+  pool: Pool,
+  organizationId: string,
+  categories: InvestorCategoryServed[],
+): Promise<Organization> {
+  const result = await query<RawOrgRow>(
+    pool,
+    `UPDATE organizations SET investor_categories_served = $2, updated_at = NOW()
+      WHERE id = $1
+      RETURNING *`,
+    [organizationId, categories],
+  );
+  const row = result.rows[0];
+  if (!row) throw new Error('Organization not found for investor-categories update');
+  return mapOrg(row);
 }
 
 // ─── Edition participation ──────────────────────────────────────────────────

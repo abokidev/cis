@@ -124,7 +124,11 @@ export const journeyApi = {
   resume: (respondentId: string) => request<ResumeState>(`/journeys/${respondentId}/resume`),
 
   resumeByToken: (token: string) =>
-    request<ResumeState>(`/journeys/resume/${encodeURIComponent(token)}`),
+    request<
+      | ({ kind: 'resume' } & ResumeState)
+      | { kind: 'already_submitted' }
+      | { kind: 'participation_closed' }
+    >(`/journeys/resume/${encodeURIComponent(token)}`),
 
   submit: (respondentId: string) =>
     request<{ submitted: boolean; responseCount: number }>(
@@ -147,4 +151,27 @@ export const journeyApi = {
 
   colleagueInvite: (body: { editionId: string; instrumentCode: string; institutionName: string }) =>
     request<{ respondentId: string }>('/journeys/colleague-invite', 'POST', body),
+
+  publicContent: () =>
+    request<{
+      privacyNotice: string;
+      organisationDescriptions: { cis: string; dragnet: string };
+      helpText: string;
+    }>('/public-content'),
+
+  previousEditions: (currentEditionId: string | null) =>
+    request<{
+      editions: Array<{
+        editionId: string;
+        editionLabel: string;
+        reportId: string;
+        publicationStatus: string;
+        approvedAt: string;
+        lineageNote: string;
+      }>;
+    }>(
+      `/public-content/previous-editions${
+        currentEditionId ? `?currentEditionId=${encodeURIComponent(currentEditionId)}` : ''
+      }`,
+    ).then((r) => r.editions),
 };

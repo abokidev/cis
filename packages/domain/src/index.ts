@@ -107,7 +107,7 @@ export {
   generateNationalReport,
   isUnsupportedByConstruction,
   checkSentence,
-  saveDraft,
+  saveNationalDraft,
   runChecker,
   runAdversaryHealth,
   ADVERSARY_HEALTH_THRESHOLD,
@@ -158,3 +158,226 @@ export {
   SignoffPayloadError,
 } from './scoring-signoff-service';
 export type { ScoringSurfaceState, IndexScoreView } from './scoring-signoff-service';
+
+// ── Phase 8: People & Access (UX-OPS-006) ────────────────────────────────────
+export {
+  listPeople,
+  countApprovers,
+  addPerson,
+  updatePersonRights,
+  removePerson,
+  CRITICAL_ACTIONS,
+  ACCESS_RIGHT_META,
+  APPROVER_FLOOR,
+  PeopleAccessError,
+} from './people-access-service';
+
+// ── Phase 9: Invitations (UX-OPS-002) ────────────────────────────────────────
+export {
+  listAudiences,
+  listMessageTemplates,
+  saveTemplate,
+  validateUploadFile,
+  sendBatch,
+  getBatches,
+  getBatchReport,
+  submitInvitationRequest,
+  getInvitationRequests,
+  resolveInvitationRequest,
+  resolveFirmNameToOrg,
+  getFirmAudienceState,
+  RECORDING_SENDING_SERVICE,
+  ZeptomailSendingService,
+  ingestZeptomailEvent,
+  InvitationsError,
+} from './invitations-service';
+export type { SendingService, OutgoingMessage, SendResult } from './invitations-service';
+
+// ── Phase 10: Mission board (UX-OPS-001) ─────────────────────────────────────
+export {
+  velocity,
+  requiredVelocity,
+  forecastAtClose,
+  projectedShortfall,
+  atRisk,
+  buildSegmentForecast,
+  diagnoseFirmFunnel,
+  firstQuartile,
+  tierCoverageUneven,
+} from './mission-forecast';
+export type { FirmFunnelInput, FunnelDiagnosis, FirmFunnelState } from './mission-forecast';
+export {
+  CONDITIONS,
+  evaluateBoard,
+  buildBoardContext,
+  getMissionBoard,
+  editionPhase,
+  remediationForCohort,
+  MissionBoardError,
+} from './mission-board-service';
+export type { BoardContext, RemediationCohort } from './mission-board-service';
+
+// ── Phase 11: Candidate scoring methodology (CIS-SCORE-2026 v0.14) ────────────
+export { isSubstantive, applyTransform, scoreItem, transformFor } from './scoring-transforms';
+export {
+  assertRunOfficialUsable,
+  dmiCompleteFirmIds,
+  omiCompleteFirmIds,
+  missingOmiRoleCounts,
+  firmDmiScores,
+  firmSpecificInvestorAnswers,
+  pooledHeadline,
+  industrySeiState,
+  canCompareHeadlinesDirectly,
+  computeLikeForLike,
+  recordLikeForLikeComparison,
+  runCandidateScoring,
+  CandidateScoringError,
+  INDUSTRY_SEI_BLOCKING_PARAMETER,
+  NOT_CALCULABLE_REASON,
+} from './candidate-scoring-service';
+export type {
+  PooledSegmentInput,
+  PooledHeadline,
+  IndustrySeiState,
+  EditionSegmentEvidence,
+  LikeForLike,
+  CandidateRunResult,
+} from './candidate-scoring-service';
+
+// ── Phase 14: Firm private results (UX-FRM-RES-001) ──────────────────────────
+export {
+  getFirmResults,
+  standing,
+  isGapIndex,
+  withinActiveBrokerWindow,
+  ACTIVE_BROKER_MONTHS,
+  FirmResultsError,
+  FirmResultsAccessError,
+} from './firm-results-service';
+export type {
+  FirmResults,
+  FirmIndexResult,
+  FirmRetailCut,
+  StandingLabel,
+} from './firm-results-service';
+
+// ── Phase 13: Responses monitoring (UX-OPS-003) ──────────────────────────────
+export { getResponsesMonitor, getRetailCutForDisplay } from './responses-monitoring-service';
+export type {
+  SegmentCard,
+  SegmentCardState,
+  CompleteFirmLine,
+  DependencyRow,
+  DependencyDisplayState,
+  ResponsesMonitor,
+} from './responses-monitoring-service';
+
+// ── Phase 13: Reminder timing (UX-OPS-004) ───────────────────────────────────
+export {
+  getReminderSchedule,
+  setReminderSchedule,
+  getReminderCap,
+  setReminderCap,
+  triggerTimeFor,
+  nextDueReminder,
+  scheduleDueReminders,
+  getUnfinishedStats,
+  getDropoffHistogram,
+  ReminderTimingError,
+} from './reminder-timing-service';
+export type {
+  ReminderStepConfig,
+  ReminderSchedule,
+  DueReminder,
+  UnfinishedStats,
+  DropoffBucket,
+} from './reminder-timing-service';
+
+// ── Phase 12: Regulator engagement (UX-OPS-007) ──────────────────────────────
+export {
+  listRegulators,
+  getRegulator,
+  saveContact,
+  issueSurveyLink,
+  sendReminder,
+  sendTextReminder,
+  markDeclined,
+  markSubmitted,
+  recordHistory,
+  REGULATOR_CODES,
+  REGULATOR_META,
+  RegulatorEngagementError,
+} from './regulator-engagement-service';
+
+// ── Phase 16: Dragnet Internal Analysis (UX-ADM-007) ─────────────────────────
+export {
+  getDragnetMaturity,
+  getDragnetFriction,
+  getDragnetMaturityCsv,
+  DragnetPermissionError,
+} from './dragnet-service';
+export type { FirmMaturityEntry, FirmTier } from './dragnet-service';
+
+// ── Phase 15: Managed wording (UX-ADM-CNT-001) ───────────────────────────────
+export {
+  CONTENT_AREAS,
+  getContentState,
+  listTemplateSubKeys,
+  saveDraft,
+  publishDraft,
+  ManagedContentError,
+  ManagedContentPermissionError,
+} from './managed-content-service';
+export type { ContentArea, ContentState, TemplateSubKey } from './managed-content-service';
+
+// ── Phase 17: Reminder content (UX-RET-007) ──────────────────────────────────
+export {
+  computeProgressWording,
+  getReminderContent,
+  stopReminders,
+  assembleReminderText,
+  assembleFirstMessageText,
+  ReminderContentError,
+} from './reminder-content-service';
+export type { ReminderSubKey, RespondentProgress } from './reminder-content-service';
+
+// ── Phase 18: Investor categories (UX-FRM-002) ───────────────────────────────
+export {
+  updateInvestorCategoriesServed,
+  InvestorCategoriesError,
+} from './investor-categories-service';
+
+// ── Phase 18: Firm digest (UX-FRM-DIG-001) ───────────────────────────────────
+export {
+  assembleFirmDigest,
+  sendFirmDigest,
+  getFirmDigestSchedule,
+  setFirmDigestSchedule,
+  FirmDigestError,
+} from './firm-digest-service';
+export type {
+  FirmDigest,
+  FirmDigestSchedule,
+  FirmDigestSendResult,
+  FirmAttentionState,
+} from './firm-digest-service';
+
+// ── Phase 18: Public content — help/privacy/about + previous editions
+//    (UX-X-002, UX-PUB-002) ──────────────────────────────────────────────────
+export { getPublicContent, listPreviousPublishedEditions } from './public-content-service';
+export type {
+  PublicContent,
+  OrganisationDescriptions,
+  PreviousEditionEntry,
+} from './public-content-service';
+
+// ── Phase 18: Shared error states + withdrawal (UX-X-001) ───────────────────
+export {
+  ERROR_STATES,
+  ERROR_STATE_COPY,
+  getErrorStateCopy,
+  withdrawRespondent,
+  ParticipationClosedError,
+} from './shared-error-service';
+export type { ErrorStateKind, ErrorStateCopy } from './shared-error-service';

@@ -15,21 +15,42 @@ export function getTestPool(): Pool {
   return pool;
 }
 
-export async function runMigrations(): Promise<void> {
-  await (runner as unknown as typeof runner)({
-    databaseUrl: DATABASE_URL,
-    dir: path.join(__dirname, '../migrations'),
-    direction: 'up',
-    migrationsTable: 'pgmigrations',
+// Singleton guard: node-pg-migrate holds a pg_advisory_lock for the duration of
+// the migration run; calling it concurrently from multiple test-file beforeAll
+// hooks (even with fileParallelism:false, Vitest can overlap initialisation)
+// produces "Another migration is already running". Run it at most once per
+// worker process.
+let migrationPromise: Promise<void> | null = null;
 
-    log: () => {},
-  });
+export async function runMigrations(): Promise<void> {
+  if (!migrationPromise) {
+    migrationPromise = (runner as unknown as typeof runner)({
+      databaseUrl: DATABASE_URL,
+      dir: path.join(__dirname, '../migrations'),
+      direction: 'up',
+      migrationsTable: 'pgmigrations',
+      log: () => {},
+    });
+  }
+  return migrationPromise;
 }
 
 export async function truncateAllTables(pool: Pool): Promise<void> {
   // Order respects FK dependencies. audit_log TRUNCATE is allowed (trigger only blocks UPDATE/DELETE).
   await pool.query(`
     TRUNCATE TABLE
+      content_live,
+      content_versions,
+      required_clauses,
+      reminder_send,
+      comparison_runs,
+      regulator_engagement_history,
+      institution_engagement,
+      message_recipients,
+      message_batches,
+      message_templates,
+      invitation_requests,
+      regulator_contacts,
       scoring_signoffs,
       firm_report_release_history,
       firm_reports,
@@ -59,6 +80,7 @@ export async function truncateAllTables(pool: Pool): Promise<void> {
       edition_sample_floors,
       edition_participation,
       critical_actions,
+      user_permissions,
       user_roles,
       role_permissions,
       audit_log,

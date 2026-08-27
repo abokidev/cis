@@ -103,6 +103,45 @@ export async function countCompletedBySegment(
   return out;
 }
 
+/** Completed responses per segment since a cutoff — the velocity numerator
+ *  (valid completes in the last 7 days, or since edition open before day 7). */
+export async function countCompletedBySegmentSince(
+  pool: Pool,
+  editionId: string,
+  since: Date,
+): Promise<Record<string, number>> {
+  const result = await query<{ segment: string; n: string }>(
+    pool,
+    `SELECT segment, COUNT(*)::text AS n
+       FROM funnel_event
+      WHERE edition_id = $1 AND event_type = 'completed' AND occurred_at >= $2
+      GROUP BY segment`,
+    [editionId, since],
+  );
+  const out: Record<string, number> = {};
+  for (const r of result.rows) out[r.segment] = parseInt(r.n, 10);
+  return out;
+}
+
+/** Distinct institutions per institution segment since a cutoff — the velocity
+ *  numerator for institutional segments (velocity runs on the DISTINCT count). */
+export async function countDistinctInstitutionsSince(
+  pool: Pool,
+  editionId: string,
+  segment: 'local_institution' | 'foreign_institution',
+  since: Date,
+): Promise<number> {
+  const result = await query<{ n: string }>(
+    pool,
+    `SELECT COUNT(DISTINCT institution_ref)::text AS n
+       FROM funnel_event
+      WHERE edition_id = $1 AND event_type = 'completed'
+        AND segment = $2 AND institution_ref IS NOT NULL AND occurred_at >= $3`,
+    [editionId, segment, since],
+  );
+  return parseInt(result.rows[0]?.n ?? '0', 10);
+}
+
 /**
  * Distinct institutions per institution segment — counted by distinct
  * institution_ref, NEVER by response count (many responses from few

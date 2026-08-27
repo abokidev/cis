@@ -11,6 +11,16 @@ import { governedContentRoutes } from './routes/governed-content';
 import { firmPortalRoutes } from './routes/firm-portal';
 import { reportingRoutes } from './routes/reporting';
 import { scoringRoutes } from './routes/scoring';
+import { peopleRoutes } from './routes/people';
+import { invitationsRoutes } from './routes/invitations';
+import { missionBoardRoutes } from './routes/mission-board';
+import { regulatorRoutes } from './routes/regulators';
+import { monitoringRoutes } from './routes/monitoring';
+import { firmResultsRoutes } from './routes/firm-results';
+import { managedContentRoutes } from './routes/managed-content';
+import { dragnetRoutes } from './routes/dragnet';
+import { firmDigestRoutes } from './routes/firm-digest';
+import { publicContentRoutes } from './routes/public-content';
 
 export async function buildServer() {
   const app = Fastify({
@@ -45,6 +55,16 @@ export async function buildServer() {
   await app.register(firmPortalRoutes);
   await app.register(reportingRoutes);
   await app.register(scoringRoutes);
+  await app.register(peopleRoutes);
+  await app.register(invitationsRoutes);
+  await app.register(missionBoardRoutes);
+  await app.register(regulatorRoutes);
+  await app.register(monitoringRoutes);
+  await app.register(firmResultsRoutes);
+  await app.register(managedContentRoutes);
+  await app.register(dragnetRoutes);
+  await app.register(firmDigestRoutes);
+  await app.register(publicContentRoutes);
 
   app.setErrorHandler<Error>((error, request, reply) => {
     const statusCode = resolveStatusCode(error);
@@ -77,10 +97,15 @@ function resolveStatusCode(error: Error & { statusCode?: number }): number {
     case 'ResponseScopeError':
     case 'ReviewGapError':
     case 'FirmPortalError':
+    case 'SignoffPayloadError':
       return 400;
     case 'ConsentRequiredError':
     case 'PinVerificationError':
     case 'PrivacyConsentRequiredError':
+    case 'FirmResultsAccessError':
+    case 'ManagedContentPermissionError':
+    case 'DragnetPermissionError':
+    case 'ParticipationClosedError':
       return 403;
     case 'EditionStateError':
     case 'InstrumentsNotFrozenError':
@@ -90,6 +115,16 @@ function resolveStatusCode(error: Error & { statusCode?: number }): number {
     case 'SeatConflictError':
     case 'NationalReportError':
     case 'FirmReportError':
+    case 'ScoringSignoffError':
+    case 'ScoringBlockedError':
+    case 'PeopleAccessError':
+    case 'InvitationsError':
+    case 'RegulatorEngagementError':
+    case 'ReminderTimingError':
+    case 'FirmResultsError':
+    case 'ManagedContentError':
+    case 'InvestorCategoriesError':
+    case 'FirmDigestError':
     case 'DomainError':
       return 409;
     default:

@@ -12,6 +12,14 @@ import {
   seedGovernedConfigDefaults,
   seedProvisionalMetricDefinitions,
   upsertReportDependency,
+  seedAccessRights,
+  getPermissionByCode,
+  grantPermissionToUser,
+  seedInvitationDefaults,
+  seedInstitutionEngagement,
+  seedMissionBoardDependencies,
+  seedCandidateScoringConfig,
+  seedManagedContentDefaults,
 } from '@cis/db';
 import { hashPassword } from '@cis/auth';
 import { EDITION_MANAGE_PERMISSION, EDITION_LOCK_ACTION } from './edition-service';
@@ -137,6 +145,54 @@ export async function seedReferenceData(pool: Pool): Promise<SeededReferenceData
     dependsOn: ['local_institution', 'foreign_institution'],
     sufficiencyRule: 'any_sufficient',
   });
+
+  // ── Access rights (Phase 8) ───────────────────────────────────────────────
+  // The seven canonical right→permission rows for the People & Access surface,
+  // plus the bootstrap grants that make the two operators proper "people" on it:
+  // both hold request + approve directly, so the estate opens at exactly the
+  // two-approver floor (a coherent starting roster the surface itself manages).
+  await seedAccessRights(pool);
+  const grant = async (userId: string, codes: string[]): Promise<void> => {
+    for (const code of codes) {
+      const perm = await getPermissionByCode(pool, code);
+      if (perm) await grantPermissionToUser(pool, userId, perm.id, null);
+    }
+  };
+  await grant(maker.id, [
+    'access:view',
+    'access:send',
+    'access:regs',
+    'edition:manage',
+    'critical:request',
+    'critical:approve',
+  ]);
+  await grant(checker.id, [
+    'access:view',
+    'access:send',
+    'edition:manage',
+    'critical:request',
+    'critical:approve',
+    'access:dragnet',
+  ]);
+
+  // ── Invitation templates + regulator contacts (Phase 9) ──────────────────────
+  // Six per-firm-state templates and the three provisional regulator contacts.
+  await seedInvitationDefaults(pool, edition.id);
+
+  // ── Mission board (Phase 10) ─────────────────────────────────────────────────
+  // Ten reporting-dependency rows (brief §3.3), and the three regulator
+  // engagement rows seeded structurally with NO target_by (DECISION NEEDED).
+  await seedMissionBoardDependencies(pool);
+  await seedInstitutionEngagement(pool, edition.id);
+
+  // ── Candidate scoring methodology (Phase 11) ──────────────────────────────────
+  // CIS-SCORE-2026 v0.14 candidate config, persisted from its authoritative YAML
+  // as version 14 / is_active=FALSE (TEST_UNAPPROVED — never the active config).
+  await seedCandidateScoringConfig(pool);
+
+  // ── Managed wording defaults (Phase 15) ──────────────────────────────────────
+  // Required clauses, participant templates, and initial invitation_landing live version.
+  await seedManagedContentDefaults(pool, edition.id, maker.id);
 
   // ── Controlled Survey Register (9 instruments, 90 questions) ──────────────────
   const instruments = await seedSurveyRegister(pool, maker.id);

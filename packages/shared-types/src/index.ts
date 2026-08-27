@@ -26,6 +26,9 @@ export type QuestionScope = 'shared' | 'firm_specific';
 
 // ─── Core entities ────────────────────────────────────────────────────────────
 
+export type InvestorCategoryServed =
+  'retail' | 'local_institutional' | 'foreign_institutional' | 'not_sure';
+
 export interface Organization {
   id: string;
   slug: string;
@@ -33,6 +36,10 @@ export interface Organization {
   orgType: OrganizationType;
   isActive: boolean;
   metadata: Record<string, unknown>;
+  /** UX-FRM-002: the firm's own declaration of investor categories it serves.
+   *  Provably inert — never read by any scoring, eligibility or evidence-pack
+   *  code path. Editable at any time, no gate. */
+  investorCategoriesServed: InvestorCategoryServed[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -142,6 +149,9 @@ export interface Respondent {
   recoveryToken: string | null;
   /** Report-delivery preference; changeable post-submit without touching answers. */
   reportDelivery: string | null;
+  /** UX-X-001: a genuine withdrawal, distinct from Phase 17's reminders_opted_out
+   *  (which is explicitly NOT withdrawal). NULL = not withdrawn. */
+  withdrawnAt: Date | null;
   createdAt: Date;
 }
 
@@ -322,8 +332,14 @@ export interface MetricDefinition {
   createdAt: Date;
 }
 
-export type CalculationRunType = 'eligibility' | 'scoring';
+export type CalculationRunType = 'eligibility' | 'scoring' | 'comparison';
 export type CalculationRunStatus = 'pending' | 'running' | 'complete' | 'failed';
+
+/** Whether a run's methodology is approved for official use. NULL = a legacy/
+ *  normal run (pre-Phase-11, treated as usable). `TEST_UNAPPROVED` runs are
+ *  barred structurally from official evidence packs / AI generation / released
+ *  reports (Phase 11, CIS-SCORE-2026 v0.14 build note §2). */
+export type MethodologyStatus = 'TEST_UNAPPROVED' | 'APPROVED';
 
 /** Immutable run record. A correction is a new run, never an edit. */
 export interface CalculationRun {
@@ -333,13 +349,16 @@ export interface CalculationRun {
   methodologyVersion: string | null;
   datasetHash: string;
   status: CalculationRunStatus;
+  methodologyStatus: MethodologyStatus | null;
   startedAt: Date;
   finishedAt: Date | null;
   createdAt: Date;
 }
 
-/** The closed set of sufficiency states. */
-export type SufficiencyState = 'REPORTABLE' | 'DIRECTIONAL' | 'BANDED' | 'SUPPRESSED';
+/** The closed set of sufficiency states. NOT_CALCULABLE (Phase 11) is a
+ *  methodology block — distinct from SUPPRESSED (a data problem). */
+export type SufficiencyState =
+  'REPORTABLE' | 'DIRECTIONAL' | 'BANDED' | 'SUPPRESSED' | 'NOT_CALCULABLE';
 
 export type SubjectType = 'firm' | 'segment' | 'market';
 
@@ -379,6 +398,10 @@ export interface ReportDependency {
   dependsOn: string[];
   sufficiencyRule: string;
   enabled: boolean;
+  /** For a firm-referencing output: the exact firm-side instruments it needs
+   *  (UX-OPS-003 §B7). e.g. OMI = [S1,S2,S3] (complete firms), DMI = [S1,S3]
+   *  (DMI-complete). Null for investor-only outputs. */
+  requiredInstruments: string[] | null;
   updatedAt: Date;
 }
 
@@ -584,6 +607,228 @@ export interface ScoringSignoff {
   supersededAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
+}
+
+// ─── People & Access (Phase 8 — UX-OPS-006) ─────────────────────────────────────
+
+/** The seven access rights a person can hold. `view` is universal and not
+ *  editable; `dragnet` is Dragnet-organisation only. */
+export type AccessRightKey = 'view' | 'send' | 'regs' | 'setup' | 'request' | 'approve' | 'dragnet';
+
+/** The organisations that share the one operator pool. */
+export type AccessOrg = 'CIS' | 'Dragnet';
+
+/** A person who can sign in to study operations, with their resolved rights. */
+export interface PersonAccess {
+  userId: string;
+  name: string;
+  email: string;
+  organization: AccessOrg;
+  /** The seven rights, each true/false. `view` is always true. */
+  rights: Record<AccessRightKey, boolean>;
+  /** Convenience flags derived from rights. */
+  canRequest: boolean;
+  canApprove: boolean;
+}
+
+// ─── Invitations (Phase 9 — UX-OPS-002) ─────────────────────────────────────────
+
+/** Which kind of audience a template targets — decides whether {{code}} is required. */
+export type MessageAudienceKind = 'firm' | 'participant' | 'regulator' | 'upload';
+
+export interface MessageTemplate {
+  id: string;
+  editionId: string;
+  name: string;
+  subject: string;
+  body: string;
+  audienceKind: MessageAudienceKind;
+  /** True for a firm template that carries an invitation code (claim/reminder/
+   *  reissue) — saving is blocked unless the body contains {{code}}. */
+  requiresCode: boolean;
+  createdBy: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/** delivery_state is the always-available core report. */
+export type MessageDeliveryState = 'sent' | 'delivered' | 'bounced';
+
+export interface MessageBatch {
+  id: string;
+  editionId: string;
+  templateId: string;
+  audienceId: string;
+  audienceLabel: string;
+  sendingService: string;
+  sentBy: string | null;
+  sentAt: Date;
+  createdAt: Date;
+}
+
+export interface MessageRecipient {
+  id: string;
+  batchId: string;
+  editionId: string;
+  organizationId: string | null;
+  recipientEmail: string | null;
+  firmName: string | null;
+  code: string | null;
+  deliveryState: MessageDeliveryState;
+  /** NULL = the sending service did not report opens (not "zero opens"). An open
+   *  is a floor, never a reader count. */
+  openedAt: Date | null;
+  /** A click is a real, reliable event. */
+  clickedAt: Date | null;
+  createdAt: Date;
+}
+
+/** One category shown on the surface, with its audiences and live counts. */
+export interface AudienceCategory {
+  key: 'firms' | 'regs' | 'parts' | 'other';
+  label: string;
+  audiences: Array<{ id: string; label: string; sub: string; count: number | null }>;
+}
+
+/** A batch's delivery report. `opensReported`/`clicksReported` say whether the
+ *  provider supplied those columns at all — false means render them absent,
+ *  never as zero. */
+export interface BatchReport {
+  batch: MessageBatch;
+  templateName: string;
+  firms: number;
+  delivered: number;
+  bounced: number;
+  opened: number;
+  clicked: number;
+  opensReported: boolean;
+  clicksReported: boolean;
+  /** Diagnostic split kept distinct: channel/spam vs. message content. */
+  deliveredNeverOpened: number;
+  openedNotClicked: number;
+}
+
+/** One of the four file-validation problems (no fifth register-match check). */
+export type UploadCheckKind =
+  'no_address' | 'malformed_address' | 'in_file_duplicate' | 'already_sent';
+
+export interface UploadCheckResult {
+  validRows: Array<{ firmName: string; email: string }>;
+  problems: Array<{ kind: UploadCheckKind; row: number; value: string }>;
+}
+
+export interface InvitationRequestItem {
+  id: string;
+  editionId: string;
+  organizationId: string | null;
+  firmName: string;
+  requesterName: string;
+  role: string | null;
+  email: string;
+  phone: string | null;
+  flag: string | null;
+  resolved: boolean;
+  resolution: 'code_issued' | 'marked_done' | null;
+  resolvedBy: string | null;
+  resolvedAt: Date | null;
+  createdAt: Date;
+}
+
+// ─── Mission board (Phase 10 — UX-OPS-001) ───────────────────────────────────
+
+export type MissionSegment = 'firm' | 'retail' | 'local_institution' | 'foreign_institution';
+
+/** A segment's forecast state, computed fresh each cycle — never stored. */
+export interface SegmentForecast {
+  segment: MissionSegment;
+  target: number;
+  current: number;
+  daysElapsed: number;
+  daysRemaining: number;
+  /** Undefined on day 0 (no forecast alerts that day). */
+  velocity: number | null;
+  requiredVelocity: number | null;
+  forecastAtClose: number | null;
+  projectedShortfall: number;
+  atRisk: boolean;
+}
+
+/** The six severity ranks (brief §5), rank 1 most consequential. */
+export type MissionSeverity = 1 | 2 | 3 | 4 | 5 | 6;
+
+/** One mission card — exactly six fields (brief §9). `expectedImpact` is omitted
+ *  (undefined) when there isn't enough history to compute it — never zero. A
+ *  `mission` card with no `recommendedAction` never reaches the board; a
+ *  `methodology_block` card (Phase 11) carries NO action and is exempt from that
+ *  filter — it must display so the team knows an output is blocked, not merely
+ *  low, and cannot be actioned by chasing respondents. */
+export type MissionCardKind = 'mission' | 'methodology_block';
+
+export interface MissionCard {
+  conditionId: number;
+  severity: MissionSeverity;
+  whatIsAtRisk: string;
+  evidence: string[];
+  consequence: string[];
+  why: string | null;
+  recommendedAction: { label: string; cohort: string; audienceId: string | null } | null;
+  expectedImpact?: string;
+  projectedShortfall: number;
+  /** Defaults to 'mission'. A 'methodology_block' card has no remediation. */
+  kind?: MissionCardKind;
+}
+
+/** The four edition phases the rail is aware of. */
+export type EditionPhase = 'before_launch' | 'collection_open' | 'closing_week' | 'closed';
+
+// ─── Regulator engagement (Phase 12 — UX-OPS-007) ─────────────────────────────
+
+/** The three regulators, one shared code set across engagement, contacts and the
+ *  I-{code} survey instruments. */
+export type RegulatorCode = 'SEC' | 'NGX' | 'CSCS';
+
+/**
+ * A regulator's named contact — the ONE deliberate place in the organiser estate
+ * that holds a named individual outside the firm register, because engagement is
+ * a relationship. Never tokenised or anonymised.
+ */
+export interface RegulatorContact {
+  who: string;
+  role: string;
+  email: string;
+  phone: string;
+  /** "How we got to them" — a plain note for whoever picks the relationship up next. */
+  how: string;
+}
+
+/** The surface's own reading of where a regulator is, derived from its engagement
+ *  row: no contact → contact added → invited → (confirmed | declined). */
+export type RegulatorSurveyState =
+  'no_contact' | 'contact_added' | 'invited' | 'confirmed' | 'declined';
+
+/** One append-only, free-text history entry (a phone call produces free text, not
+ *  a taxonomy). */
+export interface RegulatorHistoryEntry {
+  id: string;
+  entry: string;
+  createdAt: Date;
+}
+
+/** The whole per-(edition, regulator) engagement record for the surface. */
+export interface RegulatorEngagementView {
+  institution: RegulatorCode;
+  name: string;
+  mandate: string;
+  /** The Phase 10 engagement status this maps onto. */
+  status: 'not_started' | 'invited' | 'in_progress' | 'confirmed' | 'declined';
+  state: RegulatorSurveyState;
+  contact: RegulatorContact | null;
+  surveyLink: string | null;
+  targetBy: string | null;
+  overdue: boolean;
+  /** What this regulator is waiting for — the reason to open it, not just a label. */
+  nextStep: string;
+  history: RegulatorHistoryEntry[];
 }
 
 // ─── RBAC ────────────────────────────────────────────────────────────────────

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
-import { getPool } from '@cis/db';
+import { getPool, getOrganizationById } from '@cis/db';
 import {
   claimSpace,
   requestInvitation,
@@ -14,7 +14,15 @@ import {
   getSeatStatus,
   ensureOutreachLinks,
   getOutreachVolumes,
+  updateInvestorCategoriesServed,
 } from '@cis/domain';
+
+const INVESTOR_CATEGORY = z.enum([
+  'retail',
+  'local_institutional',
+  'foreign_institutional',
+  'not_sure',
+]);
 
 /**
  * Firm claim / portal / seats / outreach routes — UX-FRM-001.
@@ -103,6 +111,42 @@ export const firmPortalRoutes: FastifyPluginAsyncZod = async (app) => {
     async (request, reply) => {
       await recordFollowUpConsent(getPool(), request.params.orgId, request.body.followUpConsent);
       return reply.send({ ok: true });
+    },
+  );
+
+  // UX-FRM-002 — investor categories served. Editable at any time by the
+  // firm's coordinator, same as every other firm-portal self-service field:
+  // no critical action, no maker-checker. Zero effect on scoring, eligibility
+  // or evidence packs — see @cis/domain's investor-categories-service.
+  app.get(
+    '/firm/:orgId/investor-categories',
+    {
+      preHandler: [app.authenticate],
+      schema: { params: z.object({ orgId: z.string().uuid() }) },
+    },
+    async (request, reply) => {
+      const org = await getOrganizationById(getPool(), request.params.orgId);
+      if (!org) return reply.status(404).send({ error: 'Not Found', message: 'Firm not found' });
+      return reply.send({ investorCategoriesServed: org.investorCategoriesServed });
+    },
+  );
+
+  app.put(
+    '/firm/:orgId/investor-categories',
+    {
+      preHandler: [app.authenticate],
+      schema: {
+        params: z.object({ orgId: z.string().uuid() }),
+        body: z.object({ categories: z.array(INVESTOR_CATEGORY) }),
+      },
+    },
+    async (request, reply) => {
+      const org = await updateInvestorCategoriesServed(
+        getPool(),
+        request.params.orgId,
+        request.body.categories,
+      );
+      return reply.send({ investorCategoriesServed: org.investorCategoriesServed });
     },
   );
 

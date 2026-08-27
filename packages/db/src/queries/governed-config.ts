@@ -85,6 +85,61 @@ export const GOVERNED_CONFIG_DEFAULTS: ReadonlyArray<{
       '`reportable`+ unlocks the cut. Held as configuration, never a hardcoded constant.',
     value: { directional: 10, reportable: 30, provisional: true },
   },
+  {
+    key: 'reporting.firm_investor_thresholds',
+    description:
+      'Reporting_Sufficiency_Specification candidate investor-evidence thresholds (Phase 11). ' +
+      'PROVISIONAL and INDEPENDENTLY CONFIGURABLE — kept SEPARATE from ' +
+      'reporting.retail_cut_thresholds (EVIDENCE_PACK_CONTRACT 10/29/30), which it must never ' +
+      'overwrite. The two documents give different numbers for related-but-distinct claims; the ' +
+      'conflict is FLAGGED for product/methodology reconciliation (see README §8), not resolved ' +
+      'here. Neither is final until validated.',
+    value: {
+      provisional: true,
+      firm_investor_headline: 20, // firm's own IEI/ICI mean unlock (~20 own investors)
+      firm_vs_industry_gap: 30, // firm-vs-industry comparison/gap claim (~30 own investors)
+      binary_consequence_min: 75, // binary signals need materially more n (~75–100)
+      binary_consequence_max: 100,
+      shared_investor: 15,
+      subsegment: 15,
+      note: 'Candidate/provisional per Reporting_Sufficiency_Specification — TO VALIDATE.',
+    },
+  },
+  {
+    key: 'reminders.schedule',
+    description:
+      'UX-OPS-004 investor-side reminder schedule. A STARTING POSITION, not a decision — set here ' +
+      'and adjustable during fieldwork. Steps are relative to when a person STOPPED ' +
+      '(last_activity_at + days), except the final step which is timed against the edition close ' +
+      '(closes − beforeCloseDays), a LIVE reference that moves if the close date moves. STOP ' +
+      'language is carried on every reminder after the first (a send-sequence flag, not content).',
+    value: {
+      steps: [
+        { step: 1, kind: 'relative', days: 2, enabled: true },
+        { step: 2, kind: 'relative', days: 7, enabled: true },
+        { step: 3, kind: 'before_close', beforeCloseDays: 3, enabled: true },
+      ],
+    },
+  },
+  {
+    key: 'reminders.cap',
+    description:
+      'UX-OPS-004 maximum total reminders to any one person. Governed configuration, never a ' +
+      'hardcoded limit — without a cap a schedule with several steps and a long field period ' +
+      'sends indefinitely to someone who has already decided.',
+    value: 3,
+  },
+  {
+    key: 'reporting.comparison_margin',
+    description:
+      'UX-FRM-RES-001 firm-vs-industry comparison margin (points). A difference smaller than ' +
+      'this makes NO claim either way — reporting a difference the data cannot support is the ' +
+      'failure the sufficiency specification exists to prevent. The artefact hardcodes 3; kept ' +
+      'here as governed config, PROVISIONAL, to be reconciled alongside the other open ' +
+      'sufficiency-threshold questions (retail_cut_thresholds, firm_investor_thresholds, ' +
+      'industry_sei floor). Never a per-index value — one margin for all indices.',
+    value: 3,
+  },
 ];
 
 export async function seedGovernedConfigDefaults(pool: Pool): Promise<void> {

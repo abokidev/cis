@@ -95,3 +95,13 @@ export async function listFollowUpConsentedFirms(pool: Pool): Promise<string[]> 
   );
   return result.rows.map((r) => r.organization_id);
 }
+
+/** Every organization id that has claimed its space (claims are not
+ *  edition-scoped — one firm, one space). For invitation audiences. */
+export async function listClaimedOrganizationIds(pool: Pool): Promise<string[]> {
+  const result = await query<{ organization_id: string }>(
+    pool,
+    'SELECT organization_id FROM firm_claims',
+  );
+  return result.rows.map((r) => r.organization_id);
+}

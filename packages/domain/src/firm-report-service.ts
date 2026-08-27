@@ -16,6 +16,7 @@ import {
 import type { FirmReport, FirmReportCutState } from '@cis/shared-types';
 import { DomainError } from './errors';
 import { eligibleFirmIds } from './eligibility-service';
+import { assertRunOfficialUsable } from './candidate-scoring-service';
 
 /**
  * Firm reports — generation, reconciliation, and ATOMIC-PER-REPORT release of
@@ -79,6 +80,10 @@ export async function generateFirmReports(
   pool: Pool,
   data: { editionId: string; scoringRunId: string; failFor?: string[] },
 ): Promise<GenerationResult> {
+  // Hard methodology gate (Phase 11, build note §2): a TEST_UNAPPROVED run can
+  // never produce firm reports. Checked before the sign-off gate so an unapproved
+  // methodology is refused even in the (impossible) event such a run signed off.
+  await assertRunOfficialUsable(pool, data.scoringRunId, 'firm report generation');
   // A run may back a firm report only if it has a genuine signed-off record
   // (UX-ADM-004) — the same rule that gates the national report. A merely
   // completed run is not eligible.
@@ -177,6 +182,16 @@ export async function releaseFirmReports(pool: Pool, editionId: string): Promise
   const released: FirmReport[] = [];
   const held: Array<{ report: FirmReport; reason: string }> = [];
 
+  // Hard methodology gate (Phase 11, build note §2): the release path is the
+  // final official-output boundary. No report backed by a TEST_UNAPPROVED run may
+  // pass it — a structural failure, checked once per distinct scoring run.
+  const gatedRuns = new Set<string>();
+  for (const r of reports) {
+    if (r.releaseState === 'released' || gatedRuns.has(r.scoringRunId)) continue;
+    await assertRunOfficialUsable(pool, r.scoringRunId, 'firm report release (UX-ADM-006)');
+    gatedRuns.add(r.scoringRunId);
+  }
+
   for (const r of reports) {
     if (r.releaseState === 'released') continue; // never recalled, never re-released
     const ready = r.generationState === 'generated' && r.approvalState === 'approved';
@@ -218,6 +233,8 @@ export async function correctFirmReport(
   pool: Pool,
   data: { editionId: string; organizationId: string; scoringRunId: string },
 ): Promise<FirmReport> {
+  // Hard methodology gate (Phase 11): a correction is an official firm report too.
+  await assertRunOfficialUsable(pool, data.scoringRunId, 'a firm report correction');
   // A correction is generated from a NEW signed-off run (§ "nothing already
   // released is recalled; a correction is a new, separately-versioned report").
   if (!(await hasSignedOffRun(pool, data.scoringRunId))) {

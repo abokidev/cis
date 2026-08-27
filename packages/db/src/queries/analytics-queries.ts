@@ -32,6 +32,90 @@ export async function getFirmSeatCompletionCounts(
 }
 
 /**
+ * Per-instrument participant counts for an edition: total submitted responses,
+ * and the SUBSET who gave a contact detail (email or phone, channel not 'none').
+ * The invitation audiences use the CONSENTED subset — presenting the response
+ * count would imply a reach the study does not have (PAT-011, Phase 3).
+ */
+export async function countContactConsentByInstrument(
+  pool: Pool,
+  editionId: string,
+): Promise<Record<string, { responses: number; consented: number }>> {
+  const result = await query<{ instrument_code: string; responses: string; consented: string }>(
+    pool,
+    `SELECT instrument_code,
+            COUNT(*)::text AS responses,
+            COUNT(*) FILTER (
+              WHERE contact_channel IS NOT NULL AND contact_channel <> 'none'
+                AND (contact_email IS NOT NULL OR contact_phone IS NOT NULL)
+            )::text AS consented
+       FROM respondents
+      WHERE edition_id = $1 AND submitted_at IS NOT NULL
+      GROUP BY instrument_code`,
+    [editionId],
+  );
+  const out: Record<string, { responses: number; consented: number }> = {};
+  for (const r of result.rows) {
+    out[r.instrument_code] = {
+      responses: parseInt(r.responses, 10),
+      consented: parseInt(r.consented, 10),
+    };
+  }
+  return out;
+}
+
+/**
+ * The consented participant CONTACTS for a set of instruments — respondents who
+ * gave a contact detail, returned as the address a permitted notice (recovery
+ * link / final report) would go to. Enumerated only for a participant send; the
+ * counts above are what the audience list shows.
+ */
+export async function listConsentedContactsByInstrument(
+  pool: Pool,
+  editionId: string,
+  instrumentCodes: string[],
+): Promise<Array<{ respondentId: string; email: string | null }>> {
+  const result = await query<{ id: string; email: string | null }>(
+    pool,
+    `SELECT id, COALESCE(contact_email, contact_phone) AS email
+       FROM respondents
+      WHERE edition_id = $1 AND submitted_at IS NOT NULL
+        AND instrument_code = ANY($2)
+        AND contact_channel IS NOT NULL AND contact_channel <> 'none'
+        AND (contact_email IS NOT NULL OR contact_phone IS NOT NULL)`,
+    [editionId, instrumentCodes],
+  );
+  return result.rows.map((r) => ({ respondentId: r.id, email: r.email }));
+}
+
+/**
+ * Per-firm seat-state counts for an edition: how many of the three seats are
+ * ASSIGNED (state beyond 'empty') and how many are COMPLETE. Feeds the
+ * invitation audiences (noassign / partial / noreach / complete). Only firms
+ * with seat rows appear.
+ */
+export async function getFirmSeatStateCounts(
+  pool: Pool,
+  editionId: string,
+): Promise<Array<{ organizationId: string; assigned: number; complete: number }>> {
+  const result = await query<{ organization_id: string; assigned: string; complete: string }>(
+    pool,
+    `SELECT organization_id,
+            COUNT(*) FILTER (WHERE state <> 'empty')::text  AS assigned,
+            COUNT(*) FILTER (WHERE state = 'complete')::text AS complete
+       FROM seat_assignments
+      WHERE edition_id = $1
+      GROUP BY organization_id`,
+    [editionId],
+  );
+  return result.rows.map((r) => ({
+    organizationId: r.organization_id,
+    assigned: parseInt(r.assigned, 10),
+    complete: parseInt(r.complete, 10),
+  }));
+}
+
+/**
  * Per-firm matrix of WHICH firm-survey seats (S1/S2/S3) are complete for an
  * edition. Distinct from `getFirmSeatCompletionCounts` (which returns only a
  * count): the per-index population predicates need to know exactly which seats

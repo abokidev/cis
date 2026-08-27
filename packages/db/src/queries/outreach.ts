@@ -77,6 +77,21 @@ export async function listFirmOutreachLinks(
   return result.rows.map(mapOutreach);
 }
 
+/** Organization ids that have created any client-outreach link this edition —
+ *  i.e. firms that have started reaching their own clients. For the noreach /
+ *  complete invitation audiences. */
+export async function listOrganizationIdsWithOutreach(
+  pool: Pool,
+  editionId: string,
+): Promise<string[]> {
+  const result = await query<{ organization_id: string }>(
+    pool,
+    'SELECT DISTINCT organization_id FROM outreach_links WHERE edition_id = $1',
+    [editionId],
+  );
+  return result.rows.map((r) => r.organization_id);
+}
+
 /**
  * A firm's own outreach performance — AGGREGATE COUNTS ONLY. There is no column
  * or accessor linking an outreach link to a response, so this cannot correlate

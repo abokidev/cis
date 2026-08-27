@@ -1,0 +1,284 @@
+methodology:
+  id: CIS-SCORE-2026
+  version: '0.14'
+  status: TEST_UNAPPROVED
+  score_range: [0, 100]
+  approval_required_before_official_run: true
+
+decision_status:
+  D1:
+    state: CANDIDATE_PENDING_APPROVAL
+    candidate: exclude_subfloor_segments_from_public_pool
+  D2:
+    state: CANDIDATE_PENDING_APPROVAL
+    candidate: publish_participating_and_calculable_denominators
+  D3:
+    state: CANDIDATE_PENDING_APPROVAL
+    candidate: pooled_investor_unit_estimator_reportable_segments_only
+  D4:
+    state: CLOSED
+    basis: existing_reporting_specification
+  D5:
+    state: CANDIDATE_PENDING_APPROVAL
+    candidate: like_for_like_common_segment_recalculation_for_cross_edition_comparison
+
+transforms:
+  N1:
+    type: positive_1_10
+    formula: '((x - 1) / 9) * 100'
+  N2:
+    type: negative_1_10
+    formula: '((10 - x) / 9) * 100'
+  N3:
+    type: adverse_frequency
+    map:
+      Never: 100
+      Rarely: 75
+      Occasionally: 50
+      Frequently: 25
+      Very frequently: 0
+  N4:
+    type: manual_process_band
+    midpoint_map:
+      '0-10%': 5
+      '11-25%': 18
+      '26-50%': 38
+      '51-75%': 63
+      '76-90%': 83
+      'More than 90%': 95
+    score_formula: '100 - midpoint'
+  N5:
+    type: positive_5
+    map:
+      Poor: 0
+      Below average: 25
+      Average: 50
+      Good: 75
+      Excellent: 100
+  N6:
+    type: risk_5
+    map:
+      Very low: 100
+      Low: 75
+      Moderate: 50
+      High: 25
+      Very high: 0
+  N7:
+    type: key_person_dependency
+    map:
+      Little or no impact: 100
+      Minor disruption: 75
+      Moderate disruption: 50
+      Major disruption: 25
+      Severe disruption, critical processes may stop: 0
+  N8:
+    type: adverse_yes_no
+    map:
+      'No': 100
+      'Yes': 0
+
+item_transform_binding:
+  S1-Q2: N1
+  S1-Q5: N2
+  S1-Q6: N3
+  S2-Q1: N2
+  S2-Q3: N4
+  S2-Q5: N3
+  S2-Q7: N1
+  S3-Q2: N4
+  S3-Q4.performance: N5
+  S3-Q4.risk: N6
+  S3-Q7: N3
+  S3-Q9: N7
+  S1-Q3: N1
+  S1-Q8: N1
+  S4-Q1: N1
+  S4-Q2: N1
+  S4-Q3: N1
+  S5a-Q1.*: N1
+  S5a-Q2: N1
+  S5b-Q1: N1
+  S5b-Q2: N1
+  S5b-Q3: N1
+  S4-Q4: N1
+  S4-Q5: N8
+  S4-Q6: N8
+  S4-Q7: N8
+  S5a-Q5: N1
+  S5a-Q6: N8
+  S5b-Q4: N1
+  S5b-Q8: N1
+  S1-Q11: N1
+
+indices:
+  OMI:
+    CEO:
+      operator: mean
+      items: [S1-Q2, S1-Q5, S1-Q6]
+    Compliance:
+      operator: mean
+      items: [S2-Q1, S2-Q3, S2-Q5, S2-Q7]
+    Operations:
+      operator: mean
+      items: [S3-Q2, S3-Q4_composite, S3-Q7, S3-Q9]
+    firm_operator: mean
+    firm_components: [CEO, Compliance, Operations]
+    firm_completeness:
+      rule: all_three_role_subindices_required
+      decision_status: CANDIDATE_PENDING_APPROVAL_D2
+    industry_operator: mean_valid_firms
+
+  DMI:
+    weighted_items:
+      S1-Q3: '0.40'
+      S3-Q2: '0.40'
+      S1-Q8: '0.20'
+    diagnostic_zero_weight: [S1-Q9, S3-Q3]
+    firm_completeness:
+      required: [S1-Q3, S1-Q8, S3-Q2]
+      decision_status: CANDIDATE_PENDING_APPROVAL_D2
+    industry_operator: mean_valid_firms
+
+  IEI:
+    retail:
+      relationship_items: [S4-Q1, S4-Q2, S4-Q3]
+      relationship_operator: mean
+      firm_level_operator: mean_eligible_relationships_attributable_to_firm
+      investor_unit_operator: mean_relationships
+    local_institutional:
+      q1_composite_operator: mean_valid_attributes
+      relationship_components: [S5a-Q1_composite, S5a-Q2]
+      relationship_operator: mean
+      firm_attribution: permitted_only_where_controlled_scope_allows
+      investor_unit_operator: mean_relationships
+    foreign_institutional:
+      shared_once: [S5b-Q1]
+      firm_specific: [S5b-Q2, S5b-Q3]
+      aggregate_firm_specific_within_institution: mean
+      investor_unit_components: [S5b-Q1, S5b-Q2_aggregate, S5b-Q3_aggregate]
+      investor_unit_operator: mean
+      firm_level_shared_item_usage: prohibited
+    firm_combined:
+      operator: mean_all_eligible_firm_attributable_investor_experience_observations
+      may_combine_internally_without_publishing_institutional_cut: true
+      fallback_when_only_retail_exists: Firm_Retail_IEI
+    headline:
+      operator: mean_all_valid_investor_units_from_reportable_segments
+      include_segment_only_if_segment_reportable: true
+      decision_status: CANDIDATE_PENDING_APPROVAL_D1_D3
+      disclosure:
+        show_contributing_segment_composition_every_time: true
+        show_held_segment_count: false
+
+  ICI:
+    retail:
+      behavioural_bundle:
+        items: [S4-Q5, S4-Q6, S4-Q7]
+        operator: mean
+      relationship_weighted_components:
+        S4-Q4: '0.50'
+        behavioural_bundle: '0.50'
+      investor_unit_operator: mean_relationships
+    local_institutional:
+      relationship_items: [S5a-Q5, S5a-Q6]
+      relationship_operator: mean
+      investor_unit_operator: mean_relationships
+    foreign_institutional:
+      shared_once: [S5b-Q8]
+      firm_specific: [S5b-Q4]
+      aggregate_firm_specific_within_institution: mean
+      investor_unit_components: [S5b-Q4_aggregate, S5b-Q8]
+      investor_unit_operator: mean
+    firm_combined:
+      operator: mean_all_eligible_firm_attributable_investor_confidence_observations
+      may_combine_internally_without_publishing_institutional_cut: true
+      prohibit_shared_market_item_copy_to_firm: true
+      private_firm_report_available_with_sufficiency_caveat: true
+    headline:
+      operator: mean_all_valid_investor_units_from_reportable_segments
+      include_segment_only_if_segment_reportable: true
+      decision_status: CANDIDATE_PENDING_APPROVAL_D1_D3
+      disclosure:
+        show_contributing_segment_composition_every_time: true
+        show_held_segment_count: false
+
+  SEI:
+    expectation_source: S1-Q11
+    investor_comparator: Firm_Investor_IEI
+    signed_gap: 'FirmExpectation - FirmInvestorIEI'
+    alignment_score: '100 - abs(signed_gap)'
+    industry_operator: mean_firms_meeting_industry_sei_eligibility
+    industry_eligibility:
+      minimum_firm_investor_observations:
+        value: PENDING_VALIDATOR
+        status: PROVISIONAL_CONFIGURABLE_YEAR1_ASSUMPTION
+        engineering_may_invent_value: false
+      require_valid_firm_expectation: true
+      require_valid_firm_investor_IEI: true
+    publication_disclosure:
+      show_eligible_firm_count: true
+      show_approved_observation_floor: true
+    reporting_guardrail: interpret_only_alongside_IEI
+
+firm_counts:
+  participating:
+    definition: at_least_one_of_S1_S2_S3_complete
+  OMI_complete:
+    definition: all_three_role_subindices_calculable
+  DMI_complete:
+    definition: S1-Q3_S1-Q8_S3-Q2_valid
+
+cross_edition_comparison:
+  if_headline_segment_sets_differ:
+    direct_headline_subtraction_allowed: false
+    common_segment_set: intersection_of_reportable_segments_across_compared_editions
+    recalculate_each_edition_on_common_segment_set: true
+    label: LIKE_FOR_LIKE_RECALCULATED
+    preserve_original_headlines: true
+    decision_status: CANDIDATE_PENDING_APPROVAL_D5
+
+reporting_denominators:
+  OMI: 'N OMI-complete firms, of M participating firms'
+  DMI: 'K DMI-complete firms, of M participating firms'
+
+privacy:
+  suppressed_segment_may_contribute_to_public_pool: false
+  publish_held_segment_unit_count: false
+  prohibit_arithmetic_reconstruction_of_held_segment: true
+
+heatmap:
+  status: CLOSED_BY_EXISTING_REPORTING_AUTHORITY
+  basis: OMI
+  groups: [top_third, middle_third, bottom_third]
+
+missing_data:
+  imputation: none
+  dont_know: missing
+  not_applicable: missing
+  unable_to_assess: missing
+  invalid: missing
+  withdrawn: excluded
+
+precision:
+  stored_decimal_places_minimum: 4
+  analytical_export_decimal_places: 1
+  public_display: nearest_integer
+  round_intermediate_results: false
+
+validation_flags:
+  - S1-Q8_directionality
+  - S3-Q2_cross_index_correlation
+  - S1-Q9_S3-Q3_diagnostic_only
+  - S4-Q5_Q7_lifetime_multi_year_construct_validity
+  - pooled_investor_unit_estimator_reportable_segments_only
+  - year_to_year_headline_composition_variation
+  - common_segment_like_for_like_comparison
+  - SEI_construct_and_interpretation
+  - internal_consistency_and_reliability
+  - industry_SEI_minimum_firm_investor_observation_floor
+
+publication:
+  TEST_UNAPPROVED_may_feed_evidence_pack: false
+  TEST_UNAPPROVED_may_feed_ai_reporting: false
+  TEST_UNAPPROVED_may_feed_public_report: false
+  TEST_UNAPPROVED_may_feed_firm_report: false

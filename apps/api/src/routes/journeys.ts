@@ -8,12 +8,12 @@ import {
   setRatedFirms,
   saveDraftAnswer,
   getResume,
-  getResumeByToken,
   submitJourney,
   createReferral,
   createColleagueInvite,
+  stopReminders,
 } from '@cis/domain';
-import { setReportDelivery } from '@cis/db';
+import { getRespondentByRecoveryToken, setReportDelivery } from '@cis/db';
 import type { AnswerValue } from '@cis/survey';
 
 const not = (reply: FastifyReply, code: number, error: string, message: string) =>
@@ -169,13 +169,39 @@ export const journeyRoutes: FastifyPluginAsyncZod = async (app) => {
   );
 
   // Resume by recovery token (emailed / device-bound link).
+  // Returns a typed state: 'resume' (in-progress), 'already_submitted',
+  // 'participation_closed' (UX-X-001 — a genuine withdrawal, never Phase 17's
+  // reminders_opted_out), or 404 (the shared 'no_unfinished_survey' state —
+  // this response never carries a respondent id, name, or answer fragment).
   app.get(
     '/journeys/resume/:token',
     { schema: { params: z.object({ token: z.string().min(1) }) } },
     async (request, reply) => {
-      const state = await getResumeByToken(getPool(), request.params.token);
-      if (!state) return not(reply, 404, 'Not Found', 'No journey for this recovery link');
-      return reply.send(state);
+      const pool = getPool();
+      const respondent = await getRespondentByRecoveryToken(pool, request.params.token);
+      if (!respondent) return not(reply, 404, 'Not Found', 'No journey for this recovery link');
+      if (respondent.withdrawnAt) {
+        return reply.send({ kind: 'participation_closed' });
+      }
+      if (respondent.submittedAt) {
+        return reply.send({ kind: 'already_submitted' });
+      }
+      const state = await getResume(pool, respondent.id);
+      return reply.send({ kind: 'resume', ...state });
+    },
+  );
+
+  // Stop reminders — sets reminders_opted_out without altering participation status.
+  // Identified by recovery token so the tap from an SMS link works without a session.
+  app.post(
+    '/journeys/stop-reminders/:token',
+    { schema: { params: z.object({ token: z.string().min(1) }) } },
+    async (request, reply) => {
+      const pool = getPool();
+      const respondent = await getRespondentByRecoveryToken(pool, request.params.token);
+      if (!respondent) return not(reply, 404, 'Not Found', 'No journey for this recovery link');
+      await stopReminders(pool, respondent.id);
+      return reply.send({ kind: 'reminders_stopped' });
     },
   );
 

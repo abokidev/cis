@@ -2,6 +2,135 @@ import { useCallback, useEffect, useState } from 'react';
 import type { AdminClient } from '../api/client';
 import { ApiError, type Coordinator, type FirmSummary } from '../api/types';
 
+type InvestorCategory = 'retail' | 'local_institutional' | 'foreign_institutional' | 'not_sure';
+
+const INVESTOR_CATEGORY_LABEL: Record<InvestorCategory, string> = {
+  retail: 'Retail investors',
+  local_institutional: 'Local institutional investors',
+  foreign_institutional: 'Foreign institutional investors',
+  not_sure: 'Not sure / prefer to update later',
+};
+
+interface FirmDigest {
+  seatCompletion: { complete: number; total: number };
+  investorContribution: {
+    retail: number;
+    localInstitutional: number;
+    foreignInstitutional: number;
+    total: number;
+  };
+  attention: { state: string | null; label: string };
+}
+
+/**
+ * UX-FRM-002 (investor categories) + UX-FRM-DIG-001 (firm digest preview).
+ * Both self-service/read fields on the firm's own record — added here rather
+ * than a new tab, since this is already the per-firm operator surface.
+ */
+function InvestorCategoriesCard({
+  client,
+  orgId,
+}: {
+  client: AdminClient;
+  orgId: string;
+}): JSX.Element {
+  const [selected, setSelected] = useState<InvestorCategory[]>([]);
+  const [saved, setSaved] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    setSaved(false);
+    void client
+      .get<{ investorCategoriesServed: InvestorCategory[] }>(`/firm/${orgId}/investor-categories`)
+      .then((r) => setSelected(r.investorCategoriesServed))
+      .catch(() => setSelected([]));
+  }, [client, orgId]);
+
+  function toggle(cat: InvestorCategory): void {
+    setSaved(false);
+    setSelected((prev) => (prev.includes(cat) ? prev.filter((c) => c !== cat) : [...prev, cat]));
+  }
+
+  async function save(): Promise<void> {
+    setBusy(true);
+    try {
+      await client.put(`/firm/${orgId}/investor-categories`, { categories: selected });
+      setSaved(true);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <fieldset className="contact-fields">
+      <legend>Investor categories served</legend>
+      <p className="lede" style={{ fontSize: 13 }}>
+        Optional declaration. Does not affect eligibility, scoring or published results, and can be
+        edited later.
+      </p>
+      <div className="checks">
+        {(Object.keys(INVESTOR_CATEGORY_LABEL) as InvestorCategory[]).map((cat) => (
+          <label key={cat}>
+            <input type="checkbox" checked={selected.includes(cat)} onChange={() => toggle(cat)} />
+            {INVESTOR_CATEGORY_LABEL[cat]}
+          </label>
+        ))}
+      </div>
+      <div className="actions">
+        <button type="button" className="btn" disabled={busy} onClick={() => void save()}>
+          Save
+        </button>
+      </div>
+      {saved && <p className="qstate ok">Saved. You can change this later.</p>}
+    </fieldset>
+  );
+}
+
+function FirmDigestCard({
+  client,
+  orgId,
+  editionId,
+}: {
+  client: AdminClient;
+  orgId: string;
+  editionId: string;
+}): JSX.Element {
+  const [digest, setDigest] = useState<FirmDigest | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    setError(null);
+    client
+      .get<{ digest: FirmDigest }>(`/firm/${orgId}/editions/${editionId}/digest`)
+      .then((r) => setDigest(r.digest))
+      .catch((err) => setError(err instanceof ApiError ? err.message : 'Could not load digest'));
+  }, [client, orgId, editionId]);
+
+  useEffect(() => load(), [load]);
+
+  return (
+    <fieldset className="contact-fields">
+      <legend>Firm digest preview</legend>
+      {error && <div className="err">{error}</div>}
+      {digest && (
+        <>
+          <p>
+            <b>
+              {digest.seatCompletion.complete} of {digest.seatCompletion.total} complete
+            </b>
+          </p>
+          <p className="lede" style={{ fontSize: 13 }}>
+            Retail {digest.investorContribution.retail} · Local institutional{' '}
+            {digest.investorContribution.localInstitutional} · Foreign institutional{' '}
+            {digest.investorContribution.foreignInstitutional}. Counts only.
+          </p>
+          <p>{digest.attention.label}</p>
+        </>
+      )}
+    </fieldset>
+  );
+}
+
 /**
  * UX-FRM-007 firm coordinator team administration. Ordinary account admin — NOT
  * maker-checker. The rules the UI surfaces (all enforced server-side):
@@ -11,7 +140,13 @@ import { ApiError, type Coordinator, type FirmSummary } from '../api/types';
  *  - a PIN change needs the current PIN;
  *  - removing a coordinator is immediate; a re-add issues a NEW access code.
  */
-export function FirmTeamPage({ client }: { client: AdminClient }): JSX.Element {
+export function FirmTeamPage({
+  client,
+  editionId,
+}: {
+  client: AdminClient;
+  editionId: string | null;
+}): JSX.Element {
   const [firms, setFirms] = useState<FirmSummary[]>([]);
   const [orgId, setOrgId] = useState<string | null>(null);
   const [coordinators, setCoordinators] = useState<Coordinator[]>([]);
@@ -207,6 +342,9 @@ export function FirmTeamPage({ client }: { client: AdminClient }): JSX.Element {
           </p>
         )}
       </fieldset>
+
+      {orgId && <InvestorCategoriesCard client={client} orgId={orgId} />}
+      {orgId && editionId && <FirmDigestCard client={client} orgId={orgId} editionId={editionId} />}
     </main>
   );
 }

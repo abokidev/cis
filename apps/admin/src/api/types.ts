@@ -82,6 +82,7 @@ export interface AuthUser {
   email: string;
   displayName: string;
   org: string | null;
+  hasDragnetRight: boolean;
 }
 
 export interface LoginResponse {

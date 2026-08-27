@@ -23,6 +23,28 @@ export * from './queries/analytics-queries';
 export * from './queries/national-reports';
 export * from './queries/firm-reports';
 export * from './queries/scoring-signoffs';
+export * from './queries/invitations';
+export * from './queries/mission-board';
+export * from './queries/monitoring';
+export * from './queries/regulator-engagement';
+export * from './queries/comparison-runs';
+export * from './queries/scoring-queries';
+export * from './queries/managed-content';
+export * from './queries/dragnet';
+export * from './queries/firm-digest';
+export {
+  loadScoringConfig,
+  getMethodologyMeta,
+  methodologyVersionString,
+  getTransform,
+  getItemTransformBinding,
+  getDmiWeights,
+  getDmiRequiredItems,
+  getOmiRoleItemGroups,
+  getIndustrySeiFloor,
+  seedCandidateScoringConfig,
+} from './seed/scoring-config';
+export type { ScoringConfig, RawTransform } from './seed/scoring-config';
 export {
   seedSurveyRegister,
   getRegisterFixture,

@@ -26,6 +26,7 @@ import type { Respondent, RespondentDraft, Response } from '@cis/shared-types';
 import { DomainError } from './errors';
 import { ConsentRequiredError, ResponseScopeError } from './response-service';
 import { emitCompletedForRespondent } from './funnel-service';
+import { ParticipationClosedError } from './shared-error-service';
 
 /** A required contact-collecting surface was progressed without accepted consent. */
 export { ConsentRequiredError };
@@ -147,6 +148,7 @@ export async function saveDraftAnswer(
 ): Promise<RespondentDraft> {
   const respondent = await getRespondentById(pool, respondentId);
   if (!respondent) throw new DomainError('Respondent not found', 'RESPONDENT_NOT_FOUND');
+  if (respondent.withdrawnAt) throw new ParticipationClosedError();
 
   const items = await getInstrumentItems(pool, respondent.instrumentCode);
   const item = items.find((i) => i.id === data.questionId);
@@ -209,6 +211,7 @@ export async function getResumeByToken(pool: Pool, token: string): Promise<Resum
 export async function submitJourney(pool: Pool, respondentId: string): Promise<Response[]> {
   const respondent = await getRespondentById(pool, respondentId);
   if (!respondent) throw new DomainError('Respondent not found', 'RESPONDENT_NOT_FOUND');
+  if (respondent.withdrawnAt) throw new ParticipationClosedError();
 
   if (requiresConsent(respondent.instrumentCode) && !respondent.consentAccepted) {
     throw new ConsentRequiredError(respondent.instrumentCode);

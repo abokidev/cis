@@ -111,6 +111,64 @@ export async function hasApprovedNationalReport(pool: Pool, editionId: string): 
   return parseInt(res.rows[0]?.n ?? '0', 10) > 0;
 }
 
+// ─── previous editions (UX-PUB-002) ─────────────────────────────────────────
+
+export interface PreviousEditionEntry {
+  editionId: string;
+  editionLabel: string;
+  reportId: string;
+  publicationStatus: 'approved';
+  approvedAt: Date;
+  /** "Original publication" for the first approved report of an edition, or a
+   *  supersession note for a later correction. Corrections are a NEW approved
+   *  row (Phase 6/11's immutability principle) — never a silent overwrite. */
+  lineageNote: string;
+}
+
+/**
+ * Published (approved) national reports for every edition OTHER than the
+ * current one, oldest-to-newest within each edition so corrections read as a
+ * sequence. Read-only — no new mutation logic, reuses exactly what Phase 6's
+ * approval flow already produces.
+ */
+export async function getPreviousPublishedEditions(
+  pool: Pool,
+  currentEditionId: string | null,
+): Promise<PreviousEditionEntry[]> {
+  const res = await query<{
+    edition_id: string;
+    edition_label: string;
+    report_id: string;
+    approved_at: Date;
+  }>(
+    pool,
+    `SELECT nr.edition_id, e.label AS edition_label, nr.id AS report_id, nr.approved_at
+       FROM national_reports nr
+       JOIN editions e ON e.id = nr.edition_id
+      WHERE nr.status = 'approved'
+        AND ($1::uuid IS NULL OR nr.edition_id <> $1)
+      ORDER BY e.label ASC, nr.approved_at ASC`,
+    [currentEditionId],
+  );
+
+  const seenForEdition = new Map<string, Date>();
+  return res.rows.map((row) => {
+    const prior = seenForEdition.get(row.edition_id);
+    seenForEdition.set(row.edition_id, row.approved_at);
+    const lineageNote = prior
+      ? `Correction — supersedes the version approved on ${prior.toISOString().slice(0, 10)}.`
+      : 'Original publication for this edition.';
+    return {
+      editionId: row.edition_id,
+      editionLabel: row.edition_label,
+      reportId: row.report_id,
+      publicationStatus: 'approved' as const,
+      approvedAt: row.approved_at,
+      lineageNote,
+    };
+  });
+}
+
 // ─── sections ────────────────────────────────────────────────────────────────
 
 interface RawSectionRow {

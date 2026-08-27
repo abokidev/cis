@@ -25,6 +25,7 @@ import {
   getLiveContent,
   setContentLive,
   getRequiredClauses,
+  getForbiddenPhrases,
   getConfig,
   setConfig,
   upsertTemplate,
@@ -110,6 +111,34 @@ async function enforceRequiredClauses(
       `Required statement(s) missing: ${missing.map((c) => `"${c.clauseText}"`).join(', ')}. ` +
         `Required statements may be reworded but cannot be deleted.`,
       'REQUIRED_CLAUSE_MISSING',
+    );
+  }
+}
+
+/**
+ * The inverse of enforceRequiredClauses: block save if the body contains a
+ * phrase it must NOT contain. Seeded for privacy_notice, where an absolute-
+ * anonymity claim ("completely anonymous", "no record is kept") would be
+ * factually wrong — a respondent's session can be linked server-side to their
+ * response for recovery/immutability purposes, even though this is never
+ * exposed to firms or the public. Case-insensitive substring match.
+ */
+async function enforceForbiddenPhrases(
+  pool: Pool,
+  area: ContentArea,
+  subKey: string,
+  body: string,
+): Promise<void> {
+  const phrases = await getForbiddenPhrases(pool, area, subKey);
+  if (phrases.length === 0) return;
+  const lowerBody = body.toLowerCase();
+  const present = phrases.filter((p) => lowerBody.includes(p.phraseText.toLowerCase()));
+  if (present.length > 0) {
+    throw new ManagedContentError(
+      `Forbidden phrase(s) present: ${present.map((p) => `"${p.phraseText}"`).join(', ')}. ` +
+        `This content area cannot claim absolute anonymity — a respondent's session can be ` +
+        `linked server-side to their response for recovery/immutability purposes.`,
+      'FORBIDDEN_PHRASE_PRESENT',
     );
   }
 }
@@ -202,6 +231,7 @@ export async function saveDraft(
     throw new ManagedContentError('Body cannot be empty.', 'EMPTY_BODY');
   }
   await enforceRequiredClauses(pool, area, subKey, body);
+  await enforceForbiddenPhrases(pool, area, subKey, body);
   if (area === 'reminder_content') validateSmsLength(subKey, body);
   return insertContentVersion(pool, area, subKey, body, userId);
 }
@@ -234,6 +264,7 @@ export async function publishDraft(
   }
 
   await enforceRequiredClauses(pool, area, subKey, version.body);
+  await enforceForbiddenPhrases(pool, area, subKey, version.body);
 
   if (area === 'privacy_notice') {
     const existing = await getConfig<Record<string, unknown>>(pool, 'consent.pat011');

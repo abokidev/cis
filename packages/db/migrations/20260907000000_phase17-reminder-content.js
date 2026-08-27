@@ -41,7 +41,7 @@ const SUB_KEYS = [
   {
     sub_key: 'reminder_text',
     // STOP on all scheduled reminders. Fixed text + 70-char URL ≤ 160.
-    body: 'Your investor survey is still waiting. Your answers are saved.\n{{recovery_url}}\nReply STOP to stop reminders.',
+    body: 'Your investor survey is still waiting. Answers saved.\n{{recovery_url}}\nReply STOP to stop reminders.',
   },
   {
     sub_key: 'reminders_stopped',

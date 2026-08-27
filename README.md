@@ -1305,3 +1305,162 @@ The reminder delivery channel is the `contact_channel` set at Phase 3/9 consent 
 Phase 17 service reads it from the respondent record and never overrides it. Gate 4 asserts
 that after setting `channel: 'text'` at consent time, the same value is present on a
 subsequent fetch by recovery token.
+
+---
+
+## Phase 18 — Final planned surfaces: investor categories, firm digest, previous editions, help/privacy/about, shared error states
+
+This completes the originally-scoped 33-surface estate (`UX-FRM-002`, `UX-FRM-DIG-001`,
+`UX-PUB-002`, `UX-X-002`, `UX-X-001`, all v1.1).
+
+### UX-FRM-002 — Investor categories served (provably inert)
+
+`organizations.investor_categories_served TEXT[]` is a firm's own multi-select declaration
+(retail / local institutional / foreign institutional / not sure). `investor-categories-service.ts`
+is the _only_ file that writes it. A gate test enumerates every other file in `packages/domain/src`
+and asserts none references `investorCategoriesServed` / `investor_categories_served` — the
+inertness claim is checked by source inspection, not just by convention. Editable at any time by
+the firm's coordinator (`PUT /firm/:orgId/investor-categories`, `app.authenticate` only, same as
+every other firm-portal self-service field) — no critical action, no maker-checker.
+
+### UX-FRM-DIG-001 — Firm digest
+
+`firm-digest-service.ts` assembles counts and state flags only — seat completion (Phase 4),
+investor-contribution counts by segment (Phase 5's `firm_id`-attributable `funnel_event` rows,
+reused via a new `getFirmSegmentContributionCounts` query), and a "what needs attention" state
+reusing Phase 4/9's existing `noassign`/`partial`/`noreach`/`complete` firm-audience predicate
+(exported as `getFirmAudienceState`, no new derivation logic). `packages/db/src/queries/firm-digest.ts`
+is a deliberately narrow file: it never joins to `responses` or `respondent_drafts`, and never
+selects a `question_id` or `respondent_id` — a gate test strips comments and greps the actual code
+for those tokens, so the boundary is structural, not just documented. Delivery reuses Phase 9's
+`SendingService` (defaulting to `ZeptomailSendingService`, matching `sendBatch`'s own convention)
+sent to the firm's lead coordinator's already-validated email (Phase 3's `firm_coordinators`).
+Frequency and channel are governed config (`firm_digest.schedule`), per the artefact's own
+statement that these are implementation configuration, not a design decision.
+
+### UX-PUB-002 — Previous editions
+
+Year 1 renders the empty state. The underlying query (`getPreviousPublishedEditions`) lists every
+edition's approved `national_reports` row other than the current edition, oldest-to-newest per
+edition — no new mutation logic, no new immutability mechanism. `national_reports` already
+supports multiple approved rows per edition ("one per edition, signed scoring run" — no unique
+constraint on `edition_id` alone), so a correction is naturally a second approved row; the query
+labels the first as `"Original publication for this edition."` and any later one as
+`"Correction — supersedes the version approved on <date>."`, read out of existing state rather than
+a new flag.
+
+### UX-X-002 — Help, privacy and about
+
+All four sections (privacy/confidentiality, about CIS, about Dragnet, help) read from Phase 15's
+managed-content system via `getPublicContent` — nothing is hardcoded in the consuming surface.
+`privacy_notice` resolves through `governed_config` exactly as Phase 15 already routes it;
+`organisation_descriptions`/`help_text` resolve through `content_live`. `organisation_descriptions`
+keeps its single existing sub-key (`''`) from the Phase 15 seed, with its body reinterpreted as
+`{"cis": "...", "dragnet": "..."}` rather than adding two new sub-keys — no change to Phase 15's
+admin editing surface was needed.
+
+**Forbidden-phrase check** (the inverse of Phase 15's required-clause check): a new
+`forbidden_phrases` table (mirrors `required_clauses`'s shape) blocks `saveDraft`/`publishDraft`
+for `privacy_notice` if the body contains an absolute-anonymity claim ("completely anonymous",
+"fully anonymous", "totally anonymous", "100% anonymous", "no record is kept"). This is a real
+constraint, not an editorial nicety: a respondent's session can be linked server-side to their
+response for recovery/immutability purposes (Phase 3's recovery token, Phase 17's reminder
+delivery) — never exposed to firms or the public, but real, so a "completely anonymous" claim
+would be false. The check runs at both save and publish time, matching the required-clause
+check's own two enforcement points.
+
+### UX-X-001 — Shared error, access and permission states + withdrawal
+
+**Consolidation, not a sixth page.** `shared-error-service.ts` defines the five canonical states
+(`expired_link`, `no_unfinished_survey`, `access_denied`, `service_unavailable`,
+`participation_closed`) and their copy in one place; `apps/admin/src/shared/ErrorState.tsx` is the
+one React component every surface should render them through. This phase retrofits two real ad-hoc
+error surfaces rather than leaving the component unused alongside them:
+
+- `apps/admin/src/journey/RespondentApp.tsx` — the resume-by-link flow. This retrofit also fixed a
+  real bug: the code assumed every `resumeByToken` response had a `.respondent` field, which
+  crashes for `already_submitted` and would have crashed identically for the new
+  `participation_closed` kind. It now switches on `kind` and renders `ErrorState` for
+  `no_unfinished_survey` (an unknown token, 404), `participation_closed` (withdrawn), and
+  `service_unavailable` (any other failure).
+- `apps/admin/src/App.tsx` — the operator shell's edition-load failure now distinguishes a genuine
+  service failure (5xx / network, → `ErrorState kind="service_unavailable"`) from a recognized 4xx
+  operational message (e.g. "no edition exists yet — seed the database", which is not one of the
+  five states and keeps its own text).
+
+**Not retrofitted in this phase** (documented, not an oversight): `expired_link` and `access_denied`
+are not yet produced by any live code path — no recovery-token TTL-expiry check exists yet (tokens
+don't expire), and no admin surface's 403 has been switched over. The component supports all five
+states today (a gate test renders each and asserts non-empty title/detail), so wiring a future
+producer in is a one-line change, not a redesign.
+
+**No-leakage.** The `no_unfinished_survey` state is produced by `GET /journeys/resume/:token`'s 404
+branch, whose reply is the fixed literal `'No journey for this recovery link'` — no template
+interpolation, no respondent id, no answer fragment. A gate test both confirms
+`getRespondentByRecoveryToken` returns `null` (never a partial record) for an unknown token, and
+greps the route source to confirm the literal has no `${...}` interpolation.
+
+**Withdrawal (§5 gap, closed minimally).** `respondents.withdrawn_at TIMESTAMPTZ` is a genuine
+withdrawal flag, structurally distinct from Phase 17's `reminders_opted_out` (which Phase 17
+explicitly documented as _not_ withdrawal). `journey-service.ts`'s `saveDraftAnswer` and
+`submitJourney` both check it and throw `ParticipationClosedError` (mapped to HTTP 403) if set;
+`GET /journeys/resume/:token` returns `{ kind: 'participation_closed' }` before checking
+`submittedAt`. Setting the flag is `POST /respondents/:id/withdraw` — operator-authenticated only
+(`app.authenticate`, no special permission), living next to the other monitoring routes.
+
+**Deliberate scope boundary — no self-service withdrawal flow.** There is no respondent-facing
+"request to withdraw" UI, no approval step, and no confirmation email. The artefact does not
+specify one, and no prior phase built one; inventing a request/approval flow now would be scope
+creep beyond what was actually asked for. If the study team wants participants to be able to
+request withdrawal themselves, that is a new, unscoped surface for a future phase — this phase
+delivers exactly "the flag, the check, and this error message," as instructed.
+
+### Stale-package note (per this phase's own instructions)
+
+`UX-FRM-002`'s `PACKAGE.md` named v1.0 (2,689 bytes) as current; the actual artefact supplied was
+v1.1 (8,382 bytes). Per the same stale-package precedent settled repeatedly on this programme, the
+registry (the artefact actually supplied and hash-verified) wins — v1.1 is what was built. The
+backlog's earlier `RECONSIDER` flag on this surface is resolved by the final design itself, which
+makes the whole declaration explicitly optional and non-binding; it is treated as approved-as-shown.
+
+### Consolidated open business decisions (§8)
+
+The engineering build is now substantively complete for the originally-scoped 33-surface estate.
+The following are non-engineering-resolvable business/compliance decisions accumulated across prior
+phases, documented here as one list for whoever owns that side of the programme:
+
+1. **Institutional Q5 wording** (I-SEC-Q5, I-NGX-Q5, I-CSCS-Q5) — flagged in Phase 2's seed as
+   PENDING correction as of the 2026-08-20 freeze; needs compliance sign-off against the current
+   controlled Register before any production edition freeze.
+2. **`markOpened()`'s trigger** (Phase 9) — not wired to any send; when/how a message is marked
+   opened is unresolved.
+3. **Phase 11 threshold conflict and approval item** — the candidate-scoring config's threshold
+   values need methodology sign-off; a related approval step is still open.
+4. **Declined-regulator re-approach question** (Phase 12) — what happens after a regulator
+   declines engagement is unresolved.
+5. **DRG-OPS friction minimum-population floor** (Phase 16) — no floor has been set for the
+   operational friction view; needs the same methodology/legal alignment as the platform's other
+   sufficiency floors.
+6. **Genuine withdrawal _request_ flow** (this phase, §5) — the flag and check exist; a
+   respondent-facing self-service request/approval flow does not, and is unspecified in any
+   artefact seen so far.
+
+None of these block the engineering already delivered; they are the open questions for the study
+team, CIS, and Dragnet to resolve jointly.
+
+### Bugs found and fixed while wiring this phase against a live database
+
+Two pre-existing defects in Phase 17 code surfaced only once gate tests actually ran against
+Postgres (they had not been runnable in the prior session's environment):
+
+- `getRespondentProgress` (`monitoring.ts`) joined `respondents.instrument_code` directly to
+  `instrument_questions.instrument_code` — a column that does not exist. `instrument_questions`
+  links to `instrument_definitions` (which holds `code`) via `instrument_definition_id`. Fixed by
+  joining through `instrument_definitions`.
+- The seeded `reminder_text` SMS body measured 163 characters with a 70-character URL substituted
+  — 3 over the 160-character single-segment budget. Shortened "Your answers are saved." to
+  "Answers saved." (154 chars). Fixed in both the production migration and the test-seed helper
+  (`seedManagedContentDefaults`), which previously did not seed `reminder_content` at all — any
+  test that truncated tables before exercising Phase 17's reminder content lost the migration's
+  seed permanently for the rest of that test run. Both are now real content, not something that
+  merely typechecked.

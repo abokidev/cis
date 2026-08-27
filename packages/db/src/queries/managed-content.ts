@@ -206,6 +206,47 @@ export async function getRequiredClauses(
   }));
 }
 
+// ─── Forbidden phrases (UX-X-002) — the inverse of required_clauses ─────────
+
+export interface ForbiddenPhrase {
+  id: string;
+  contentArea: string;
+  subKey: string;
+  phraseKey: string;
+  phraseText: string;
+}
+
+/**
+ * Phrases that must NOT appear in a content area's body. Seeded for
+ * privacy_notice: an absolute-anonymity claim would be factually wrong, since
+ * a respondent's session can be linked server-side to their response for
+ * recovery/immutability purposes (never exposed to firms or the public, but
+ * real nonetheless).
+ */
+export async function getForbiddenPhrases(
+  pool: Pool,
+  contentArea: string,
+  subKey: string,
+): Promise<ForbiddenPhrase[]> {
+  const result = await query<{
+    id: string;
+    content_area: string;
+    sub_key: string;
+    phrase_key: string;
+    phrase_text: string;
+  }>(pool, `SELECT * FROM forbidden_phrases WHERE content_area = $1 AND sub_key = $2`, [
+    contentArea,
+    subKey,
+  ]);
+  return result.rows.map((r) => ({
+    id: r.id,
+    contentArea: r.content_area,
+    subKey: r.sub_key,
+    phraseKey: r.phrase_key,
+    phraseText: r.phrase_text,
+  }));
+}
+
 /**
  * Seed Phase 15 managed-content defaults. Idempotent via ON CONFLICT DO NOTHING.
  * Call after seedReferenceData for tests; mirrors what the Phase 15 migration does
@@ -279,6 +320,84 @@ export async function seedManagedContentDefaults(
          VALUES ('invitation_landing', '', $1, $2)
          ON CONFLICT (content_area, sub_key) DO NOTHING`,
         [versionId, systemUserId],
+      );
+    }
+  }
+
+  // reminder_content (Phase 17): seeded by the production migration, but that
+  // seed lives in content_live/content_versions — tables truncateAllTables()
+  // wipes between tests. Re-seed the same seven sub-keys here so any test
+  // that truncates and calls seedReferenceData (which calls this function)
+  // still finds live reminder content, exactly like invitation_landing above.
+  const reminderSubKeys: Array<{ subKey: string; body: string }> = [
+    {
+      subKey: 'first_message_email',
+      body: JSON.stringify({
+        subject: 'Your survey is still open',
+        body: 'You started the investor survey and did not finish. That is completely fine — your answers are saved and nothing has been lost.',
+        cta: 'Continue my survey',
+      }),
+    },
+    {
+      subKey: 'first_message_text',
+      body: 'Your investor survey answers are saved. Pick up where you stopped:\n{{recovery_url}}',
+    },
+    {
+      subKey: 'reminder_email',
+      body: JSON.stringify({
+        subject: 'Your survey is still open',
+        body: 'Your investor survey is still waiting, and your answers are still saved. {{progress_wording}}',
+        cta: 'Continue my survey',
+        stop_link_text: 'Stop these reminders',
+      }),
+    },
+    {
+      subKey: 'reminder_text',
+      body: 'Your investor survey is still waiting. Answers saved.\n{{recovery_url}}\nReply STOP to stop reminders.',
+    },
+    {
+      subKey: 'reminders_stopped',
+      body: JSON.stringify({
+        heading: 'We will not remind you again.',
+        body: 'Stopping reminders does not withdraw you from the study and does not delete anything. You can still return and complete your survey whenever you like.',
+        study_home_cta: 'Return to the survey home',
+        recovery_link_cta: 'Return using your original link',
+      }),
+    },
+    {
+      subKey: 'already_submitted',
+      body: JSON.stringify({
+        heading: 'You have already finished this one.',
+        body: 'This reminder was sent before your response came in. Nothing further is needed. Your response is in and reminders have stopped.',
+      }),
+    },
+    {
+      subKey: 'link_tapped',
+      body: JSON.stringify({ heading: 'Continuing…', body: 'Straight back to where you stopped.' }),
+    },
+  ];
+  for (const { subKey, body } of reminderSubKeys) {
+    const existingReminder = await query<{ id: string }>(
+      pool,
+      `SELECT id FROM content_versions WHERE content_area = 'reminder_content' AND sub_key = $1 LIMIT 1`,
+      [subKey],
+    );
+    if (existingReminder.rows.length > 0) continue;
+    const versionRes = await query<{ id: string }>(
+      pool,
+      `INSERT INTO content_versions (content_area, sub_key, body, version_number, created_by)
+       VALUES ('reminder_content', $1, $2, 1, $3)
+       RETURNING id`,
+      [subKey, body, systemUserId],
+    );
+    const versionId = versionRes.rows[0]?.id;
+    if (versionId) {
+      await query(
+        pool,
+        `INSERT INTO content_live (content_area, sub_key, version_id, published_by)
+         VALUES ('reminder_content', $1, $2, $3)
+         ON CONFLICT (content_area, sub_key) DO NOTHING`,
+        [subKey, versionId, systemUserId],
       );
     }
   }

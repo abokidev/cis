@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createClient } from './api/client';
 import { ApiError } from './api/types';
+import { ErrorState } from './shared/ErrorState';
 import { useSession } from './auth/useSession';
 import { LoginPage } from './pages/LoginPage';
 import { EditionPage } from './pages/EditionPage';
@@ -45,6 +46,7 @@ export function App(): JSX.Element {
   const [editionId, setEditionId] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>('edition');
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [serviceDown, setServiceDown] = useState(false);
 
   useEffect(() => {
     if (!session) {
@@ -59,13 +61,20 @@ export function App(): JSX.Element {
         const current = editions.find((e) => e.label === '2026') ?? editions[0];
         setEditionId(current ? current.id : null);
         setLoadError(current ? null : 'No edition exists yet — seed the database.');
+        setServiceDown(false);
       } catch (err) {
         if (cancelled) return;
         if (err instanceof ApiError && err.statusCode === 401) {
           signOut();
           return;
         }
-        setLoadError(err instanceof ApiError ? err.message : 'Could not load editions');
+        // A genuine service failure (5xx, network) gets the shared error state;
+        // a recognized 4xx keeps its specific message (e.g. an empty database).
+        if (!(err instanceof ApiError) || err.statusCode >= 500) {
+          setServiceDown(true);
+        } else {
+          setLoadError(err.message);
+        }
       }
     })();
     return () => {
@@ -239,7 +248,15 @@ export function App(): JSX.Element {
       </nav>
 
       {!editionId ? (
-        <main>{loadError ? <div className="err">{loadError}</div> : <p>Loading…</p>}</main>
+        <main>
+          {serviceDown ? (
+            <ErrorState kind="service_unavailable" />
+          ) : loadError ? (
+            <div className="err">{loadError}</div>
+          ) : (
+            <p>Loading…</p>
+          )}
+        </main>
       ) : tab === 'board' ? (
         <MissionBoardPage />
       ) : tab === 'responses' ? (
@@ -253,7 +270,7 @@ export function App(): JSX.Element {
       ) : tab === 'renderer' ? (
         <RendererPage client={client} />
       ) : tab === 'firmteam' ? (
-        <FirmTeamPage client={client} />
+        <FirmTeamPage client={client} editionId={editionId} />
       ) : tab === 'people' ? (
         <PeopleAccessPage />
       ) : tab === 'invitations' ? (

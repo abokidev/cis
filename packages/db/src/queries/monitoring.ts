@@ -182,7 +182,8 @@ export async function getRespondentProgress(
     `SELECT
        (SELECT COUNT(DISTINCT question_id) FROM respondent_drafts WHERE respondent_id = $1)::int AS answered,
        (SELECT COUNT(*) FROM instrument_questions iq
-          JOIN respondents r ON r.instrument_code = iq.instrument_code
+          JOIN instrument_definitions idef ON idef.id = iq.instrument_definition_id
+          JOIN respondents r ON r.instrument_code = idef.code
          WHERE r.id = $1)::int AS total`,
     [respondentId],
   );

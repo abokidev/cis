@@ -10,12 +10,16 @@ export function PublicLanding({
   onTakeRetail,
   onTakeInstitutional,
   onFirmCta,
+  onHelpAbout,
+  onPreviousEditions,
 }: {
   editionLabel: string | null;
   resultsSectionVisible: boolean;
   onTakeRetail: () => void;
   onTakeInstitutional: () => void;
   onFirmCta: () => void;
+  onHelpAbout: () => void;
+  onPreviousEditions: () => void;
 }): JSX.Element {
   return (
     <div className="journey public-landing">
@@ -56,6 +60,15 @@ export function PublicLanding({
           </p>
         </section>
       )}
+
+      <nav className="landing-footer" aria-label="More">
+        <button type="button" className="textlink" onClick={onPreviousEditions}>
+          Previous editions
+        </button>
+        <button type="button" className="textlink" onClick={onHelpAbout}>
+          Help, privacy and about
+        </button>
+      </nav>
     </div>
   );
 }

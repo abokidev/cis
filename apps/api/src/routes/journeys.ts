@@ -169,7 +169,10 @@ export const journeyRoutes: FastifyPluginAsyncZod = async (app) => {
   );
 
   // Resume by recovery token (emailed / device-bound link).
-  // Returns a typed state: 'resume' (in-progress), 'already_submitted', or 404.
+  // Returns a typed state: 'resume' (in-progress), 'already_submitted',
+  // 'participation_closed' (UX-X-001 — a genuine withdrawal, never Phase 17's
+  // reminders_opted_out), or 404 (the shared 'no_unfinished_survey' state —
+  // this response never carries a respondent id, name, or answer fragment).
   app.get(
     '/journeys/resume/:token',
     { schema: { params: z.object({ token: z.string().min(1) }) } },
@@ -177,6 +180,9 @@ export const journeyRoutes: FastifyPluginAsyncZod = async (app) => {
       const pool = getPool();
       const respondent = await getRespondentByRecoveryToken(pool, request.params.token);
       if (!respondent) return not(reply, 404, 'Not Found', 'No journey for this recovery link');
+      if (respondent.withdrawnAt) {
+        return reply.send({ kind: 'participation_closed' });
+      }
       if (respondent.submittedAt) {
         return reply.send({ kind: 'already_submitted' });
       }

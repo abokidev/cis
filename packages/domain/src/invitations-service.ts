@@ -209,6 +209,27 @@ const FIRM_AUDIENCE_PREDICATE: Record<string, (f: FirmState) => boolean> = {
   complete: (f) => f.complete === 3 && f.outreach,
 };
 
+/**
+ * The one-firm audience state (Phase 4/9's noassign/partial/noreach/complete),
+ * reused by Phase 18's firm digest "what needs attention" section — no new
+ * derivation logic, just the existing predicate applied to a single firm.
+ * Returns null for a firm that is unclaimed or not yet invited (states that
+ * mean nothing to a digest the firm's own coordinator is reading).
+ */
+export async function getFirmAudienceState(
+  pool: Pool,
+  editionId: string,
+  organizationId: string,
+): Promise<'noassign' | 'partial' | 'noreach' | 'complete' | null> {
+  const states = await firmStates(pool, editionId);
+  const firm = states.find((f) => f.organizationId === organizationId);
+  if (!firm) return null;
+  for (const id of ['noassign', 'partial', 'noreach', 'complete'] as const) {
+    if (FIRM_AUDIENCE_PREDICATE[id]!(firm)) return id;
+  }
+  return null;
+}
+
 const FIRM_AUDIENCE_META: Array<{ id: string; label: string; sub: string }> = [
   {
     id: 'all',

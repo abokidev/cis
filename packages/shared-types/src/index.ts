@@ -26,6 +26,9 @@ export type QuestionScope = 'shared' | 'firm_specific';
 
 // ─── Core entities ────────────────────────────────────────────────────────────
 
+export type InvestorCategoryServed =
+  'retail' | 'local_institutional' | 'foreign_institutional' | 'not_sure';
+
 export interface Organization {
   id: string;
   slug: string;
@@ -33,6 +36,10 @@ export interface Organization {
   orgType: OrganizationType;
   isActive: boolean;
   metadata: Record<string, unknown>;
+  /** UX-FRM-002: the firm's own declaration of investor categories it serves.
+   *  Provably inert — never read by any scoring, eligibility or evidence-pack
+   *  code path. Editable at any time, no gate. */
+  investorCategoriesServed: InvestorCategoryServed[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -142,6 +149,9 @@ export interface Respondent {
   recoveryToken: string | null;
   /** Report-delivery preference; changeable post-submit without touching answers. */
   reportDelivery: string | null;
+  /** UX-X-001: a genuine withdrawal, distinct from Phase 17's reminders_opted_out
+   *  (which is explicitly NOT withdrawal). NULL = not withdrawn. */
+  withdrawnAt: Date | null;
   createdAt: Date;
 }
 

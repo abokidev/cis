@@ -185,6 +185,7 @@ export {
   getInvitationRequests,
   resolveInvitationRequest,
   resolveFirmNameToOrg,
+  getFirmAudienceState,
   RECORDING_SENDING_SERVICE,
   ZeptomailSendingService,
   ingestZeptomailEvent,
@@ -340,3 +341,43 @@ export {
   ReminderContentError,
 } from './reminder-content-service';
 export type { ReminderSubKey, RespondentProgress } from './reminder-content-service';
+
+// ── Phase 18: Investor categories (UX-FRM-002) ───────────────────────────────
+export {
+  updateInvestorCategoriesServed,
+  InvestorCategoriesError,
+} from './investor-categories-service';
+
+// ── Phase 18: Firm digest (UX-FRM-DIG-001) ───────────────────────────────────
+export {
+  assembleFirmDigest,
+  sendFirmDigest,
+  getFirmDigestSchedule,
+  setFirmDigestSchedule,
+  FirmDigestError,
+} from './firm-digest-service';
+export type {
+  FirmDigest,
+  FirmDigestSchedule,
+  FirmDigestSendResult,
+  FirmAttentionState,
+} from './firm-digest-service';
+
+// ── Phase 18: Public content — help/privacy/about + previous editions
+//    (UX-X-002, UX-PUB-002) ──────────────────────────────────────────────────
+export { getPublicContent, listPreviousPublishedEditions } from './public-content-service';
+export type {
+  PublicContent,
+  OrganisationDescriptions,
+  PreviousEditionEntry,
+} from './public-content-service';
+
+// ── Phase 18: Shared error states + withdrawal (UX-X-001) ───────────────────
+export {
+  ERROR_STATES,
+  ERROR_STATE_COPY,
+  getErrorStateCopy,
+  withdrawRespondent,
+  ParticipationClosedError,
+} from './shared-error-service';
+export type { ErrorStateKind, ErrorStateCopy } from './shared-error-service';

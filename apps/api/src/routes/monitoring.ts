@@ -10,6 +10,7 @@ import {
   getReminderCap,
   setReminderCap,
   scheduleDueReminders,
+  withdrawRespondent,
 } from '@cis/domain';
 
 /**
@@ -93,6 +94,21 @@ export const monitoringRoutes: FastifyPluginAsyncZod = async (app) => {
     async (request, reply) => {
       const sent = await scheduleDueReminders(getPool(), request.params.id, asOfOf(request.query));
       return reply.send({ sent });
+    },
+  );
+
+  // UX-X-001 — a genuine withdrawal, operator-triggered only. The flag and the
+  // check are the entire mechanism here: no self-service withdrawal request
+  // flow is built (see README §Phase 18 for the deliberate scope boundary).
+  app.post(
+    '/respondents/:id/withdraw',
+    {
+      preHandler: [app.authenticate],
+      schema: { params: z.object({ id: z.string().uuid() }) },
+    },
+    async (request, reply) => {
+      await withdrawRespondent(getPool(), request.params.id);
+      return reply.send({ withdrawn: true });
     },
   );
 };

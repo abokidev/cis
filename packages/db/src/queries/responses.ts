@@ -40,6 +40,7 @@ interface RawRespondentRow {
   contact_phone: string | null;
   recovery_token: string | null;
   report_delivery: string | null;
+  withdrawn_at: Date | null;
   created_at: Date;
 }
 
@@ -71,6 +72,7 @@ function mapRespondent(row: RawRespondentRow): Respondent {
     contactPhone: row.contact_phone,
     recoveryToken: row.recovery_token,
     reportDelivery: row.report_delivery,
+    withdrawnAt: row.withdrawn_at,
     createdAt: row.created_at,
   };
 }
@@ -193,6 +195,16 @@ export async function getRespondentById(pool: Pool, id: string): Promise<Respond
 
 export async function markRespondentSubmitted(pool: Pool, id: string): Promise<void> {
   await query(pool, 'UPDATE respondents SET submitted_at = NOW() WHERE id = $1', [id]);
+}
+
+/**
+ * A genuine withdrawal (UX-X-001), distinct from Phase 17's reminders_opted_out
+ * (which is explicitly NOT withdrawal). Setting this flag is the only thing
+ * this function does — no self-service withdrawal request/approval flow is
+ * built here, per the artefact's explicit scope boundary.
+ */
+export async function markRespondentWithdrawn(pool: Pool, id: string): Promise<void> {
+  await query(pool, 'UPDATE respondents SET withdrawn_at = NOW() WHERE id = $1', [id]);
 }
 
 /**

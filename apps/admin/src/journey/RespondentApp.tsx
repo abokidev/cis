@@ -4,8 +4,11 @@ import { RetailEntry } from './RetailEntry';
 import { InstitutionalEntry, type RegulatorVariant } from './InstitutionalEntry';
 import { RunJourney } from './RunJourney';
 import { Completion } from './Completion';
+import { HelpPrivacyAbout } from './HelpPrivacyAbout';
+import { PreviousEditions } from './PreviousEditions';
 import { journeyApi, type ParticipatingFirm } from './journeyClient';
 import { ApiError } from '../api/types';
+import { ErrorState, type ErrorStateKind } from '../shared/ErrorState';
 
 type Screen =
   | { name: 'landing' }
@@ -19,7 +22,11 @@ type Screen =
       retail: boolean;
     }
   | { name: 'complete'; respondentId: string; code: string; retail: boolean }
-  | { name: 'firm-stub' };
+  | { name: 'firm-stub' }
+  | { name: 'already-submitted' }
+  | { name: 'error'; kind: ErrorStateKind }
+  | { name: 'help-about' }
+  | { name: 'previous-editions' };
 
 const REGULATORS: RegulatorVariant[] = ['I-SEC', 'I-NGX', 'I-CSCS'];
 const RETAIL_INSTRUMENT = 'S4';
@@ -51,16 +58,32 @@ export function RespondentApp(): JSX.Element {
         // Resume-by-link: ?resume=<token>
         const token = new URLSearchParams(window.location.search).get('resume');
         if (token) {
-          const state = await journeyApi.resumeByToken(token);
-          const firms = ctx.editionId ? await journeyApi.participatingFirms(ctx.editionId) : [];
-          if (cancelled) return;
-          setScreen({
-            name: 'running',
-            respondentId: state.respondent.id,
-            firms,
-            code: state.respondent.instrumentCode,
-            retail: state.respondent.instrumentCode.startsWith('S'),
-          });
+          try {
+            const state = await journeyApi.resumeByToken(token);
+            if (cancelled) return;
+            if (state.kind === 'participation_closed') {
+              setScreen({ name: 'error', kind: 'participation_closed' });
+            } else if (state.kind === 'already_submitted') {
+              setScreen({ name: 'already-submitted' });
+            } else {
+              const firms = ctx.editionId ? await journeyApi.participatingFirms(ctx.editionId) : [];
+              if (cancelled) return;
+              setScreen({
+                name: 'running',
+                respondentId: state.respondent.id,
+                firms,
+                code: state.respondent.instrumentCode,
+                retail: state.respondent.instrumentCode.startsWith('S'),
+              });
+            }
+          } catch (err) {
+            if (cancelled) return;
+            if (err instanceof ApiError && err.statusCode === 404) {
+              setScreen({ name: 'error', kind: 'no_unfinished_survey' });
+            } else {
+              setScreen({ name: 'error', kind: 'service_unavailable' });
+            }
+          }
         }
         setReady(true);
       } catch (err) {
@@ -99,6 +122,8 @@ export function RespondentApp(): JSX.Element {
               onTakeRetail={() => setScreen({ name: 'retail-entry' })}
               onTakeInstitutional={() => setScreen({ name: 'inst-entry', code: 'I-SEC' })}
               onFirmCta={() => setScreen({ name: 'firm-stub' })}
+              onHelpAbout={() => setScreen({ name: 'help-about' })}
+              onPreviousEditions={() => setScreen({ name: 'previous-editions' })}
             />
           </>
         )}
@@ -182,6 +207,31 @@ export function RespondentApp(): JSX.Element {
               })
             }
           />
+        )}
+
+        {screen.name === 'help-about' && (
+          <HelpPrivacyAbout onBack={() => setScreen({ name: 'landing' })} />
+        )}
+
+        {screen.name === 'previous-editions' && (
+          <PreviousEditions
+            currentEditionId={editionId}
+            onBack={() => setScreen({ name: 'landing' })}
+          />
+        )}
+
+        {screen.name === 'error' && (
+          <ErrorState kind={screen.kind} onBack={() => setScreen({ name: 'landing' })} />
+        )}
+
+        {screen.name === 'already-submitted' && (
+          <div className="card">
+            <h2>You have already finished this one.</h2>
+            <p>Your response is in — nothing further is needed.</p>
+            <button type="button" className="btn" onClick={() => setScreen({ name: 'landing' })}>
+              Back to safe starting point
+            </button>
+          </div>
         )}
 
         {screen.name === 'firm-stub' && (

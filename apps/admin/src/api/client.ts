@@ -96,6 +96,7 @@ export interface AdminClient {
   /** Generic escape hatch — used by surfaces that call many endpoints without adding per-method stubs. */
   get<T = unknown>(path: string): Promise<T>;
   post<T = unknown>(path: string, body: unknown): Promise<T>;
+  put<T = unknown>(path: string, body: unknown): Promise<T>;
 }
 
 /** Build a client bound to an auth token. */
@@ -166,5 +167,7 @@ export function createClient(token: string | null): AdminClient {
     get: <T = unknown>(path: string) => request<T>(path, { token }),
     post: <T = unknown>(path: string, body: unknown) =>
       request<T>(path, { method: 'POST', body, token }),
+    put: <T = unknown>(path: string, body: unknown) =>
+      request<T>(path, { method: 'PUT', body, token }),
   };
 }

@@ -146,6 +146,14 @@ h1[tabindex='-1']:focus {
   text-decoration: underline;
   text-underline-offset: 3px;
 }
+.crumbs button:disabled {
+  color: var(--fg-3);
+  text-decoration: none;
+  cursor: not-allowed;
+}
+.crumbs button:disabled:hover {
+  color: var(--fg-3);
+}
 .crumbs span {
   color: var(--fg-3);
 }
@@ -326,6 +334,57 @@ tr.soft {
 .field input:focus,
 .field textarea:focus {
   border-color: var(--dragnet-black);
+}
+
+/* Generic side-by-side layout for a small group of block children
+   (e.g. two field groups, two cards) — used by WordingPage and
+   HelpPrivacyAbout. Not to be confused with .regrow, which is a
+   specific clickable list-row shape (see below). */
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+.row > * {
+  flex: 1 1 240px;
+}
+
+/* Regulator/institution list row (RegulatorsPage): a full-width clickable
+   button laying out a name+mandate block, a next-step label and a status
+   pill. Named distinctly from .row above since it's a different shape. */
+.regrow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 14px 16px;
+  margin-bottom: 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r);
+  background: #fff;
+  text-align: left;
+}
+.regrow:hover {
+  border-color: var(--dragnet-black);
+}
+.regrow.late {
+  border-color: var(--brand-red);
+}
+.regrow .who {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.regrow .who span {
+  font-size: 13px;
+  color: var(--fg-3);
+  font-weight: 400;
+}
+.regrow .next {
+  font-size: 13px;
+  color: var(--fg-3);
+  white-space: nowrap;
 }
 
 .floors {

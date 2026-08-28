@@ -163,7 +163,7 @@ export function RegulatorsPage(): JSX.Element {
               <button
                 key={r.id}
                 type="button"
-                className={`row${late ? ' late' : ''}`}
+                className={`regrow${late ? ' late' : ''}`}
                 onClick={() => {
                   setOpenIdx(i);
                   setEditing(false);

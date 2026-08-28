@@ -142,16 +142,26 @@ export function RetailEntry({
               ))}
             </div>
             {(channel === 'email' || channel === 'both') && (
-              <label className="field">
-                Email
-                <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" />
-              </label>
+              <div className="field">
+                <label htmlFor="retail-entry-email">Email</label>
+                <input
+                  id="retail-entry-email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  type="email"
+                />
+              </div>
             )}
             {(channel === 'text' || channel === 'both') && (
-              <label className="field">
-                Mobile number
-                <input value={phone} onChange={(e) => setPhone(e.target.value)} type="tel" />
-              </label>
+              <div className="field">
+                <label htmlFor="retail-entry-phone">Mobile number</label>
+                <input
+                  id="retail-entry-phone"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  type="tel"
+                />
+              </div>
             )}
             <p className="lede" style={{ fontSize: 13 }}>
               With no contact detail you can still finish on this device — we’ll keep your place

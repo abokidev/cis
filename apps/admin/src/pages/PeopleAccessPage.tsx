@@ -257,33 +257,8 @@ export function PeopleAccessPage(): JSX.Element {
     goMain();
   }
 
-  // Scenario controls (mirror the artefact's review bar; demonstrate states).
-  function scenario(kind: 'normal' | 'one' | 'none' | 'nobody') {
-    if (kind === 'nobody') return setPeople([]);
-    const base = clone(SEED);
-    if (kind === 'one') base.forEach((p, i) => (p.r.approve = i === 0));
-    if (kind === 'none') base.forEach((p) => (p.r.approve = false));
-    setPeople(base);
-    goMain();
-  }
-
   return (
     <main>
-      <div className="actions" style={{ marginBottom: 10, flexWrap: 'wrap' }}>
-        <button type="button" className="btn-2" onClick={() => scenario('normal')}>
-          Four people
-        </button>
-        <button type="button" className="btn-2" onClick={() => scenario('one')}>
-          Only one approver
-        </button>
-        <button type="button" className="btn-2" onClick={() => scenario('none')}>
-          No approvers at all
-        </button>
-        <button type="button" className="btn-2" onClick={() => scenario('nobody')}>
-          Nobody has access
-        </button>
-      </div>
-
       {view === 'main' && (
         <MainView
           people={people}

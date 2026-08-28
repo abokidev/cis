@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { createClient } from './api/client';
 import { ApiError } from './api/types';
 import { ErrorState } from './shared/ErrorState';
+import { editionPhase, type EditionPhase } from './editionPhase';
 import { useSession } from './auth/useSession';
 import { LoginPage } from './pages/LoginPage';
 import { EditionPage } from './pages/EditionPage';
@@ -39,11 +40,66 @@ type Tab =
   | 'wording'
   | 'dragnet';
 
+/**
+ * Which nav tabs are relevant in which edition phase (UX-OPS-001: "sections
+ * not yet relevant... are shown disabled, not hidden"). A tab not listed for
+ * the current phase is rendered disabled, never hidden — the shape of the
+ * whole programme stays visible from day one.
+ */
+const TAB_PHASES: Record<Tab, EditionPhase[]> = {
+  board: ['before_launch', 'collection_open', 'closing_week', 'closed'],
+  edition: ['before_launch', 'collection_open', 'closing_week', 'closed'],
+  surveys: ['before_launch'],
+  renderer: ['before_launch', 'collection_open'],
+  firmteam: ['before_launch', 'collection_open', 'closing_week'],
+  people: ['before_launch', 'collection_open', 'closing_week', 'closed'],
+  invitations: ['before_launch', 'collection_open', 'closing_week'],
+  regulators: ['before_launch', 'collection_open', 'closing_week'],
+  responses: ['collection_open', 'closing_week'],
+  unfinished: ['collection_open', 'closing_week'],
+  scoring: ['closed'],
+  national: ['closed'],
+  firmreports: ['closed'],
+  firmresults: ['closed'],
+  wording: ['before_launch', 'collection_open', 'closing_week', 'closed'],
+  dragnet: ['before_launch', 'collection_open', 'closing_week', 'closed'],
+};
+
+/** One nav-bar tab: disabled (not hidden) when not relevant in the current
+ *  edition phase, per UX-OPS-001's phase-awareness rule. */
+function NavTab({
+  tabKey,
+  tab,
+  phase,
+  setTab,
+  children,
+}: {
+  tabKey: Tab;
+  tab: Tab;
+  phase: EditionPhase;
+  setTab: (t: Tab) => void;
+  children: ReactNode;
+}): JSX.Element {
+  const relevant = TAB_PHASES[tabKey].includes(phase);
+  return (
+    <button
+      type="button"
+      disabled={!relevant}
+      onClick={() => setTab(tabKey)}
+      style={tab === tabKey ? { color: 'var(--dragnet-black)' } : undefined}
+      title={relevant ? undefined : 'Not relevant in this edition phase'}
+    >
+      {children}
+    </button>
+  );
+}
+
 export function App(): JSX.Element {
   const { session, signIn, signOut } = useSession();
   const client = useMemo(() => createClient(session?.token ?? null), [session]);
 
   const [editionId, setEditionId] = useState<string | null>(null);
+  const [phase, setPhase] = useState<EditionPhase>('before_launch');
   const [tab, setTab] = useState<Tab>('edition');
   const [loadError, setLoadError] = useState<string | null>(null);
   const [serviceDown, setServiceDown] = useState(false);
@@ -62,6 +118,11 @@ export function App(): JSX.Element {
         setEditionId(current ? current.id : null);
         setLoadError(current ? null : 'No edition exists yet — seed the database.');
         setServiceDown(false);
+        if (current) {
+          const detail = await client.getEdition(current.id);
+          if (cancelled) return;
+          setPhase(editionPhase(detail.status, detail.surveyCloseAt));
+        }
       } catch (err) {
         if (cancelled) return;
         if (err instanceof ApiError && err.statusCode === 401) {
@@ -110,139 +171,75 @@ export function App(): JSX.Element {
       <nav className="crumbs" aria-label="Where you are">
         <span>Study operations</span>
         <span aria-hidden="true">›</span>
-        <button
-          type="button"
-          onClick={() => setTab('board')}
-          style={tab === 'board' ? { color: 'var(--dragnet-black)' } : undefined}
-        >
+        <NavTab tabKey="board" tab={tab} phase={phase} setTab={setTab}>
           Mission board
-        </button>
+        </NavTab>
         <span aria-hidden="true">·</span>
         <span>Monitoring</span>
         <span aria-hidden="true">›</span>
-        <button
-          type="button"
-          onClick={() => setTab('responses')}
-          style={tab === 'responses' ? { color: 'var(--dragnet-black)' } : undefined}
-        >
+        <NavTab tabKey="responses" tab={tab} phase={phase} setTab={setTab}>
           Responses
-        </button>
+        </NavTab>
         <span aria-hidden="true">·</span>
-        <button
-          type="button"
-          onClick={() => setTab('unfinished')}
-          style={tab === 'unfinished' ? { color: 'var(--dragnet-black)' } : undefined}
-        >
+        <NavTab tabKey="unfinished" tab={tab} phase={phase} setTab={setTab}>
           Unfinished
-        </button>
+        </NavTab>
         <span aria-hidden="true">·</span>
         <span>Setup</span>
         <span aria-hidden="true">›</span>
-        <button
-          type="button"
-          onClick={() => setTab('edition')}
-          style={tab === 'edition' ? { color: 'var(--dragnet-black)' } : undefined}
-        >
+        <NavTab tabKey="edition" tab={tab} phase={phase} setTab={setTab}>
           Edition
-        </button>
+        </NavTab>
         <span aria-hidden="true">·</span>
-        <button
-          type="button"
-          onClick={() => setTab('surveys')}
-          style={tab === 'surveys' ? { color: 'var(--dragnet-black)' } : undefined}
-        >
+        <NavTab tabKey="surveys" tab={tab} phase={phase} setTab={setTab}>
           Surveys
-        </button>
+        </NavTab>
         <span aria-hidden="true">·</span>
-        <button
-          type="button"
-          onClick={() => setTab('renderer')}
-          style={tab === 'renderer' ? { color: 'var(--dragnet-black)' } : undefined}
-        >
+        <NavTab tabKey="renderer" tab={tab} phase={phase} setTab={setTab}>
           Renderer
-        </button>
+        </NavTab>
         <span aria-hidden="true">·</span>
-        <button
-          type="button"
-          onClick={() => setTab('firmteam')}
-          style={tab === 'firmteam' ? { color: 'var(--dragnet-black)' } : undefined}
-        >
+        <NavTab tabKey="firmteam" tab={tab} phase={phase} setTab={setTab}>
           Firm team
-        </button>
+        </NavTab>
         <span aria-hidden="true">·</span>
-        <button
-          type="button"
-          onClick={() => setTab('people')}
-          style={tab === 'people' ? { color: 'var(--dragnet-black)' } : undefined}
-        >
+        <NavTab tabKey="people" tab={tab} phase={phase} setTab={setTab}>
           People
-        </button>
+        </NavTab>
         <span aria-hidden="true">·</span>
-        <button
-          type="button"
-          onClick={() => setTab('invitations')}
-          style={tab === 'invitations' ? { color: 'var(--dragnet-black)' } : undefined}
-        >
+        <NavTab tabKey="invitations" tab={tab} phase={phase} setTab={setTab}>
           Invitations
-        </button>
+        </NavTab>
         <span aria-hidden="true">·</span>
-        <button
-          type="button"
-          onClick={() => setTab('regulators')}
-          style={tab === 'regulators' ? { color: 'var(--dragnet-black)' } : undefined}
-        >
+        <NavTab tabKey="regulators" tab={tab} phase={phase} setTab={setTab}>
           Regulators
-        </button>
+        </NavTab>
         <span aria-hidden="true">·</span>
-        <button
-          type="button"
-          onClick={() => setTab('scoring')}
-          style={tab === 'scoring' ? { color: 'var(--dragnet-black)' } : undefined}
-        >
+        <NavTab tabKey="scoring" tab={tab} phase={phase} setTab={setTab}>
           Scoring
-        </button>
+        </NavTab>
         <span aria-hidden="true">·</span>
-        <button
-          type="button"
-          onClick={() => setTab('national')}
-          style={tab === 'national' ? { color: 'var(--dragnet-black)' } : undefined}
-        >
+        <NavTab tabKey="national" tab={tab} phase={phase} setTab={setTab}>
           National report
-        </button>
+        </NavTab>
         <span aria-hidden="true">·</span>
-        <button
-          type="button"
-          onClick={() => setTab('firmreports')}
-          style={tab === 'firmreports' ? { color: 'var(--dragnet-black)' } : undefined}
-        >
+        <NavTab tabKey="firmreports" tab={tab} phase={phase} setTab={setTab}>
           Firm reports
-        </button>
+        </NavTab>
         <span aria-hidden="true">·</span>
-        <button
-          type="button"
-          onClick={() => setTab('firmresults')}
-          style={tab === 'firmresults' ? { color: 'var(--dragnet-black)' } : undefined}
-        >
+        <NavTab tabKey="firmresults" tab={tab} phase={phase} setTab={setTab}>
           Firm results
-        </button>
+        </NavTab>
         <span aria-hidden="true">·</span>
-        <button
-          type="button"
-          onClick={() => setTab('wording')}
-          style={tab === 'wording' ? { color: 'var(--dragnet-black)' } : undefined}
-        >
+        <NavTab tabKey="wording" tab={tab} phase={phase} setTab={setTab}>
           Wording
-        </button>
+        </NavTab>
         {session.user.hasDragnetRight && (
           <>
             <span aria-hidden="true">·</span>
-            <button
-              type="button"
-              onClick={() => setTab('dragnet')}
-              style={tab === 'dragnet' ? { color: 'var(--dragnet-black)' } : undefined}
-            >
+            <NavTab tabKey="dragnet" tab={tab} phase={phase} setTab={setTab}>
               Dragnet analysis
-            </button>
+            </NavTab>
           </>
         )}
       </nav>

@@ -14,6 +14,8 @@ import { loadRbacContext } from '@cis/auth';
 import {
   setSampleFloor,
   setClosingDate,
+  setSurveyOpenAt,
+  evaluateAutoOpen,
   requestLock,
   decideLock,
   EDITION_LOCK_ACTION,
@@ -42,11 +44,15 @@ const EditionDetailSchema = z.object({
   label: z.string(),
   status: z.enum(['draft', 'open', 'locked', 'archived']),
   surveyOpenAt: z.string().nullable(),
+  plannedOpenAt: z.string().nullable(),
   surveyCloseAt: z.string().nullable(),
   lockedAt: z.string().nullable(),
   frozen: z.boolean(),
   floors: z.array(FloorSchema),
   pendingLock: PendingActionSchema,
+  /** Set only when the planned launch instant has passed but the instrument
+   *  set is not frozen — a loud, surfaceable problem (Phase 19, item 2). */
+  openingProblem: z.enum(['launch_date_passed_not_frozen']).nullable(),
 });
 
 const not = (reply: FastifyReply, code: number, error: string, message: string) =>
@@ -107,8 +113,14 @@ export const editionRoutes: FastifyPluginAsyncZod = async (app) => {
     },
     async (request, reply) => {
       const pool = getPool();
-      const edition = await getEditionById(pool, request.params.id);
-      if (!edition) return not(reply, 404, 'Not Found', 'Edition not found');
+      const existing = await getEditionById(pool, request.params.id);
+      if (!existing) return not(reply, 404, 'Not Found', 'Edition not found');
+
+      // Lazy-evaluate the opening trigger (Phase 19, item 2) on every read —
+      // no cron: if the planned launch instant has passed, this either opens
+      // the edition (instruments frozen) or reports the loud problem below.
+      const autoOpen = await evaluateAutoOpen(pool, request.params.id);
+      const edition = autoOpen.edition;
 
       const [floors, frozen, pending] = await Promise.all([
         listSampleFloors(pool, edition.id),
@@ -121,11 +133,13 @@ export const editionRoutes: FastifyPluginAsyncZod = async (app) => {
         label: edition.label,
         status: edition.status,
         surveyOpenAt: edition.surveyOpenAt?.toISOString() ?? null,
+        plannedOpenAt: edition.plannedOpenAt?.toISOString() ?? null,
         surveyCloseAt: edition.surveyCloseAt?.toISOString() ?? null,
         lockedAt: edition.lockedAt?.toISOString() ?? null,
         frozen,
         floors: floors.map((f) => ({ category: f.category, floorValue: f.floorValue })),
         pendingLock: await serializePending(pool, pending),
+        openingProblem: autoOpen.problem,
       });
     },
   );
@@ -152,6 +166,32 @@ export const editionRoutes: FastifyPluginAsyncZod = async (app) => {
       return reply.send({
         floors: floors.map((f) => ({ category: f.category, floorValue: f.floorValue })),
       });
+    },
+  );
+
+  // Set the planned launch instant (Phase 19, item 2 — draft-only, enforced by
+  // the service). `openDate: null` clears a previously-set plan.
+  app.patch(
+    '/editions/:id/opening-date',
+    {
+      preHandler: [app.authenticate],
+      schema: {
+        params: z.object({ id: z.string().uuid() }),
+        body: z.object({ openDate: z.string().date().nullable() }),
+        response: { 200: z.object({ plannedOpenAt: z.string().nullable() }) },
+      },
+    },
+    async (request, reply) => {
+      const pool = getPool();
+      const rbac = await loadRbacContext(pool, request.user.sub);
+      const opensAt = request.body.openDate
+        ? new Date(`${request.body.openDate}T00:00:00.000Z`)
+        : null;
+      const updated = await setSurveyOpenAt(pool, rbac, request.params.id, opensAt, {
+        ipAddress: request.ip,
+        userAgent: request.headers['user-agent'] ?? null,
+      });
+      return reply.send({ plannedOpenAt: updated.plannedOpenAt?.toISOString() ?? null });
     },
   );
 

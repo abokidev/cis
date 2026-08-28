@@ -563,22 +563,25 @@ export function evaluateBoard(ctx: BoardContext): MissionCard[] {
     }
   }
 
-  // ── Industry SEI methodology block (Phase 11) — NOT a data shortfall ─────────
-  // When the Industry-SEI minimum firm-investor-observation floor is unapproved,
-  // Industry SEI is NOT_CALCULABLE. No cohort can fix this — chasing respondents
-  // changes nothing — so the card carries NO recommended action and is EXEMPT
-  // from the "no action → off board" filter. It must display, and survives close.
+  // ── Industry SEI not yet calculable (Phase 19: real derivation) ──────────────
+  // Industry SEI is derived from participating firms' own Firm_SEI once a
+  // signed-off scoring run exists (never during open collection, since no
+  // firm-level SEI values exist yet). This is a genuine data-shortfall/
+  // sign-off-pending state, not a permanent methodology gate — it survives
+  // close because the state itself is still meaningful information, but it
+  // carries no bulk-outreach recommendation of its own (this board has no
+  // action for "sign off the scoring run").
   if (ctx.industrySei.status === 'NOT_CALCULABLE') {
     cards.push({
       conditionId: -1,
       severity: 3,
       whatIsAtRisk: 'Industry SEI is not calculable',
       evidence: [
-        `Blocked by unapproved methodology parameter: ${ctx.industrySei.blockingParameter ?? 'unknown'}`,
-        `Reason: ${ctx.industrySei.reason ?? 'methodology parameter pending approval'}`,
+        `${ctx.industrySei.contributingFirms} firm(s) currently have reportable Firm_SEI`,
+        `Reason: ${ctx.industrySei.reason ?? 'not enough data yet'}`,
       ],
       consequence: [
-        'Industry SEI cannot be produced until its minimum firm-investor observation floor is approved. This is a methodology block, not a participation shortfall — no outreach resolves it.',
+        'Industry SEI cannot be produced yet. More firms clearing their own Firm_SEI sufficiency floor, or scoring being signed off, resolves this.',
       ],
       why: null,
       recommendedAction: null,
@@ -648,7 +651,7 @@ export function evaluateBoard(ctx: BoardContext): MissionCard[] {
           makeSimpleCard(
             16,
             0,
-            [`${inst.institution} has declined`],
+            [`${inst.institutionName} has declined`],
             ['Institutional Perspectives must be replanned, not chased'],
             1,
           ),
@@ -664,7 +667,7 @@ export function evaluateBoard(ctx: BoardContext): MissionCard[] {
           makeSimpleCard(
             16,
             0,
-            [`${inst.institution} not engaged past its target of ${dbDateStr(inst.targetBy)}`],
+            [`${inst.institutionName} not engaged past its target of ${dbDateStr(inst.targetBy)}`],
             ['Institutional Perspectives at risk'],
           ),
         );
@@ -903,7 +906,7 @@ export async function buildBoardContext(
     daysElapsed,
     daysRemaining,
   });
-  const industrySei = industrySeiState();
+  const industrySei = await industrySeiState(pool, editionId);
 
   const attributableCount = await countAttributable(pool, editionId);
   const funnelRows = await getFirmFunnelRows(pool, editionId);

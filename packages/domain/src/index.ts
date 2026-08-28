@@ -1,5 +1,7 @@
 export {
   setClosingDate,
+  setSurveyOpenAt,
+  evaluateAutoOpen,
   setSampleFloor,
   markOpened,
   requestLock,
@@ -7,7 +9,7 @@ export {
   EDITION_LOCK_ACTION,
   EDITION_MANAGE_PERMISSION,
 } from './edition-service';
-export type { ActorContext, LockDecision } from './edition-service';
+export type { ActorContext, LockDecision, AutoOpenResult } from './edition-service';
 
 export { requestFreeze, decideFreeze, INSTRUMENT_FREEZE_ACTION } from './instrument-service';
 export type { FreezeDecision } from './instrument-service';
@@ -233,8 +235,6 @@ export {
   recordLikeForLikeComparison,
   runCandidateScoring,
   CandidateScoringError,
-  INDUSTRY_SEI_BLOCKING_PARAMETER,
-  NOT_CALCULABLE_REASON,
 } from './candidate-scoring-service';
 export type {
   PooledSegmentInput,
@@ -295,6 +295,8 @@ export type {
 } from './reminder-timing-service';
 
 // ── Phase 12: Regulator engagement (UX-OPS-007) ──────────────────────────────
+// Phase 19: re-keyed from a fixed RegulatorCode enum to (institutionId,
+// familyCode); adds reopenDeclined (item 6, access:regs-gated).
 export {
   listRegulators,
   getRegulator,
@@ -304,11 +306,16 @@ export {
   sendTextReminder,
   markDeclined,
   markSubmitted,
+  reopenDeclined,
   recordHistory,
-  REGULATOR_CODES,
-  REGULATOR_META,
+  listInstitutionRoster,
+  renderInstitutionalIntro,
   RegulatorEngagementError,
 } from './regulator-engagement-service';
+
+// ── Phase 19: Institutional instrument families ──────────────────────────────
+export { FAMILY_META, instrumentCodeForFamily } from './institution-family-service';
+export type { FamilyMeta } from './institution-family-service';
 
 // ── Phase 16: Dragnet Internal Analysis (UX-ADM-007) ─────────────────────────
 export {

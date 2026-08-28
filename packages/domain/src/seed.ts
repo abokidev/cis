@@ -16,6 +16,7 @@ import {
   getPermissionByCode,
   grantPermissionToUser,
   seedInvitationDefaults,
+  seedInstitutions,
   seedInstitutionEngagement,
   seedMissionBoardDependencies,
   seedCandidateScoringConfig,
@@ -179,9 +180,16 @@ export async function seedReferenceData(pool: Pool): Promise<SeededReferenceData
   // Six per-firm-state templates and the three provisional regulator contacts.
   await seedInvitationDefaults(pool, edition.id);
 
+  // ── Institutional instrument families (Phase 19) ─────────────────────────────
+  // Idempotent re-seed of the institutions/roles the migration also seeds —
+  // needed here (not just once, at migration time) so test suites that
+  // truncate and reseed on every run start from a complete roster.
+  await seedInstitutions(pool);
+
   // ── Mission board (Phase 10) ─────────────────────────────────────────────────
-  // Ten reporting-dependency rows (brief §3.3), and the three regulator
-  // engagement rows seeded structurally with NO target_by (DECISION NEEDED).
+  // Ten reporting-dependency rows (brief §3.3), and one engagement row per
+  // (institution, family) role, seeded structurally with NO target_by
+  // (DECISION NEEDED).
   await seedMissionBoardDependencies(pool);
   await seedInstitutionEngagement(pool, edition.id);
 

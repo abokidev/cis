@@ -8,16 +8,18 @@ import {
   getDmiRequiredItems,
   getDmiWeights,
   getOmiRoleItemGroups,
-  getIndustrySeiFloor,
   getMethodologyMeta,
   methodologyVersionString,
   createComparisonRun,
+  getAuthoritativeSignoff,
+  listCalculatedResults,
   type ComparisonRun,
 } from '@cis/db';
 import type { CalculationRun } from '@cis/shared-types';
 import { DomainError } from './errors';
 import { datasetHashFor } from './calculation-service';
 import { scoreItem, isSubstantive } from './scoring-transforms';
+import { computeSufficiency } from './sufficiency-service';
 
 /**
  * CIS-SCORE-2026 v0.14 candidate scoring engine (Phase 11). Runs the real
@@ -37,10 +39,6 @@ export class CandidateScoringError extends DomainError {
     super(message, code);
   }
 }
-
-/** The blocked-parameter identity for Industry SEI. */
-export const INDUSTRY_SEI_BLOCKING_PARAMETER = 'industry_sei_min_firm_investor_observations';
-export const NOT_CALCULABLE_REASON = 'BLOCKED_BY_UNAPPROVED_METHODOLOGY_PARAMETER';
 
 // ─── The official-use hard gate (build note §2) ───────────────────────────────
 
@@ -246,27 +244,70 @@ export function pooledHeadline(metric: string, segments: PooledSegmentInput[]): 
   return { metric, headline, totalUnits, composition, excludedSegments, disclosure };
 }
 
-// ─── Industry SEI — NOT_CALCULABLE while the floor is unset (§10 / build §3A) ──
+// ─── Industry SEI — real derivation from reportable Firm_SEI (Phase 19, item 5) ─
+//
+// Replaces the permanent NOT_CALCULABLE block that used to be gated on an
+// unapproved YAML parameter. Industry SEI now aggregates the mean Firm_SEI
+// across every PARTICIPATING firm whose OWN Firm_SEI cleared at least
+// DIRECTIONAL sufficiency (n >= SUPPRESS_BELOW investor raters, via the
+// existing generic `computeSufficiency()` — never a bespoke minimum-
+// observations threshold invented for this one metric). The COUNT of those
+// contributing firms is then run back through the SAME `computeSufficiency()`
+// ladder to decide whether the aggregate itself is reportable. No firm-level
+// value is ever exposed on its own — only the aggregate, and only once it
+// clears the same floor every other metric in this codebase clears.
 
 export interface IndustrySeiState {
   status: 'NOT_CALCULABLE' | 'CALCULABLE';
+  /** Present only when NOT_CALCULABLE — why, in plain terms. */
   reason?: string;
-  blockingParameter?: string;
-  floor?: number;
+  /** How many firms have at least DIRECTIONAL Firm_SEI and so contribute. */
+  contributingFirms: number;
+  /** The derived aggregate (mean of contributing Firm_SEI values) — only
+   *  when CALCULABLE. */
+  value?: number;
+  /** The aggregate's own sufficiency, from `computeSufficiency(contributingFirms)`
+   *  — only when CALCULABLE (SUPPRESSED maps to NOT_CALCULABLE, never surfaced
+   *  here). */
+  sufficiency?: 'DIRECTIONAL' | 'REPORTABLE';
 }
 
-/** Industry SEI is NOT_CALCULABLE (a methodology block, not a data shortfall)
- *  until `industry_sei_min_firm_investor_observations` is approved. */
-export function industrySeiState(): IndustrySeiState {
-  const floor = getIndustrySeiFloor();
-  if (floor === null) {
+/**
+ * Derive Industry SEI from the edition's authoritative (signed-off) scoring
+ * run. NOT_CALCULABLE while no such run exists yet (collection is open, or
+ * scoring hasn't been signed off) — a genuine data-shortfall reason, not a
+ * permanent methodology gate, so outreach or waiting for sign-off resolves it.
+ */
+export async function industrySeiState(pool: Pool, editionId: string): Promise<IndustrySeiState> {
+  const signoff = await getAuthoritativeSignoff(pool, editionId);
+  if (!signoff) {
     return {
       status: 'NOT_CALCULABLE',
-      reason: NOT_CALCULABLE_REASON,
-      blockingParameter: INDUSTRY_SEI_BLOCKING_PARAMETER,
+      reason: 'No signed-off scoring run exists for this edition yet',
+      contributingFirms: 0,
     };
   }
-  return { status: 'CALCULABLE', floor };
+  const results = await listCalculatedResults(pool, signoff.calculationRunId);
+  const seiRows = results.filter((r) => r.subjectType === 'firm' && r.metricCode === 'SEI');
+  const contributing = seiRows.filter(
+    (r) => r.value !== null && computeSufficiency(r.n) !== 'SUPPRESSED',
+  );
+  const contributingFirms = contributing.length;
+  const aggregateSufficiency = computeSufficiency(contributingFirms);
+  if (aggregateSufficiency === 'SUPPRESSED') {
+    return {
+      status: 'NOT_CALCULABLE',
+      reason: `Only ${contributingFirms} firm${contributingFirms === 1 ? '' : 's'} have reportable Firm_SEI so far — too few to aggregate safely`,
+      contributingFirms,
+    };
+  }
+  const mean = contributing.reduce((sum, r) => sum + (r.value as number), 0) / contributingFirms;
+  return {
+    status: 'CALCULABLE',
+    value: Math.round(mean * 10) / 10,
+    contributingFirms,
+    sufficiency: aggregateSufficiency === 'DIRECTIONAL' ? 'DIRECTIONAL' : 'REPORTABLE',
+  };
 }
 
 // ─── Like-for-like cross-edition recalculation (§7 / §13) ──────────────────────
@@ -417,8 +458,8 @@ export async function runCandidateScoring(
     });
   }
 
-  // Industry SEI — blocked by an unapproved methodology parameter.
-  const industrySei = industrySeiState();
+  // Industry SEI — real derivation from the authoritative run's Firm_SEI.
+  const industrySei = await industrySeiState(pool, editionId);
   if (industrySei.status === 'NOT_CALCULABLE') {
     await insertCalculatedResult(pool, {
       calculationRunId: run.id,
@@ -426,10 +467,21 @@ export async function runCandidateScoring(
       subjectId: 'INDUSTRY',
       metricCode: 'SEI',
       value: null,
-      n: 0,
-      denominator: 0,
+      n: industrySei.contributingFirms,
+      denominator: industrySei.contributingFirms,
       sufficiencyState: 'NOT_CALCULABLE',
-      reason: `${industrySei.reason}: ${industrySei.blockingParameter}`,
+      reason: industrySei.reason ?? 'Industry SEI is not calculable',
+    });
+  } else {
+    await insertCalculatedResult(pool, {
+      calculationRunId: run.id,
+      subjectType: 'market',
+      subjectId: 'INDUSTRY',
+      metricCode: 'SEI',
+      value: industrySei.value ?? null,
+      n: industrySei.contributingFirms,
+      denominator: industrySei.contributingFirms,
+      sufficiencyState: industrySei.sufficiency ?? 'REPORTABLE',
     });
   }
 

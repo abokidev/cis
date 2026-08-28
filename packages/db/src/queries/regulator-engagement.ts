@@ -1,14 +1,25 @@
 import { Pool } from 'pg';
-import type { RegulatorCode, RegulatorContact, RegulatorHistoryEntry } from '@cis/shared-types';
+import type {
+  InstrumentFamilyCode,
+  RegulatorContact,
+  RegulatorHistoryEntry,
+} from '@cis/shared-types';
 import type { InstitutionEngagementStatus } from './mission-board';
 import { query } from '../client';
 
 /**
  * Phase 12 (UX-OPS-007) — the regulator engagement record. This owns the
- * per-(edition, regulator) row that Phase 10 created (`institution_engagement`):
- * its `status` and `target_by` are Phase 10's, and this phase adds the named
- * contact and the issued survey link to the SAME row (no second date field), plus
- * an append-only free-text history table.
+ * per-(edition, institution, family) row that Phase 10 created
+ * (`institution_engagement`): its `status` and `target_by` are Phase 10's,
+ * and this phase adds the named contact and the issued survey link to the
+ * SAME row (no second date field), plus an append-only free-text history
+ * table.
+ *
+ * Phase 19 re-keys every function here from a fixed `RegulatorCode` enum to
+ * the (institutionId, familyCode) composite key — a multi-role institution
+ * (CSCS: Family C AND Family D) needs two independent rows in the same
+ * edition, one per role, and a ninth institution of an existing role needs
+ * no code change here.
  *
  * The status/target_by writers here can set `target_by` back to NULL (referral
  * reset) — deliberately distinct from Phase 10's `setInstitutionEngagement`,
@@ -17,7 +28,9 @@ import { query } from '../client';
 
 export interface RegulatorEngagementRow {
   editionId: string;
-  institution: RegulatorCode;
+  institutionId: string;
+  familyCode: InstrumentFamilyCode;
+  institutionName: string;
   status: InstitutionEngagementStatus;
   statusChangedAt: Date;
   targetBy: Date | null;
@@ -28,7 +41,9 @@ export interface RegulatorEngagementRow {
 
 interface RawRow {
   edition_id: string;
-  institution: RegulatorCode;
+  institution_id: string;
+  family_code: InstrumentFamilyCode;
+  institution_name: string;
   status: InstitutionEngagementStatus;
   status_changed_at: Date;
   target_by: Date | null;
@@ -54,7 +69,9 @@ function mapRow(r: RawRow): RegulatorEngagementRow {
         };
   return {
     editionId: r.edition_id,
-    institution: r.institution,
+    institutionId: r.institution_id,
+    familyCode: r.family_code,
+    institutionName: r.institution_name,
     status: r.status,
     statusChangedAt: r.status_changed_at,
     targetBy: r.target_by,
@@ -64,15 +81,24 @@ function mapRow(r: RawRow): RegulatorEngagementRow {
   };
 }
 
+const ROW_SELECT = `
+  SELECT e.edition_id, e.institution_id, e.family_code, i.name AS institution_name,
+         e.status, e.status_changed_at, e.target_by,
+         e.contact_who, e.contact_role, e.contact_email, e.contact_phone, e.contact_how,
+         e.survey_link, e.respondent_id
+    FROM institution_engagement e
+    JOIN institutions i ON i.id = e.institution_id`;
+
 export async function getRegulatorEngagement(
   pool: Pool,
   editionId: string,
-  institution: RegulatorCode,
+  institutionId: string,
+  familyCode: InstrumentFamilyCode,
 ): Promise<RegulatorEngagementRow | null> {
   const res = await query<RawRow>(
     pool,
-    `SELECT * FROM institution_engagement WHERE edition_id = $1 AND institution = $2`,
-    [editionId, institution],
+    `${ROW_SELECT} WHERE e.edition_id = $1 AND e.institution_id = $2 AND e.family_code = $3`,
+    [editionId, institutionId, familyCode],
   );
   const row = res.rows[0];
   return row ? mapRow(row) : null;
@@ -84,7 +110,7 @@ export async function listRegulatorEngagement(
 ): Promise<RegulatorEngagementRow[]> {
   const res = await query<RawRow>(
     pool,
-    `SELECT * FROM institution_engagement WHERE edition_id = $1 ORDER BY institution`,
+    `${ROW_SELECT} WHERE e.edition_id = $1 ORDER BY e.family_code, i.name`,
     [editionId],
   );
   return res.rows.map(mapRow);
@@ -94,21 +120,34 @@ export async function listRegulatorEngagement(
 export async function saveRegulatorContact(
   pool: Pool,
   editionId: string,
-  institution: RegulatorCode,
+  institutionId: string,
+  familyCode: InstrumentFamilyCode,
   contact: RegulatorContact,
 ): Promise<RegulatorEngagementRow> {
-  const res = await query<RawRow>(
+  const res = await query<{ id: string }>(
     pool,
     `UPDATE institution_engagement
-        SET contact_who = $3, contact_role = $4, contact_email = $5,
-            contact_phone = $6, contact_how = $7, updated_at = NOW()
-      WHERE edition_id = $1 AND institution = $2
-      RETURNING *`,
-    [editionId, institution, contact.who, contact.role, contact.email, contact.phone, contact.how],
+        SET contact_who = $4, contact_role = $5, contact_email = $6,
+            contact_phone = $7, contact_how = $8, updated_at = NOW()
+      WHERE edition_id = $1 AND institution_id = $2 AND family_code = $3
+      RETURNING id`,
+    [
+      editionId,
+      institutionId,
+      familyCode,
+      contact.who,
+      contact.role,
+      contact.email,
+      contact.phone,
+      contact.how,
+    ],
   );
-  const row = res.rows[0];
-  if (!row) throw new Error(`institution_engagement ${institution} not found`);
-  return mapRow(row);
+  if (!res.rows[0]) {
+    throw new Error(`institution_engagement ${institutionId}/${familyCode} not found`);
+  }
+  const row = await getRegulatorEngagement(pool, editionId, institutionId, familyCode);
+  if (!row) throw new Error(`institution_engagement ${institutionId}/${familyCode} not found`);
+  return row;
 }
 
 /**
@@ -129,41 +168,49 @@ export async function saveRegulatorContact(
 export async function setRegulatorSurveyIssued(
   pool: Pool,
   editionId: string,
-  institution: RegulatorCode,
+  institutionId: string,
+  familyCode: InstrumentFamilyCode,
   data: { targetBy: string; surveyLink: string; respondentId: string },
 ): Promise<RegulatorEngagementRow> {
-  const res = await query<RawRow>(
+  const res = await query<{ id: string }>(
     pool,
     `UPDATE institution_engagement
         SET status = 'invited', status_changed_at = NOW(),
-            target_by = $3, survey_link = $4, respondent_id = $5, updated_at = NOW()
-      WHERE edition_id = $1 AND institution = $2
-      RETURNING *`,
-    [editionId, institution, data.targetBy, data.surveyLink, data.respondentId],
+            target_by = $4, survey_link = $5, respondent_id = $6, updated_at = NOW()
+      WHERE edition_id = $1 AND institution_id = $2 AND family_code = $3
+      RETURNING id`,
+    [editionId, institutionId, familyCode, data.targetBy, data.surveyLink, data.respondentId],
   );
-  const row = res.rows[0];
-  if (!row) throw new Error(`institution_engagement ${institution} not found`);
-  return mapRow(row);
+  if (!res.rows[0]) {
+    throw new Error(`institution_engagement ${institutionId}/${familyCode} not found`);
+  }
+  const row = await getRegulatorEngagement(pool, editionId, institutionId, familyCode);
+  if (!row) throw new Error(`institution_engagement ${institutionId}/${familyCode} not found`);
+  return row;
 }
 
 /** Set the engagement status only (e.g. 'confirmed' on submission, 'declined'). */
 export async function setRegulatorStatus(
   pool: Pool,
   editionId: string,
-  institution: RegulatorCode,
+  institutionId: string,
+  familyCode: InstrumentFamilyCode,
   status: InstitutionEngagementStatus,
 ): Promise<RegulatorEngagementRow> {
-  const res = await query<RawRow>(
+  const res = await query<{ id: string }>(
     pool,
     `UPDATE institution_engagement
-        SET status = $3, status_changed_at = NOW(), updated_at = NOW()
-      WHERE edition_id = $1 AND institution = $2
-      RETURNING *`,
-    [editionId, institution, status],
+        SET status = $4, status_changed_at = NOW(), updated_at = NOW()
+      WHERE edition_id = $1 AND institution_id = $2 AND family_code = $3
+      RETURNING id`,
+    [editionId, institutionId, familyCode, status],
   );
-  const row = res.rows[0];
-  if (!row) throw new Error(`institution_engagement ${institution} not found`);
-  return mapRow(row);
+  if (!res.rows[0]) {
+    throw new Error(`institution_engagement ${institutionId}/${familyCode} not found`);
+  }
+  const row = await getRegulatorEngagement(pool, editionId, institutionId, familyCode);
+  if (!row) throw new Error(`institution_engagement ${institutionId}/${familyCode} not found`);
+  return row;
 }
 
 /**
@@ -174,20 +221,24 @@ export async function setRegulatorStatus(
 export async function clearRegulatorSurvey(
   pool: Pool,
   editionId: string,
-  institution: RegulatorCode,
+  institutionId: string,
+  familyCode: InstrumentFamilyCode,
 ): Promise<RegulatorEngagementRow> {
-  const res = await query<RawRow>(
+  const res = await query<{ id: string }>(
     pool,
     `UPDATE institution_engagement
         SET status = 'not_started', status_changed_at = NOW(),
             target_by = NULL, survey_link = NULL, respondent_id = NULL, updated_at = NOW()
-      WHERE edition_id = $1 AND institution = $2
-      RETURNING *`,
-    [editionId, institution],
+      WHERE edition_id = $1 AND institution_id = $2 AND family_code = $3
+      RETURNING id`,
+    [editionId, institutionId, familyCode],
   );
-  const row = res.rows[0];
-  if (!row) throw new Error(`institution_engagement ${institution} not found`);
-  return mapRow(row);
+  if (!res.rows[0]) {
+    throw new Error(`institution_engagement ${institutionId}/${familyCode} not found`);
+  }
+  const row = await getRegulatorEngagement(pool, editionId, institutionId, familyCode);
+  if (!row) throw new Error(`institution_engagement ${institutionId}/${familyCode} not found`);
+  return row;
 }
 
 // ─── Append-only free-text history ─────────────────────────────────────────────
@@ -195,15 +246,16 @@ export async function clearRegulatorSurvey(
 export async function addRegulatorHistory(
   pool: Pool,
   editionId: string,
-  institution: RegulatorCode,
+  institutionId: string,
+  familyCode: InstrumentFamilyCode,
   entry: string,
 ): Promise<RegulatorHistoryEntry> {
   const res = await query<{ id: string; entry: string; created_at: Date }>(
     pool,
-    `INSERT INTO regulator_engagement_history (edition_id, institution, entry)
-     VALUES ($1, $2, $3)
+    `INSERT INTO regulator_engagement_history (edition_id, institution_id, family_code, entry)
+     VALUES ($1, $2, $3, $4)
      RETURNING id, entry, created_at`,
-    [editionId, institution, entry],
+    [editionId, institutionId, familyCode, entry],
   );
   const row = res.rows[0];
   if (!row) throw new Error('regulator history insert returned no rows');
@@ -213,15 +265,16 @@ export async function addRegulatorHistory(
 export async function listRegulatorHistory(
   pool: Pool,
   editionId: string,
-  institution: RegulatorCode,
+  institutionId: string,
+  familyCode: InstrumentFamilyCode,
 ): Promise<RegulatorHistoryEntry[]> {
   const res = await query<{ id: string; entry: string; created_at: Date }>(
     pool,
     `SELECT id, entry, created_at
        FROM regulator_engagement_history
-      WHERE edition_id = $1 AND institution = $2
+      WHERE edition_id = $1 AND institution_id = $2 AND family_code = $3
       ORDER BY created_at DESC, id DESC`,
-    [editionId, institution],
+    [editionId, institutionId, familyCode],
   );
   return res.rows.map((r) => ({ id: r.id, entry: r.entry, createdAt: r.created_at }));
 }

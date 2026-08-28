@@ -28,11 +28,16 @@ export interface EditionDetail {
   label: string;
   status: EditionStatus;
   surveyOpenAt: string | null;
+  /** Study-team-configured launch instant (Phase 19, item 2) — draft-only. */
+  plannedOpenAt: string | null;
   surveyCloseAt: string | null;
   lockedAt: string | null;
   frozen: boolean;
   floors: SampleFloor[];
   pendingLock: PendingAction | null;
+  /** Set only when the planned launch instant has passed but the instrument
+   *  set is not frozen — surface this loudly, never silently. */
+  openingProblem: 'launch_date_passed_not_frozen' | null;
 }
 
 export interface Instrument {

@@ -6,7 +6,13 @@
  */
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { Pool } from 'pg';
-import { listTemplates, createBatch, insertRecipient, setInstitutionEngagement } from '@cis/db';
+import {
+  listTemplates,
+  createBatch,
+  insertRecipient,
+  setInstitutionEngagement,
+  listInstitutions,
+} from '@cis/db';
 import { seedReferenceData, ingestZeptomailEvent, getBatchReport, getMissionBoard } from '../src';
 import { getTestPool, runMigrations, truncateAllTables, closeTestPool } from '../../db/tests/setup';
 
@@ -99,7 +105,10 @@ describe('Live board evaluation', () => {
   });
 
   it('condition 16 fires once a regulator is late against a set target_by', async () => {
-    await setInstitutionEngagement(pool, editionId, 'SEC', {
+    const sec = (await listInstitutions(pool)).find(
+      (i) => i.name === 'Securities and Exchange Commission',
+    )!;
+    await setInstitutionEngagement(pool, editionId, sec.id, 'A', {
       status: 'invited',
       targetBy: new Date('2026-09-01'),
     });

@@ -1445,6 +1445,101 @@
         "options": ["Very weak", "Weak", "Adequate", "Strong", "Very strong"],
         "has_optional_comment": 1
       }
+    ],
+    "I-DEP": [
+      {
+        "question_id": "D-Q1",
+        "kind": "select",
+        "text": "Which operational issues involving stockbroking firms most frequently affect the accuracy, integrity or administration of securities accounts and ownership records maintained through your institution?",
+        "scope": "shared",
+        "is_drg_ops": false,
+        "scored": false,
+        "options": [
+          "Incomplete or inaccurate securities-account instructions",
+          "Client or account-holder data discrepancies",
+          "Documentation deficiencies or incomplete supporting records",
+          "Incorrect account classification, ownership or mandate information",
+          "Securities-account record mismatches requiring investigation",
+          "Delays or errors in updating securities-account records",
+          "Weak record keeping or poor supporting audit trails at the firm",
+          "Technology, connectivity or system-integration issues affecting account or record updates",
+          "Delayed responses or weak operational communication on account-record issues",
+          "Staff knowledge, competence or process-understanding gaps",
+          "Other recurring depository or account-record issue",
+          "None observed / insufficient direct experience to assess"
+        ],
+        "select_up_to_n": 3,
+        "has_optional_comment": 1,
+        "select_then_greatest": 1
+      },
+      {
+        "question_id": "D-Q2",
+        "kind": "single",
+        "text": "How frequently do firm-level operational weaknesses create depository or securities-account exceptions requiring intervention by your institution?",
+        "scope": "shared",
+        "is_drg_ops": false,
+        "scored": false,
+        "options": ["Very frequently", "Frequently", "Occasionally", "Rarely", "Never"],
+        "has_optional_comment": 1
+      },
+      {
+        "question_id": "D-Q3",
+        "kind": "select",
+        "text": "Which characteristics consistently distinguish stockbroking firms that interact most effectively with your institution on depository and securities-account matters?",
+        "scope": "shared",
+        "is_drg_ops": false,
+        "scored": false,
+        "options": [
+          "Accurate and complete securities-account instructions",
+          "Strong client and account-holder data quality",
+          "Timely resolution of account-record discrepancies",
+          "Effective internal controls and maker-checker discipline",
+          "Competent and knowledgeable operations staff",
+          "Prompt and clear communication",
+          "Reliable technology and system integration",
+          "Strong record keeping and supporting documentation",
+          "Effective escalation and ownership of account-record exceptions",
+          "Consistent adherence to depository procedures and timelines",
+          "Other distinguishing characteristic",
+          "Insufficient direct experience to assess"
+        ],
+        "select_up_to_n": 3,
+        "has_optional_comment": 1
+      },
+      {
+        "question_id": "D-Q4",
+        "kind": "select",
+        "text": "Which firm-level operational weaknesses carry the greatest consequences for the accuracy, integrity or timely maintenance of securities accounts and ownership records?",
+        "scope": "shared",
+        "is_drg_ops": false,
+        "scored": false,
+        "options": [
+          "Incorrect securities-account balances or ownership records",
+          "Delayed correction of account-record discrepancies",
+          "Incorrect or delayed updates to account-holder information",
+          "Increased manual investigation and record-reconciliation workload",
+          "Increased operational or control risk",
+          "Client or investor service failures arising from inaccurate records",
+          "Delays in completing depository account-maintenance processes",
+          "Weak auditability or inability to evidence account changes clearly",
+          "Reduced confidence in firm operational controls",
+          "Other material depository or account-record consequence",
+          "No material consequence observed / insufficient direct experience to assess"
+        ],
+        "select_up_to_n": 3,
+        "has_optional_comment": 1,
+        "select_then_greatest": 1
+      },
+      {
+        "question_id": "D-Q5",
+        "kind": "single",
+        "text": "Overall, how would you assess the capability of licensed stockbroking firms to meet the operational requirements expected of them in their dealings with your institution?",
+        "scope": "shared",
+        "is_drg_ops": false,
+        "scored": false,
+        "options": ["Very weak", "Weak", "Adequate", "Strong", "Very strong"],
+        "has_optional_comment": 1
+      }
     ]
   }
 }

@@ -15,6 +15,7 @@ import { peopleRoutes } from './routes/people';
 import { invitationsRoutes } from './routes/invitations';
 import { missionBoardRoutes } from './routes/mission-board';
 import { regulatorRoutes } from './routes/regulators';
+import { institutionRoutes } from './routes/institutions';
 import { monitoringRoutes } from './routes/monitoring';
 import { firmResultsRoutes } from './routes/firm-results';
 import { managedContentRoutes } from './routes/managed-content';
@@ -59,6 +60,7 @@ export async function buildServer() {
   await app.register(invitationsRoutes);
   await app.register(missionBoardRoutes);
   await app.register(regulatorRoutes);
+  await app.register(institutionRoutes);
   await app.register(monitoringRoutes);
   await app.register(firmResultsRoutes);
   await app.register(managedContentRoutes);

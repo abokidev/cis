@@ -12,10 +12,7 @@ import {
   pooledHeadline,
   canCompareHeadlinesDirectly,
   computeLikeForLike,
-  industrySeiState,
   evaluateBoard,
-  NOT_CALCULABLE_REASON,
-  INDUSTRY_SEI_BLOCKING_PARAMETER,
   type BoardContext,
   type EditionSegmentEvidence,
 } from '../src';
@@ -106,14 +103,9 @@ describe('Like-for-like cross-edition recalculation', () => {
   });
 });
 
-describe('Industry SEI — NOT_CALCULABLE while its floor is unapproved', () => {
-  it('is a methodology block naming the blocking parameter, not a data shortfall', () => {
-    const state = industrySeiState();
-    expect(state.status).toBe('NOT_CALCULABLE');
-    expect(state.reason).toBe(NOT_CALCULABLE_REASON);
-    expect(state.blockingParameter).toBe(INDUSTRY_SEI_BLOCKING_PARAMETER);
-  });
-});
+// Industry SEI's real-derivation cases (Phase 19, item 5) need live
+// calculated_results, so they live in the DB-backed candidate-scoring.test.ts
+// now — `industrySeiState` is no longer a pure function.
 
 describe('Methodology identity', () => {
   it('stamps runs with the candidate id@version', () => {
@@ -151,7 +143,12 @@ function baseContext(over: Partial<BoardContext> = {}): BoardContext {
     omiCompleteForecast: forecast('firm'),
     dmiCompleteForecast: forecast('firm'),
     missingRoleCounts: { CEO: 0, Compliance: 0, Operations: 0 },
-    industrySei: { status: 'CALCULABLE', floor: 30 },
+    industrySei: {
+      status: 'CALCULABLE',
+      value: 15,
+      contributingFirms: 32,
+      sufficiency: 'REPORTABLE',
+    },
     responseCounts: {},
     attributable: { forecast: 80, actual: 80, required: 80 },
     institutions: [],
@@ -212,21 +209,33 @@ describe('Mission board — Industry SEI methodology block', () => {
     const ctx = baseContext({
       industrySei: {
         status: 'NOT_CALCULABLE',
-        reason: NOT_CALCULABLE_REASON,
-        blockingParameter: INDUSTRY_SEI_BLOCKING_PARAMETER,
+        reason: 'Only 3 firms have reportable Firm_SEI so far — too few to aggregate safely',
+        contributingFirms: 3,
       },
     });
     const cards = evaluateBoard(ctx);
     const block = cards.find((c) => c.kind === 'methodology_block');
     expect(block).toBeTruthy();
-    // No cohort, no remediation — chasing respondents cannot fix a methodology block.
+    // No cohort, no remediation shown on THIS card — but the underlying
+    // shortfall is still an ordinary participation problem elsewhere on the
+    // board (chasing respondents does resolve it, unlike the old permanent
+    // methodology gate).
     expect(block!.recommendedAction).toBeNull();
-    expect(block!.evidence.join(' ')).toContain(INDUSTRY_SEI_BLOCKING_PARAMETER);
-    expect(block!.consequence.join(' ')).toContain('methodology block');
+    expect(block!.evidence.join(' ')).toContain('3 firm(s)');
+    expect(block!.consequence.join(' ')).toContain('not be produced yet');
   });
 
-  it('omits the block card when the floor is approved', () => {
-    const cards = evaluateBoard(baseContext({ industrySei: { status: 'CALCULABLE', floor: 30 } }));
+  it('omits the block card once Industry SEI is calculable', () => {
+    const cards = evaluateBoard(
+      baseContext({
+        industrySei: {
+          status: 'CALCULABLE',
+          value: 15,
+          contributingFirms: 32,
+          sufficiency: 'REPORTABLE',
+        },
+      }),
+    );
     expect(cards.some((c) => c.kind === 'methodology_block')).toBe(false);
   });
 });

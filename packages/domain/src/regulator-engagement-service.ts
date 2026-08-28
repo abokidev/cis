@@ -12,22 +12,31 @@ import {
   createRespondent,
   setRespondentContact,
   revokeRespondentToken,
+  listInstitutionsWithRoles,
   type RegulatorEngagementRow,
 } from '@cis/db';
 import type {
-  RegulatorCode,
+  InstrumentFamilyCode,
   RegulatorContact,
   RegulatorEngagementView,
   RegulatorSurveyState,
 } from '@cis/shared-types';
+import { requirePermission, type RbacContext } from '@cis/auth';
 import { DomainError } from './errors';
+import { FAMILY_META, instrumentCodeForFamily } from './institution-family-service';
 
 /**
- * UX-OPS-007 — Regulator Engagement. One page per regulator, two sections in
- * fixed order (contact, then survey) plus an append-only free-text history.
+ * UX-OPS-007 — Regulator Engagement. One page per (institution, family) role,
+ * two sections in fixed order (contact, then survey) plus an append-only
+ * free-text history.
+ *
+ * Phase 19 re-keys every function here from a fixed three-code
+ * `RegulatorCode` enum to (institutionId, familyCode) — a multi-role
+ * institution (CSCS: Family C and Family D) gets two independent engagement
+ * rows, and a ninth institution of an existing role needs no code change.
  *
  * Deliberate shape (from the artefact, do not "improve"):
- *  - THREE states only per regulator: no contact → contact added → invited
+ *  - THREE states only per role: no contact → contact added → invited
  *    (plus the terminal outcomes confirmed / declined). No "ask CIS" ceremony.
  *  - A contact MUST exist before a link can be issued — enforced HERE at the
  *    service layer, not just by UI ordering.
@@ -37,8 +46,10 @@ import { DomainError } from './errors';
  *    other nuance of chasing is free text in the history — NOT a typed taxonomy.
  *  - Referral is cancel-and-restart: the link dies, its partial answers with it,
  *    target_by is cleared, and a fresh link goes to the new person. No chain.
- *  - Declined is terminal for the edition — no reminder / issue / referral action.
- *  - Each regulator holds its OWN lead time. Issuing a link writes the study-team
+ *  - Declined is terminal for the edition, EXCEPT via `reopenDeclined` (Phase 19,
+ *    item 6) — a deliberate, `access:regs`-gated override with no maker-checker
+ *    (this is a routine correction of a mistaken decline, not a critical action).
+ *  - Each role holds its OWN lead time. Issuing a link writes the study-team
  *    date straight into Phase 10's institution_engagement.target_by (the same row
  *    condition 16 reads) — this closes Phase 10's flagged gap, no second field.
  */
@@ -49,31 +60,22 @@ export class RegulatorEngagementError extends DomainError {
   }
 }
 
-export const REGULATOR_CODES: readonly RegulatorCode[] = ['SEC', 'NGX', 'CSCS'] as const;
-
-/** Display + routing metadata. The internal grouping label is loose ("Regulators")
- *  but each organisation is named for what it is; the published report (PUB_10)
- *  names CSCS as market infrastructure, so the looseness never reaches a reader. */
-export const REGULATOR_META: Record<
-  RegulatorCode,
-  { name: string; mandate: string; instrumentCode: string }
-> = {
-  SEC: {
-    name: 'Securities and Exchange Commission',
-    mandate: 'Supervision of licensed stockbroking firms',
-    instrumentCode: 'I-SEC',
-  },
-  NGX: {
-    name: 'Nigerian Exchange Limited',
-    mandate: 'Trading, membership and listing support',
-    instrumentCode: 'I-NGX',
-  },
-  CSCS: {
-    name: 'Central Securities Clearing System',
-    mandate: 'Clearing, settlement and custody',
-    instrumentCode: 'I-CSCS',
-  },
+/** Descriptive taglines carried over verbatim for the three institutions this
+ *  phase inherits; a ninth institution (or any of the other five seeded here)
+ *  falls back to its family's generic relationship description — no code
+ *  change is required to add one. */
+const MANDATE_BY_INSTITUTION_NAME: Record<string, string> = {
+  'Securities and Exchange Commission': 'Supervision of licensed stockbroking firms',
+  'Nigerian Exchange Limited': 'Trading, membership and listing support',
+  'Central Securities Clearing System': 'Clearing, settlement and custody',
 };
+
+function mandateFor(institutionName: string, familyCode: InstrumentFamilyCode): string {
+  return (
+    MANDATE_BY_INSTITUTION_NAME[institutionName] ??
+    FAMILY_META[familyCode].label + ' — ' + FAMILY_META[familyCode].relationship
+  );
+}
 
 // ─── Contact validation (exact rules from the artefact) ────────────────────────
 
@@ -194,15 +196,15 @@ async function toView(
   asOf: Date,
   withHistory: boolean,
 ): Promise<RegulatorEngagementView> {
-  const meta = REGULATOR_META[row.institution];
   const state = deriveState(row);
   const history = withHistory
-    ? await listRegulatorHistory(pool, row.editionId, row.institution)
+    ? await listRegulatorHistory(pool, row.editionId, row.institutionId, row.familyCode)
     : [];
   return {
-    institution: row.institution,
-    name: meta.name,
-    mandate: meta.mandate,
+    institutionId: row.institutionId,
+    familyCode: row.familyCode,
+    name: row.institutionName,
+    mandate: mandateFor(row.institutionName, row.familyCode),
     status: row.status,
     state,
     contact: row.contact,
@@ -217,12 +219,13 @@ async function toView(
 async function requireRow(
   pool: Pool,
   editionId: string,
-  institution: RegulatorCode,
+  institutionId: string,
+  familyCode: InstrumentFamilyCode,
 ): Promise<RegulatorEngagementRow> {
-  const row = await getRegulatorEngagement(pool, editionId, institution);
+  const row = await getRegulatorEngagement(pool, editionId, institutionId, familyCode);
   if (!row) {
     throw new RegulatorEngagementError(
-      `No engagement row for ${institution} in this edition`,
+      `No engagement row for ${institutionId}/${familyCode} in this edition`,
       'NOT_FOUND',
     );
   }
@@ -243,17 +246,24 @@ export async function listRegulators(
 export async function getRegulator(
   pool: Pool,
   editionId: string,
-  institution: RegulatorCode,
+  institutionId: string,
+  familyCode: InstrumentFamilyCode,
   asOf: Date = new Date(),
 ): Promise<RegulatorEngagementView> {
-  const row = await requireRow(pool, editionId, institution);
+  const row = await requireRow(pool, editionId, institutionId, familyCode);
   return toView(pool, row, asOf, true);
+}
+
+/** All institutions and the family role(s) each holds — for a picker/route
+ *  that needs the full roster without an edition context. */
+export async function listInstitutionRoster(pool: Pool) {
+  return listInstitutionsWithRoles(pool);
 }
 
 // ─── Contact (add / change / cancel-and-restart) ───────────────────────────────
 
 /**
- * Save the named contact. If the regulator was already invited (a live link),
+ * Save the named contact. If the role was already invited (a live link),
  * this IS the referral: the earlier link dies with any partial response, the lead
  * time is cleared and the survey resets to `none`. Otherwise it is a plain add or
  * change. Declined is terminal — no contact change is offered.
@@ -261,14 +271,15 @@ export async function getRegulator(
 export async function saveContact(
   pool: Pool,
   editionId: string,
-  institution: RegulatorCode,
+  institutionId: string,
+  familyCode: InstrumentFamilyCode,
   contact: RegulatorContact,
 ): Promise<RegulatorEngagementView> {
   validateContact(contact);
-  const row = await requireRow(pool, editionId, institution);
+  const row = await requireRow(pool, editionId, institutionId, familyCode);
   if (row.status === 'declined') {
     throw new RegulatorEngagementError(
-      'This regulator has declined for this edition; its contact cannot be changed here',
+      'This institution has declined for this edition; its contact cannot be changed here',
       'DECLINED_TERMINAL',
     );
   }
@@ -282,16 +293,17 @@ export async function saveContact(
   const prev = row.contact?.who ?? null;
   const wasInvited = row.status === 'invited' || row.status === 'in_progress';
 
-  await saveRegulatorContact(pool, editionId, institution, trimmed);
+  await saveRegulatorContact(pool, editionId, institutionId, familyCode, trimmed);
 
   if (wasInvited) {
     // Cancel and start again: kill the live link (and its partial answers), reset.
     if (row.respondentId) await revokeRespondentToken(pool, row.respondentId);
-    await clearRegulatorSurvey(pool, editionId, institution);
+    await clearRegulatorSurvey(pool, editionId, institutionId, familyCode);
     await addRegulatorHistory(
       pool,
       editionId,
-      institution,
+      institutionId,
+      familyCode,
       `Started again with ${trimmed.who} in place of ${prev}. The earlier link no longer works, ` +
         `and anything the previous contact had started is lost. ${trimmed.how}.`,
     );
@@ -299,18 +311,20 @@ export async function saveContact(
     await addRegulatorHistory(
       pool,
       editionId,
-      institution,
+      institutionId,
+      familyCode,
       `Contact changed from ${prev} to ${trimmed.who}. ${trimmed.how}.`,
     );
   } else {
     await addRegulatorHistory(
       pool,
       editionId,
-      institution,
+      institutionId,
+      familyCode,
       `${trimmed.who}, ${trimmed.role}. ${trimmed.how}.`,
     );
   }
-  return getRegulator(pool, editionId, institution);
+  return getRegulator(pool, editionId, institutionId, familyCode);
 }
 
 // ─── Survey link issuance (the contact-before-survey ordering gate) ────────────
@@ -332,23 +346,24 @@ function parseTargetBy(targetBy: string): Date {
 /**
  * Issue the survey link. Preconditions enforced server-side:
  *  - a saved contact MUST exist (the order on the page is the process);
- *  - the regulator is not already declined (terminal);
+ *  - the role is not already declined (terminal);
  *  - a study-team lead-time date is supplied (never computed or defaulted).
  *
- * Mints a REAL per-regulator access token: a respondents row for the I-{code}
+ * Mints a REAL per-role access token: a respondents row for the I-{code}
  * instrument whose recovery_token resolves via GET /journeys/resume/:token, and
  * writes the lead time into Phase 10's institution_engagement.target_by.
  */
 export async function issueSurveyLink(
   pool: Pool,
   editionId: string,
-  institution: RegulatorCode,
+  institutionId: string,
+  familyCode: InstrumentFamilyCode,
   input: { targetBy: string },
 ): Promise<RegulatorEngagementView> {
-  const row = await requireRow(pool, editionId, institution);
+  const row = await requireRow(pool, editionId, institutionId, familyCode);
   if (row.status === 'declined') {
     throw new RegulatorEngagementError(
-      'This regulator has declined for this edition; no link can be issued',
+      'This institution has declined for this edition; no link can be issued',
       'DECLINED_TERMINAL',
     );
   }
@@ -359,19 +374,19 @@ export async function issueSurveyLink(
     );
   }
   const targetDate = parseTargetBy(input.targetBy);
-  const meta = REGULATOR_META[institution];
+  const instrumentCode = instrumentCodeForFamily(familyCode);
 
   // Mint the real access token into the UX-INS-003 runtime (anonymous respondent).
   const respondent = await createRespondent(pool, {
     editionId,
-    instrumentCode: meta.instrumentCode,
-    institutionName: meta.name,
+    instrumentCode,
+    institutionName: row.institutionName,
   });
   const token = randomUUID();
   await setRespondentContact(pool, respondent.id, { channel: 'none', recoveryToken: token });
   const surveyLink = `/journeys/resume/${token}`;
 
-  await setRegulatorSurveyIssued(pool, editionId, institution, {
+  await setRegulatorSurveyIssued(pool, editionId, institutionId, familyCode, {
     // The validated string, not `targetDate` — see setRegulatorSurveyIssued's
     // own comment on why a Date object must never cross this boundary.
     targetBy: input.targetBy,
@@ -381,10 +396,11 @@ export async function issueSurveyLink(
   await addRegulatorHistory(
     pool,
     editionId,
-    institution,
+    institutionId,
+    familyCode,
     `Survey link issued to ${row.contact.who} by email and text. Expected back by ${fmtHuman(targetDate)}.`,
   );
-  return getRegulator(pool, editionId, institution);
+  return getRegulator(pool, editionId, institutionId, familyCode);
 }
 
 // ─── Reminders (two loose channels; no count / escalation tier) ────────────────
@@ -398,79 +414,125 @@ function requireActiveLink(row: RegulatorEngagementRow): void {
 export async function sendReminder(
   pool: Pool,
   editionId: string,
-  institution: RegulatorCode,
+  institutionId: string,
+  familyCode: InstrumentFamilyCode,
 ): Promise<RegulatorEngagementView> {
-  const row = await requireRow(pool, editionId, institution);
+  const row = await requireRow(pool, editionId, institutionId, familyCode);
   requireActiveLink(row);
   await addRegulatorHistory(
     pool,
     editionId,
-    institution,
+    institutionId,
+    familyCode,
     `Reminder sent by email and text to ${row.contact?.who ?? 'the contact'}.`,
   );
-  return getRegulator(pool, editionId, institution);
+  return getRegulator(pool, editionId, institutionId, familyCode);
 }
 
 export async function sendTextReminder(
   pool: Pool,
   editionId: string,
-  institution: RegulatorCode,
+  institutionId: string,
+  familyCode: InstrumentFamilyCode,
 ): Promise<RegulatorEngagementView> {
-  const row = await requireRow(pool, editionId, institution);
+  const row = await requireRow(pool, editionId, institutionId, familyCode);
   requireActiveLink(row);
   await addRegulatorHistory(
     pool,
     editionId,
-    institution,
+    institutionId,
+    familyCode,
     `Reminder sent by text to ${row.contact?.phone ?? 'the contact'}.`,
   );
-  return getRegulator(pool, editionId, institution);
+  return getRegulator(pool, editionId, institutionId, familyCode);
 }
 
 // ─── Terminal / completion outcomes ────────────────────────────────────────────
 
-/** Declined — a distinct, terminal outcome for the edition. */
+/** Declined — a distinct, terminal outcome for the edition (reversible only
+ *  via `reopenDeclined`). */
 export async function markDeclined(
   pool: Pool,
   editionId: string,
-  institution: RegulatorCode,
+  institutionId: string,
+  familyCode: InstrumentFamilyCode,
 ): Promise<RegulatorEngagementView> {
-  const row = await requireRow(pool, editionId, institution);
+  const row = await requireRow(pool, editionId, institutionId, familyCode);
   if (row.status === 'declined') {
     throw new RegulatorEngagementError('Already declined', 'ALREADY_DECLINED');
   }
   if (row.status !== 'invited' && row.status !== 'in_progress') {
     throw new RegulatorEngagementError(
-      'Only an invited regulator can be recorded as declined',
+      'Only an invited institution can be recorded as declined',
       'NOT_INVITED',
     );
   }
-  await setRegulatorStatus(pool, editionId, institution, 'declined');
-  await addRegulatorHistory(pool, editionId, institution, 'Declined to take part.');
-  return getRegulator(pool, editionId, institution);
+  await setRegulatorStatus(pool, editionId, institutionId, familyCode, 'declined');
+  await addRegulatorHistory(pool, editionId, institutionId, familyCode, 'Declined to take part.');
+  return getRegulator(pool, editionId, institutionId, familyCode);
 }
 
-/** Record that the regulator submitted (survey received) — status → confirmed. */
-export async function markSubmitted(
+/**
+ * Reopen a mistakenly-declined role (Phase 19, item 6). Gated by `access:regs`
+ * — the same permission Phase 8 already defines for regulator/institution
+ * engagement management, previously seeded but unenforced anywhere in this
+ * service. Deliberately NO maker-checker: this corrects a routine data-entry
+ * mistake, not a critical, hard-to-reverse action. Resets status to
+ * `not_started` and clears the dead survey link/lead-time/respondent (the
+ * same reset `saveContact`'s cancel-and-restart path uses) — but KEEPS the
+ * saved contact, since whoever declined is still the right person to ask
+ * again; the study team can re-issue a link immediately without re-entering
+ * a name they already have.
+ */
+export async function reopenDeclined(
   pool: Pool,
+  rbac: RbacContext,
   editionId: string,
-  institution: RegulatorCode,
+  institutionId: string,
+  familyCode: InstrumentFamilyCode,
 ): Promise<RegulatorEngagementView> {
-  const row = await requireRow(pool, editionId, institution);
-  if (row.status !== 'invited' && row.status !== 'in_progress') {
+  requirePermission(rbac, 'access:regs');
+  const row = await requireRow(pool, editionId, institutionId, familyCode);
+  if (row.status !== 'declined') {
     throw new RegulatorEngagementError(
-      'Only an invited regulator can be recorded as submitted',
-      'NOT_INVITED',
+      'Only a declined institution can be reopened',
+      'NOT_DECLINED',
     );
   }
-  await setRegulatorStatus(pool, editionId, institution, 'confirmed');
+  await clearRegulatorSurvey(pool, editionId, institutionId, familyCode);
   await addRegulatorHistory(
     pool,
     editionId,
-    institution,
+    institutionId,
+    familyCode,
+    'Reopened after being recorded as declined — a fresh start, no earlier state carried over.',
+  );
+  return getRegulator(pool, editionId, institutionId, familyCode);
+}
+
+/** Record that the institution submitted (survey received) — status → confirmed. */
+export async function markSubmitted(
+  pool: Pool,
+  editionId: string,
+  institutionId: string,
+  familyCode: InstrumentFamilyCode,
+): Promise<RegulatorEngagementView> {
+  const row = await requireRow(pool, editionId, institutionId, familyCode);
+  if (row.status !== 'invited' && row.status !== 'in_progress') {
+    throw new RegulatorEngagementError(
+      'Only an invited institution can be recorded as submitted',
+      'NOT_INVITED',
+    );
+  }
+  await setRegulatorStatus(pool, editionId, institutionId, familyCode, 'confirmed');
+  await addRegulatorHistory(
+    pool,
+    editionId,
+    institutionId,
+    familyCode,
     'Submitted. Their answers form part of the Institutional Perspectives section.',
   );
-  return getRegulator(pool, editionId, institution);
+  return getRegulator(pool, editionId, institutionId, familyCode);
 }
 
 // ─── Free-text history ─────────────────────────────────────────────────────────
@@ -479,13 +541,16 @@ export async function markSubmitted(
 export async function recordHistory(
   pool: Pool,
   editionId: string,
-  institution: RegulatorCode,
+  institutionId: string,
+  familyCode: InstrumentFamilyCode,
   entry: string,
 ): Promise<RegulatorEngagementView> {
-  await requireRow(pool, editionId, institution);
+  await requireRow(pool, editionId, institutionId, familyCode);
   if (entry.trim().length < 4) {
     throw new RegulatorEngagementError('A history entry needs a few words', 'HISTORY_TOO_SHORT');
   }
-  await addRegulatorHistory(pool, editionId, institution, entry.trim());
-  return getRegulator(pool, editionId, institution);
+  await addRegulatorHistory(pool, editionId, institutionId, familyCode, entry.trim());
+  return getRegulator(pool, editionId, institutionId, familyCode);
 }
+
+export { renderInstitutionalIntro } from './institution-family-service';

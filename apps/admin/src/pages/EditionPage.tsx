@@ -55,6 +55,7 @@ export function EditionPage({
   const [error, setError] = useState<string | null>(null);
   const [draftFloors, setDraftFloors] = useState<Record<string, number>>({});
   const [draftClose, setDraftClose] = useState<string>('');
+  const [draftOpen, setDraftOpen] = useState<string>('');
 
   const load = useCallback(async () => {
     setError(null);
@@ -63,6 +64,7 @@ export function EditionPage({
       setEdition(detail);
       setDraftFloors(Object.fromEntries(detail.floors.map((f) => [f.category, f.floorValue])));
       setDraftClose(detail.surveyCloseAt ? detail.surveyCloseAt.slice(0, 10) : '');
+      setDraftOpen(detail.plannedOpenAt ? detail.plannedOpenAt.slice(0, 10) : '');
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not load the edition');
     }
@@ -160,6 +162,50 @@ export function EditionPage({
             </button>
           </div>
         </div>
+      )}
+
+      {edition.openingProblem === 'launch_date_passed_not_frozen' && (
+        <div className="warnbox">
+          <b>The planned launch date has passed, but the survey instruments are not frozen.</b>
+          <p style={{ margin: '6px 0 0' }}>
+            The edition cannot open until the instrument set is frozen, on Surveys under Setup.
+          </p>
+        </div>
+      )}
+
+      {/* Planned launch */}
+      {isDraft && (
+        <section className="stage now">
+          <div className="stagehead">
+            <h2>Planned launch</h2>
+            <Pill kind="neutral">Can be changed</Pill>
+          </div>
+          <div className="stagebody">
+            <p>
+              Once the instrument set is frozen and this date arrives, the edition opens on its own
+              — nothing to click here on the day.
+            </p>
+            <div className="field">
+              <label htmlFor="openingDate">Planned launch date</label>
+              <input
+                id="openingDate"
+                type="date"
+                value={draftOpen}
+                onChange={(e) => setDraftOpen(e.target.value)}
+              />
+              <div className="actions">
+                <button
+                  type="button"
+                  className="btn-2"
+                  disabled={busy || draftOpen === (edition.plannedOpenAt?.slice(0, 10) ?? '')}
+                  onClick={() => run(() => client.setOpeningDate(editionId, draftOpen || null))}
+                >
+                  Save date
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
       )}
 
       {/* Closing date */}
@@ -285,11 +331,11 @@ export function EditionPage({
           {isDraft && (
             <>
               <p>
-                The edition starts collecting when the first invitations go out. That is done from
-                Invitations — there is nothing to open here.
+                The edition opens on its own once the instrument set is frozen and the planned
+                launch date above arrives — nothing to click here on the day.
               </p>
               <div className="note">
-                <h3>Before anything is sent</h3>
+                <h3>Before the planned launch date</h3>
                 <p>
                   The survey instruments must be frozen, on Surveys under Setup. Floors should be
                   set here first — they fix once collection begins.

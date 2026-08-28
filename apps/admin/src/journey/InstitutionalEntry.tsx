@@ -77,10 +77,14 @@ export function InstitutionalEntry({
       <h1 tabIndex={-1}>{variant ? variant.title : 'Institutional questionnaire'}</h1>
       <p className="lede">{variant ? variant.blurb : 'Your institution’s view.'}</p>
 
-      <label className="field">
-        Your institution’s name
-        <input value={institutionName} onChange={(e) => setInstitutionName(e.target.value)} />
-      </label>
+      <div className="field">
+        <label htmlFor="inst-entry-name">Your institution’s name</label>
+        <input
+          id="inst-entry-name"
+          value={institutionName}
+          onChange={(e) => setInstitutionName(e.target.value)}
+        />
+      </div>
       <p className="lede" style={{ fontSize: 13 }}>
         Used only to group responses from the same institution — it is never published, and your
         answers are not linked to any colleague’s.

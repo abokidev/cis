@@ -251,9 +251,13 @@ export function FirmTeamPage({
         through maker-checker.
       </p>
 
-      <label className="field">
-        Firm
-        <select value={orgId ?? ''} onChange={(e) => setOrgId(e.target.value || null)}>
+      <div className="field">
+        <label htmlFor="ftp-firm">Firm</label>
+        <select
+          id="ftp-firm"
+          value={orgId ?? ''}
+          onChange={(e) => setOrgId(e.target.value || null)}
+        >
           {firms.length === 0 && <option value="">No firms</option>}
           {firms.map((f) => (
             <option key={f.id} value={f.id}>
@@ -261,7 +265,7 @@ export function FirmTeamPage({
             </option>
           ))}
         </select>
-      </label>
+      </div>
 
       {error && <div className="err">{error}</div>}
       {notice && <p className="qstate ok">{notice}</p>}
@@ -313,18 +317,30 @@ export function FirmTeamPage({
 
       <fieldset className="contact-fields">
         <legend>Add a coordinator</legend>
-        <label className="field">
-          Name
-          <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-        </label>
-        <label className="field">
-          Email
-          <input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
-        </label>
-        <label className="field">
-          Role (optional)
-          <input value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} />
-        </label>
+        <div className="field">
+          <label htmlFor="ftp-name">Name</label>
+          <input
+            id="ftp-name"
+            value={form.name}
+            onChange={(e) => setForm({ ...form, name: e.target.value })}
+          />
+        </div>
+        <div className="field">
+          <label htmlFor="ftp-email">Email</label>
+          <input
+            id="ftp-email"
+            value={form.email}
+            onChange={(e) => setForm({ ...form, email: e.target.value })}
+          />
+        </div>
+        <div className="field">
+          <label htmlFor="ftp-role">Role (optional)</label>
+          <input
+            id="ftp-role"
+            value={form.role}
+            onChange={(e) => setForm({ ...form, role: e.target.value })}
+          />
+        </div>
         <div className="actions">
           {!lead ? (
             <button type="button" className="btn" onClick={() => void addOne(true)}>

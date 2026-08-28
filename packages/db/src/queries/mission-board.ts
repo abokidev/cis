@@ -1,5 +1,7 @@
 import { Pool } from 'pg';
+import type { InstrumentFamilyCode } from '@cis/shared-types';
 import { query } from '../client';
+import { listInstitutionRoles } from './institutions';
 
 /**
  * Mission-board persistent state. Only `institution_engagement` is stored;
@@ -16,7 +18,11 @@ export type InstitutionEngagementStatus =
 export interface InstitutionEngagement {
   id: string;
   editionId: string;
-  institution: 'SEC' | 'NGX' | 'CSCS';
+  institutionId: string;
+  familyCode: InstrumentFamilyCode;
+  /** Joined display name — condition 16 and the mission board need it without
+   *  a second lookup. */
+  institutionName: string;
   status: InstitutionEngagementStatus;
   statusChangedAt: Date;
   /** DECISION NEEDED — study-team-set date, NULL until entered. */
@@ -26,7 +32,9 @@ export interface InstitutionEngagement {
 interface RawEngRow {
   id: string;
   edition_id: string;
-  institution: 'SEC' | 'NGX' | 'CSCS';
+  institution_id: string;
+  family_code: InstrumentFamilyCode;
+  institution_name: string;
   status: InstitutionEngagementStatus;
   status_changed_at: Date;
   target_by: Date | null;
@@ -36,22 +44,34 @@ function mapEng(r: RawEngRow): InstitutionEngagement {
   return {
     id: r.id,
     editionId: r.edition_id,
-    institution: r.institution,
+    institutionId: r.institution_id,
+    familyCode: r.family_code,
+    institutionName: r.institution_name,
     status: r.status,
     statusChangedAt: r.status_changed_at,
     targetBy: r.target_by,
   };
 }
 
-/** Seed the three regulator rows structurally — status not_started, target_by
- *  NULL (DECISION NEEDED; condition 16 stays inert until a real date is set). */
+const ENG_SELECT = `
+  SELECT e.id, e.edition_id, e.institution_id, e.family_code, e.status,
+         e.status_changed_at, e.target_by, i.name AS institution_name
+    FROM institution_engagement e
+    JOIN institutions i ON i.id = e.institution_id`;
+
+/** Seed one engagement row per (institution, family) role that exists —
+ *  status not_started, target_by NULL (DECISION NEEDED; condition 16 stays
+ *  inert until a real date is set). A ninth institution of an existing role
+ *  needs no code change here: it is picked up from `institution_roles`. */
 export async function seedInstitutionEngagement(pool: Pool, editionId: string): Promise<void> {
-  for (const inst of ['SEC', 'NGX', 'CSCS'] as const) {
+  const roles = await listInstitutionRoles(pool);
+  for (const role of roles) {
     await query(
       pool,
-      `INSERT INTO institution_engagement (edition_id, institution)
-       VALUES ($1,$2) ON CONFLICT (edition_id, institution) DO NOTHING`,
-      [editionId, inst],
+      `INSERT INTO institution_engagement (edition_id, institution_id, family_code)
+       VALUES ($1,$2,$3)
+       ON CONFLICT (edition_id, institution_id, family_code) DO NOTHING`,
+      [editionId, role.institutionId, role.familyCode],
     );
   }
 }
@@ -62,7 +82,7 @@ export async function listInstitutionEngagement(
 ): Promise<InstitutionEngagement[]> {
   const res = await query<RawEngRow>(
     pool,
-    'SELECT * FROM institution_engagement WHERE edition_id = $1 ORDER BY institution',
+    `${ENG_SELECT} WHERE e.edition_id = $1 ORDER BY e.family_code, i.name`,
     [editionId],
   );
   return res.rows.map(mapEng);
@@ -71,22 +91,26 @@ export async function listInstitutionEngagement(
 export async function setInstitutionEngagement(
   pool: Pool,
   editionId: string,
-  institution: 'SEC' | 'NGX' | 'CSCS',
+  institutionId: string,
+  familyCode: InstrumentFamilyCode,
   data: { status?: InstitutionEngagementStatus; targetBy?: Date | null },
 ): Promise<InstitutionEngagement> {
-  const res = await query<RawEngRow>(
+  const res = await query<{ id: string }>(
     pool,
     `UPDATE institution_engagement
-        SET status = COALESCE($3, status),
-            status_changed_at = CASE WHEN $3 IS NOT NULL THEN NOW() ELSE status_changed_at END,
-            target_by = COALESCE($4, target_by),
+        SET status = COALESCE($4, status),
+            status_changed_at = CASE WHEN $4 IS NOT NULL THEN NOW() ELSE status_changed_at END,
+            target_by = COALESCE($5, target_by),
             updated_at = NOW()
-      WHERE edition_id = $1 AND institution = $2
-      RETURNING *`,
-    [editionId, institution, data.status ?? null, data.targetBy ?? null],
+      WHERE edition_id = $1 AND institution_id = $2 AND family_code = $3
+      RETURNING id`,
+    [editionId, institutionId, familyCode, data.status ?? null, data.targetBy ?? null],
   );
-  const row = res.rows[0];
-  if (!row) throw new Error(`institution_engagement ${institution} not found`);
+  const id = res.rows[0]?.id;
+  if (!id) throw new Error(`institution_engagement ${institutionId}/${familyCode} not found`);
+  const full = await query<RawEngRow>(pool, `${ENG_SELECT} WHERE e.id = $1`, [id]);
+  const row = full.rows[0];
+  if (!row) throw new Error(`institution_engagement ${institutionId}/${familyCode} not found`);
   return mapEng(row);
 }
 

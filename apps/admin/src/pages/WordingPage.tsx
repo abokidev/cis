@@ -162,7 +162,7 @@ export function WordingPage({ client }: { client: AdminClient }): JSX.Element {
 
       <section className="card">
         <div className="row">
-          <div>
+          <div className="field">
             <label htmlFor="content-area">Content area</label>
             <select
               id="content-area"
@@ -179,7 +179,7 @@ export function WordingPage({ client }: { client: AdminClient }): JSX.Element {
           </div>
 
           {currentArea?.isTemplateArea && (currentArea.subKeys?.length ?? 0) > 0 && (
-            <div>
+            <div className="field">
               <label htmlFor="template-name">Template</label>
               <select
                 id="template-name"
@@ -197,18 +197,20 @@ export function WordingPage({ client }: { client: AdminClient }): JSX.Element {
           )}
         </div>
 
-        <label htmlFor="wording-body">Current wording</label>
-        <textarea
-          id="wording-body"
-          rows={10}
-          value={editorText}
-          onChange={(e) => {
-            setEditorText(e.target.value);
-            setSavedDraftId(null);
-          }}
-          disabled={loading}
-          style={{ fontFamily: 'inherit' }}
-        />
+        <div className="field">
+          <label htmlFor="wording-body">Current wording</label>
+          <textarea
+            id="wording-body"
+            rows={10}
+            value={editorText}
+            onChange={(e) => {
+              setEditorText(e.target.value);
+              setSavedDraftId(null);
+            }}
+            disabled={loading}
+            style={{ fontFamily: 'inherit', width: '100%', maxWidth: 'none' }}
+          />
+        </div>
 
         {isLoadBearing && (
           <div className="note" style={{ marginTop: 8 }}>

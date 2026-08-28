@@ -131,12 +131,31 @@ export const INSTRUMENT_META: ReadonlyArray<{ code: string } & InstrumentMeta> =
     scored: false,
     instrumentType: 'regulator',
   },
+  // Family D — Depository / Securities-account Infrastructure (Phase 19,
+  // CIS_Institutional_Instrument_Families_Register_Extension v1.1). One
+  // instrument per FAMILY, not per institution — FMDQ Depository Limited and
+  // CSCS's depository role both use this same instrument.
+  {
+    code: 'I-DEP',
+    name: 'Depository / Securities-account Infrastructure',
+    respondent: 'Depository institution',
+    feeds: 'Contextual only',
+    scored: false,
+    instrumentType: 'regulator',
+  },
 ];
 
 export const INSTRUMENT_CODES: readonly string[] = INSTRUMENT_META.map((m) => m.code);
 
-/** Total controlled items across the Register (a fixed, verified count). */
-export const REGISTER_ITEM_COUNT = 90;
+/**
+ * Total controlled items across the Register (a fixed, verified count).
+ * 90 → 95 in Phase 19: Family D (Depository / Securities-account
+ * Infrastructure) adds five new institutional/contextual items (D-Q1–D-Q5),
+ * same category as the existing 15 Family A/B/C items — neither DRG-OPS nor
+ * firm-specific, so those counts (7 and 11/6/3) are unaffected. This is an
+ * intentional content-estate change, not a regression — see SV-010 test.
+ */
+export const REGISTER_ITEM_COUNT = 95;
 
 /**
  * Seed the controlled Survey Register: nine instrument definitions, a v1 version

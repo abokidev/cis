@@ -951,6 +951,10 @@ re-approach workflow and no permanent cross-edition lockout is invented — decl
 is simply terminal within its edition. Flagged as an open item, consistent with
 every other genuinely unresolved item on the programme.
 
+**Partially closed by Phase 19** — a MISTAKEN decline within the SAME edition
+can now be corrected (`reopenDeclined`, `access:regs`-gated, no maker-checker).
+The cross-edition question above is untouched and remains open.
+
 ## Responses Monitoring & Reminder Timing (Phase 13 — UX-OPS-003 / UX-OPS-004)
 
 Two monitoring surfaces plus two corrections to already-shipped Phase 10 code.
@@ -1432,12 +1436,15 @@ phases, documented here as one list for whoever owns that side of the programme:
 1. **Institutional Q5 wording** (I-SEC-Q5, I-NGX-Q5, I-CSCS-Q5) — flagged in Phase 2's seed as
    PENDING correction as of the 2026-08-20 freeze; needs compliance sign-off against the current
    controlled Register before any production edition freeze.
-2. **`markOpened()`'s trigger** (Phase 9) — not wired to any send; when/how a message is marked
-   opened is unresolved.
+2. ✅ **CLOSED by Phase 19** — **`markOpened()`'s trigger** (Phase 9) is now wired: a study-team
+   configured `plannedOpenAt` instant, lazily evaluated on every edition read
+   (`evaluateAutoOpen`). See Phase 19's section below.
 3. **Phase 11 threshold conflict and approval item** — the candidate-scoring config's threshold
    values need methodology sign-off; a related approval step is still open.
-4. **Declined-regulator re-approach question** (Phase 12) — what happens after a regulator
-   declines engagement is unresolved.
+4. **Declined-regulator re-approach question** (Phase 12) — **partially closed by Phase 19**:
+   within the SAME edition, an `access:regs` holder can now reopen a mistaken decline
+   (`reopenDeclined`). Whether a regulator that declined in one edition can be re-approached in a
+   **later** edition remains the unresolved cross-edition question this item originally named.
 5. **DRG-OPS friction minimum-population floor** (Phase 16) — no floor has been set for the
    operational friction view; needs the same methodology/legal alignment as the platform's other
    sufficiency floors.
@@ -1464,3 +1471,123 @@ Postgres (they had not been runnable in the prior session's environment):
   test that truncated tables before exercising Phase 17's reminder content lost the migration's
   seed permanently for the rest of that test run. Both are now real content, not something that
   merely typechecked.
+
+## Phase 19 — Institutional Instrument Families & Closed Engineering Decisions
+
+Re-architects the three hardcoded institutions (SEC/NGX/CSCS) into a genuinely reusable model,
+per the controlled `CIS_Institutional_Instrument_Families_Register_Extension` v1.1, and closes
+seven previously-tracked open business decisions from prior phases — three already correct
+(closed here in documentation only), four needing real engineering.
+
+### Closed without engineering — already correct
+
+Per the controlled closure document, three previously-open items were confirmed already built
+correctly and needed no code change: target dates (Phase 12's per-regulator `target_by`, not a
+shared deadline), the sufficiency-threshold architecture (the generic `computeSufficiency()`
+ladder in `sufficiency-service.ts`, reused rather than duplicated — see Item 5 below, which
+leans on exactly this), and respondent withdrawal (Phase 18's flag-and-check, without a
+self-service request/approval flow — see the Phase 18 section's own scope note, unchanged).
+
+### Item 1 — Institutional instrument families
+
+`institution -> institution role -> controlled instrument family/version -> edition
+participation -> individual invitation`. Two new tables (`institutions`, `institution_roles`)
+replace the fixed `RegulatorCode` enum everywhere it appeared (shared-types, DB queries, the
+domain service, API routes, React). `institution_engagement` and
+`regulator_engagement_history` move from a two-part key (`edition_id, institution TEXT`) to a
+three-part key (`edition_id, institution_id, family_code`) — a multi-role institution (CSCS:
+Family C **and** Family D) gets two independent engagement rows in the same edition, one per
+role, verified in `regulator-engagement.test.ts`.
+
+**The hard rule — adding a ninth institution of an existing role requires NO code change** —
+is verified directly (`institution-families.test.ts`): inserting a new `institutions` /
+`institution_roles` row and re-running `seedInstitutionEngagement` (which enumerates
+`institution_roles`, never a hardcoded list) is sufficient for the new institution to appear
+everywhere.
+
+Family D (Depository / Securities-account Infrastructure) is seeded as a fifth instrument
+(`I-DEP`, `packages/db/src/seed/register.ts` / `survey-register-seed.json`) — its five questions
+(D-Q1 through D-Q5) transcribed **verbatim** from the controlled document, with `scored: false`
+and zero firm-specific items, matching every other institutional instrument. `REGISTER_ITEM_COUNT`
+moved from 90 to 95; the one hardcoded test literal this broke (`drg-ops-enforcement.test.ts`'s
+public-question count) was updated, not treated as a regression, per this phase's own instruction.
+
+A NEW common controlled introduction paragraph (`renderInstitutionalIntro`,
+`institution-family-service.ts`), parameterised by `{INSTITUTION_NAME}` /
+`{INSTITUTIONAL_RELATIONSHIP}`, renders for every family including the three pre-existing ones.
+This is deliberately separate from the EXISTING hardcoded institution references already baked
+into I-SEC/I-NGX/I-CSCS's Q3/Q5 prose ("the Commission", "the Exchange", "the System") — those are
+pre-existing approved content and are explicitly NOT retrofitted here.
+
+`regulator_contacts` (Phase 9's provisional "all regulators" mailing-list stub) gets the same FK
+treatment on its hardcoded `org_code` CHECK, without otherwise changing its behaviour — it is
+deliberately NOT deep-rewired to source live from the new model in this phase (out of the tested
+DoD scope; `org_code` stays a free-text label for backward compatibility).
+
+**Deliberate scope decision — `RegulatorsPage.tsx` stays a local-state mockup.** Like every other
+"illustrative Study Operations surface" in this codebase, it is not wired to the live per-role
+API in this phase. Its `SEED` array now demonstrates the family model (a fourth institution,
+FMDQ Depository Limited, and CSCS appearing twice — once per role) so the shape is visible, but
+progressing it does not call any endpoint.
+
+### Item 2 — The edition-opening trigger
+
+**What was actually found, not what the prompt assumed:** `survey_open_at` already existed
+(initial schema) with a real setter (`openEditionFromDraft`, called by `markOpened`) — but
+`markOpened` was never wired to any route or send (Phase 13's `invitations-service.ts` says so
+explicitly). The edition genuinely had no way to open. This matches the prompt's premise
+("currently-inert") in effect, even though the column and setter both technically existed.
+
+**The interpretation taken (flagged per the prompt's own invitation to do so if reading the
+source document differently):** rather than repurpose `survey_open_at` itself — which would
+conflate "the study team's plan" with "the fact of when it actually happened" — a NEW column,
+`editions.planned_open_at`, holds the configured launch instant. `survey_open_at` keeps its
+existing meaning. `setSurveyOpenAt` (draft-only, `edition:manage`-gated) sets the plan;
+`evaluateAutoOpen` is the lazy-evaluation trigger — no cron, matching this codebase's existing
+precedent (Phase 13's reminder engine is a manually/read-triggered `run`, not a scheduler). It
+runs on every `GET /editions/:id`: if the plan has passed and instruments are frozen, it opens
+the edition (reusing `markOpened`); if the plan has passed and instruments are NOT frozen, it
+returns a loud `problem: 'launch_date_passed_not_frozen'` — surfaced on `EditionPage.tsx` as a
+`warnbox`, never a silent no-op. Verified in `institution-families.test.ts`.
+
+### Item 5 — Industry SEI real derivation
+
+Replaces the permanent `NOT_CALCULABLE` block (previously gated on an unapproved YAML parameter,
+`industry_sei_min_firm_investor_observations`) with real derivation: `industrySeiState(pool,
+editionId)` reads the edition's authoritative (signed-off) scoring run, takes every firm's own
+`Firm_SEI` that cleared at least `DIRECTIONAL` sufficiency (`n >= SUPPRESS_BELOW`, via the
+EXISTING generic `computeSufficiency()` — never a bespoke minimum-observations parameter
+invented for this one metric), and means them. The COUNT of contributing firms is then run back
+through the SAME `computeSufficiency()` ladder to decide the aggregate's own sufficiency — a
+firm-count of 2 is `NOT_CALCULABLE` (a genuine data shortfall, resolvable by more raters or more
+firms), a count of 30+ is `REPORTABLE`. No firm-level value is ever exposed alone.
+
+This changes what NOT_CALCULABLE _means_: it used to be a permanent methodology block ("no
+outreach resolves it"); it is now a data-shortfall / sign-off-pending state that DOES respond to
+outreach and to scoring being signed off. The mission board's `conditionId: -1` card (still
+`kind: 'methodology_block'`, still exempt from the "no action → off board" filter, since this
+board has no bulk-outreach action for "sign off the scoring run") had its evidence/consequence
+text rewritten accordingly — it no longer claims outreach is futile. Verified end-to-end against
+a real signed-off run in `institution-families.test.ts` (exclusion of sub-floor firms, the
+count-based aggregate gate, and the REPORTABLE case at 30+ firms).
+
+### Item 6 — Institution-decline reopen action
+
+`reopenDeclined` (`regulator-engagement-service.ts`) reopens a mistakenly-declined role, gated by
+`access:regs` — Phase 8's existing permission, previously seeded but enforced nowhere in this
+service until now. Deliberately **no maker-checker**: this corrects a routine mistake, not a
+critical action. It resets status to `not_started` and clears the dead survey
+link/lead-time/respondent (the same reset `saveContact`'s cancel-and-restart path already uses)
+but **keeps the saved contact** — a design choice made during implementation: whoever declined is
+still the right person to ask again, so the study team can re-issue a link immediately without
+re-entering a name they already have. Verified in `regulator-engagement.test.ts`, including the
+permission denial for a user without `access:regs`.
+
+### Verification
+
+`institution-families.test.ts` (new) plus updates across `regulator-engagement.test.ts`,
+`mission-board.test.ts`, `mission-forecast.test.ts`, and `candidate-scoring-pure.test.ts` (the
+last two updated for `IndustrySeiState`'s new shape — `industrySeiState` is no longer pure, so
+its DB-backed cases moved out of the "pure" test file). Full suite green (351/351) against a
+live Postgres; `pnpm turbo lint typecheck build` clean across all 8 packages; `pnpm audit`
+clean.

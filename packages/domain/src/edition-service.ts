@@ -2,6 +2,7 @@ import { Pool } from 'pg';
 import {
   getEditionById,
   updateClosingDate,
+  updatePlannedOpenAt,
   openEditionFromDraft,
   upsertSampleFloor,
   getSampleFloor,
@@ -81,6 +82,90 @@ export async function setClosingDate(
   });
 
   return updated;
+}
+
+// ─── Planned opening date (Phase 19, item 2 — the edition-opening trigger) ────
+// `survey_open_at` already existed (initial schema) as the timestamp of the
+// REAL draft→open transition, set by `openEditionFromDraft`/`markOpened` —
+// but nothing ever called that path, so the edition genuinely had no way to
+// open. `plannedOpenAt` is the NEW study-team-configured launch instant;
+// `evaluateAutoOpen` below is the lazy-evaluation trigger that compares it
+// against `asOf` on every edition read, favoured over a cron job (matching
+// this codebase's existing precedent — e.g. Phase 13's reminder engine is a
+// manually/read-triggered `run`, not a scheduler).
+
+/** Editable only while the edition is still in draft — a launch plan is
+ *  meaningless once the edition has actually opened. */
+export async function setSurveyOpenAt(
+  pool: Pool,
+  rbac: RbacContext,
+  editionId: string,
+  plannedOpenAt: Date | null,
+  ctx: ActorContext = {},
+): Promise<Edition> {
+  requirePermission(rbac, EDITION_MANAGE_PERMISSION);
+
+  const edition = await getEditionById(pool, editionId);
+  if (!edition) throw new EditionStateError(`Edition ${editionId} not found`);
+  if (edition.status !== 'draft') {
+    throw new EditionStateError(
+      `The planned opening date can only be set while the edition is in draft (current: ${edition.status})`,
+    );
+  }
+
+  const updated = await updatePlannedOpenAt(pool, editionId, plannedOpenAt);
+
+  await writeAudit(pool, {
+    actorId: rbac.userId,
+    actionType: 'edition.planned_open_at.changed',
+    entityType: 'edition',
+    entityId: editionId,
+    editionId,
+    oldValue: { plannedOpenAt: edition.plannedOpenAt?.toISOString() ?? null },
+    newValue: { plannedOpenAt: updated.plannedOpenAt?.toISOString() ?? null },
+    ipAddress: ctx.ipAddress ?? null,
+    userAgent: ctx.userAgent ?? null,
+  });
+
+  return updated;
+}
+
+export interface AutoOpenResult {
+  edition: Edition;
+  /** True only when this call actually transitioned the edition to open. */
+  opened: boolean;
+  /** Set when the planned launch instant has passed but the instrument set
+   *  is not frozen — a loud, surfaceable problem, never a silent no-op. */
+  problem: 'launch_date_passed_not_frozen' | null;
+}
+
+/**
+ * Lazy-evaluate the opening trigger: if the edition is still draft and its
+ * planned launch instant has passed, attempt to open it (reusing `markOpened`,
+ * which itself enforces the frozen-instrument-set gate). Called on every
+ * edition read (the API route), so no cron is needed — the check simply runs
+ * whenever anyone looks at the edition. A no-op (returns `opened: false,
+ * problem: null`) when there is nothing to evaluate (not draft, or no plan
+ * set, or the plan has not yet arrived).
+ */
+export async function evaluateAutoOpen(
+  pool: Pool,
+  editionId: string,
+  asOf: Date = new Date(),
+): Promise<AutoOpenResult> {
+  const edition = await getEditionById(pool, editionId);
+  if (!edition) throw new EditionStateError(`Edition ${editionId} not found`);
+  if (edition.status !== 'draft' || !edition.plannedOpenAt || asOf < edition.plannedOpenAt) {
+    return { edition, opened: false, problem: null };
+  }
+
+  const frozen = await isEditionInstrumentSetFrozen(pool, editionId);
+  if (!frozen) {
+    return { edition, opened: false, problem: 'launch_date_passed_not_frozen' };
+  }
+
+  const opened = await markOpened(pool, editionId, {});
+  return { edition: opened, opened: true, problem: null };
 }
 
 // ─── Sample floors ────────────────────────────────────────────────────────────

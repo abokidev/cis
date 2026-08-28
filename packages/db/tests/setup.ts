@@ -46,6 +46,8 @@ export async function truncateAllTables(pool: Pool): Promise<void> {
       comparison_runs,
       regulator_engagement_history,
       institution_engagement,
+      institution_roles,
+      institutions,
       message_recipients,
       message_batches,
       message_templates,

@@ -53,6 +53,7 @@ export interface AdminClient {
   getEdition(id: string): Promise<EditionDetail>;
   setFloors(id: string, floors: SampleFloor[]): Promise<{ floors: SampleFloor[] }>;
   setClosingDate(id: string, closingDate: string): Promise<{ surveyCloseAt: string | null }>;
+  setOpeningDate(id: string, openDate: string | null): Promise<{ plannedOpenAt: string | null }>;
   requestLock(id: string, reason: string): Promise<{ criticalActionId: string }>;
   decideLock(
     id: string,
@@ -110,6 +111,12 @@ export function createClient(token: string | null): AdminClient {
       request(`/editions/${id}/closing-date`, {
         method: 'PATCH',
         body: { closingDate },
+        token,
+      }),
+    setOpeningDate: (id, openDate) =>
+      request(`/editions/${id}/opening-date`, {
+        method: 'PATCH',
+        body: { openDate },
         token,
       }),
     requestLock: (id, reason) =>

@@ -1,22 +1,26 @@
 /**
- * Regulator engagement — Phase 12 (UX-OPS-007) DoD §11.
+ * Regulator engagement — Phase 12 (UX-OPS-007) DoD §11, re-keyed for Phase 19's
+ * institutional instrument family model (institutionId + familyCode replacing
+ * the old fixed SEC/NGX/CSCS enum).
  *
- *  - Ordering: a link cannot be issued for a regulator with no saved contact.
+ *  - Ordering: a link cannot be issued for a role with no saved contact.
  *  - Contact validation: email format and phone length (≥10 digits) are each
  *    enforced independently as hard failures.
- *  - Referral is cancel-and-restart: from an invited regulator it resets survey
+ *  - Referral is cancel-and-restart: from an invited role it resets survey
  *    to none, clears the link and target_by, kills the old token, and logs the
  *    loss of any partial response.
- *  - Declined is terminal within the edition — no reminder / issue action.
+ *  - Declined is terminal within the edition — no reminder / issue action —
+ *    except via `reopenDeclined` (Phase 19, item 6), `access:regs`-gated.
  *  - Phase 10 integration: the lead time set here IS institution_engagement's
  *    target_by, so a previously-inert condition 16 becomes evaluable.
- *  - Phase 3 integration: issuing a link mints a REAL per-regulator access token
+ *  - Phase 3 integration: issuing a link mints a REAL per-role access token
  *    that resolves in the UX-INS-003 survey runtime (getResumeByToken).
  *  - History is free-text and append-only, with no category taxonomy.
  *  - Regression: Phase 6's PUB_10 still names CSCS as market infrastructure.
  */
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { Pool } from 'pg';
+import { loadRbacContext, PermissionDeniedError } from '@cis/auth';
 import {
   seedReferenceData,
   listRegulators,
@@ -25,16 +29,22 @@ import {
   sendReminder,
   sendTextReminder,
   markDeclined,
+  reopenDeclined,
   recordHistory,
   getResumeByToken,
   getMissionBoard,
   NATIONAL_SECTIONS,
   evaluateSection,
 } from '../src';
+import { listInstitutions } from '@cis/db';
 import { getTestPool, runMigrations, truncateAllTables, closeTestPool } from '../../db/tests/setup';
 
 let pool: Pool;
 let editionId: string;
+let makerUserId: string;
+let checkerUserId: string;
+let sec: string;
+let cscs: string;
 
 beforeAll(async () => {
   pool = getTestPool();
@@ -42,7 +52,13 @@ beforeAll(async () => {
 });
 beforeEach(async () => {
   await truncateAllTables(pool);
-  editionId = (await seedReferenceData(pool)).editionId;
+  const seed = await seedReferenceData(pool);
+  editionId = seed.editionId;
+  makerUserId = seed.makerUserId;
+  checkerUserId = seed.checkerUserId;
+  const institutions = await listInstitutions(pool);
+  sec = institutions.find((i) => i.name === 'Securities and Exchange Commission')!.id;
+  cscs = institutions.find((i) => i.name === 'Central Securities Clearing System')!.id;
 });
 afterAll(async () => {
   await closeTestPool();
@@ -57,9 +73,9 @@ const CONTACT = {
 };
 
 describe('Contact-before-survey ordering is a server-side precondition', () => {
-  it('rejects a link issuance for a regulator with no saved contact', async () => {
+  it('rejects a link issuance for a role with no saved contact', async () => {
     await expect(
-      issueSurveyLink(pool, editionId, 'SEC', { targetBy: '2026-09-01' }),
+      issueSurveyLink(pool, editionId, sec, 'A', { targetBy: '2026-09-01' }),
     ).rejects.toMatchObject({ code: 'CONTACT_REQUIRED_FIRST' });
   });
 });
@@ -67,18 +83,18 @@ describe('Contact-before-survey ordering is a server-side precondition', () => {
 describe('Contact validation — email and phone enforced independently', () => {
   it('rejects a malformed email (with an otherwise valid phone)', async () => {
     await expect(
-      saveContact(pool, editionId, 'SEC', { ...CONTACT, email: 'not-an-email' }),
+      saveContact(pool, editionId, sec, 'A', { ...CONTACT, email: 'not-an-email' }),
     ).rejects.toMatchObject({ code: 'CONTACT_EMAIL_INVALID' });
   });
 
   it('rejects a phone with fewer than 10 digits (with an otherwise valid email)', async () => {
     await expect(
-      saveContact(pool, editionId, 'SEC', { ...CONTACT, phone: '0123 456' }),
+      saveContact(pool, editionId, sec, 'A', { ...CONTACT, phone: '0123 456' }),
     ).rejects.toMatchObject({ code: 'CONTACT_PHONE_INVALID' });
   });
 
   it('saves once every field is valid', async () => {
-    const view = await saveContact(pool, editionId, 'SEC', CONTACT);
+    const view = await saveContact(pool, editionId, sec, 'A', CONTACT);
     expect(view.contact?.who).toBe('Hauwa Ibrahim');
     expect(view.state).toBe('contact_added');
     expect(view.nextStep).toBe('Issue the survey link');
@@ -87,14 +103,14 @@ describe('Contact validation — email and phone enforced independently', () => 
 
 describe('Referral is cancel-and-restart, not a workflow', () => {
   it('resets survey to none, clears the link and target_by, kills the old token, logs the loss', async () => {
-    await saveContact(pool, editionId, 'SEC', CONTACT);
-    const invited = await issueSurveyLink(pool, editionId, 'SEC', { targetBy: '2026-09-01' });
+    await saveContact(pool, editionId, sec, 'A', CONTACT);
+    const invited = await issueSurveyLink(pool, editionId, sec, 'A', { targetBy: '2026-09-01' });
     expect(invited.state).toBe('invited');
     expect(invited.targetBy).toBe('2026-09-01');
     const oldToken = invited.surveyLink!.split('/').pop()!;
     expect(await getResumeByToken(pool, oldToken)).not.toBeNull(); // live before referral
 
-    const restarted = await saveContact(pool, editionId, 'SEC', {
+    const restarted = await saveContact(pool, editionId, sec, 'A', {
       who: 'Ada Umeh',
       role: 'Head, Registration',
       email: 'a.umeh@sec.gov.ng',
@@ -115,23 +131,61 @@ describe('Referral is cancel-and-restart, not a workflow', () => {
   });
 });
 
-describe('Declined is a distinct, terminal outcome for the edition', () => {
+describe('Declined is a distinct, terminal outcome for the edition (unless reopened)', () => {
   it('offers no reminder or issue action once declined', async () => {
-    await saveContact(pool, editionId, 'SEC', CONTACT);
-    await issueSurveyLink(pool, editionId, 'SEC', { targetBy: '2026-09-01' });
-    const declined = await markDeclined(pool, editionId, 'SEC');
+    await saveContact(pool, editionId, sec, 'A', CONTACT);
+    await issueSurveyLink(pool, editionId, sec, 'A', { targetBy: '2026-09-01' });
+    const declined = await markDeclined(pool, editionId, sec, 'A');
     expect(declined.state).toBe('declined');
     expect(declined.nextStep).toBe('Section must be replanned');
 
-    await expect(sendReminder(pool, editionId, 'SEC')).rejects.toMatchObject({
+    await expect(sendReminder(pool, editionId, sec, 'A')).rejects.toMatchObject({
       code: 'NO_ACTIVE_LINK',
     });
-    await expect(sendTextReminder(pool, editionId, 'SEC')).rejects.toMatchObject({
+    await expect(sendTextReminder(pool, editionId, sec, 'A')).rejects.toMatchObject({
       code: 'NO_ACTIVE_LINK',
     });
     await expect(
-      issueSurveyLink(pool, editionId, 'SEC', { targetBy: '2026-10-01' }),
+      issueSurveyLink(pool, editionId, sec, 'A', { targetBy: '2026-10-01' }),
     ).rejects.toMatchObject({ code: 'DECLINED_TERMINAL' });
+  });
+});
+
+describe('reopenDeclined (Phase 19, item 6) — access:regs-gated, no maker-checker', () => {
+  it('refuses without access:regs', async () => {
+    await saveContact(pool, editionId, sec, 'A', CONTACT);
+    await issueSurveyLink(pool, editionId, sec, 'A', { targetBy: '2026-09-01' });
+    await markDeclined(pool, editionId, sec, 'A');
+
+    // The checker user is seeded WITHOUT access:regs (see seed.ts).
+    const checkerRbac = await loadRbacContext(pool, checkerUserId);
+    await expect(reopenDeclined(pool, checkerRbac, editionId, sec, 'A')).rejects.toBeInstanceOf(
+      PermissionDeniedError,
+    );
+  });
+
+  it('resets to not_started with the survey link cleared but the contact KEPT, for a single access:regs holder — no second approver', async () => {
+    await saveContact(pool, editionId, sec, 'A', CONTACT);
+    await issueSurveyLink(pool, editionId, sec, 'A', { targetBy: '2026-09-01' });
+    await markDeclined(pool, editionId, sec, 'A');
+
+    // The maker user IS seeded with access:regs (see seed.ts) — one person,
+    // no maker-checker pair, since this corrects a routine mistake.
+    const makerRbac = await loadRbacContext(pool, makerUserId);
+    const reopened = await reopenDeclined(pool, makerRbac, editionId, sec, 'A');
+    expect(reopened.status).toBe('not_started');
+    expect(reopened.state).toBe('contact_added'); // ready to re-issue immediately
+    expect(reopened.contact?.who).toBe('Hauwa Ibrahim'); // kept, not wiped
+    expect(reopened.surveyLink).toBeNull();
+    expect(reopened.targetBy).toBeNull();
+    expect(reopened.history[0]!.entry).toContain('Reopened after being recorded as declined');
+  });
+
+  it('refuses to reopen a role that was never declined', async () => {
+    const makerRbac = await loadRbacContext(pool, makerUserId);
+    await expect(reopenDeclined(pool, makerRbac, editionId, sec, 'A')).rejects.toMatchObject({
+      code: 'NOT_DECLINED',
+    });
   });
 });
 
@@ -142,20 +196,20 @@ describe('Phase 10 integration — the lead time here IS institution_engagement.
     expect(before.cards.some((c) => c.conditionId === 16)).toBe(false);
 
     // Issue a link with a lead time in the past relative to the evaluation instant.
-    await saveContact(pool, editionId, 'SEC', CONTACT);
-    await issueSurveyLink(pool, editionId, 'SEC', { targetBy: '2026-08-01' });
+    await saveContact(pool, editionId, sec, 'A', CONTACT);
+    await issueSurveyLink(pool, editionId, sec, 'A', { targetBy: '2026-08-01' });
 
     const after = await getMissionBoard(pool, editionId, new Date('2026-10-01T00:00:00Z'));
     const c16 = after.cards.find((c) => c.conditionId === 16);
     expect(c16).toBeTruthy();
-    expect(c16!.evidence.join(' ')).toContain('SEC');
+    expect(c16!.evidence.join(' ')).toContain('Securities and Exchange Commission');
   });
 });
 
-describe('Phase 3 integration — a real per-regulator survey access token', () => {
+describe('Phase 3 integration — a real per-role survey access token', () => {
   it('issuing a link mints a working token into the UX-INS-003 (I-SEC) runtime', async () => {
-    await saveContact(pool, editionId, 'SEC', CONTACT);
-    const view = await issueSurveyLink(pool, editionId, 'SEC', { targetBy: '2026-09-01' });
+    await saveContact(pool, editionId, sec, 'A', CONTACT);
+    const view = await issueSurveyLink(pool, editionId, sec, 'A', { targetBy: '2026-09-01' });
     expect(view.surveyLink).toMatch(/^\/journeys\/resume\//);
     const token = view.surveyLink!.split('/').pop()!;
     const resume = await getResumeByToken(pool, token);
@@ -166,14 +220,15 @@ describe('Phase 3 integration — a real per-regulator survey access token', () 
 
 describe('History is free-text and append-only', () => {
   it('accumulates arbitrary free text, newest first, with no category taxonomy', async () => {
-    await saveContact(pool, editionId, 'CSCS', CONTACT);
+    await saveContact(pool, editionId, cscs, 'C', CONTACT);
     await recordHistory(
       pool,
       editionId,
-      'CSCS',
+      cscs,
+      'C',
       'Called the desk line, left a message with the PA.',
     );
-    const view = await recordHistory(pool, editionId, 'CSCS', 'They will call back on Monday.');
+    const view = await recordHistory(pool, editionId, cscs, 'C', 'They will call back on Monday.');
     // Entries carry only free text + a timestamp — no typed category field.
     expect(Object.keys(view.history[0]!).sort()).toEqual(['createdAt', 'entry', 'id']);
     expect(view.history[0]!.entry).toBe('They will call back on Monday.');
@@ -181,17 +236,34 @@ describe('History is free-text and append-only', () => {
   });
 
   it('rejects an empty history entry', async () => {
-    await saveContact(pool, editionId, 'CSCS', CONTACT);
-    await expect(recordHistory(pool, editionId, 'CSCS', '   ')).rejects.toMatchObject({
+    await saveContact(pool, editionId, cscs, 'C', CONTACT);
+    await expect(recordHistory(pool, editionId, cscs, 'C', '   ')).rejects.toMatchObject({
       code: 'HISTORY_TOO_SHORT',
     });
   });
 });
 
-describe('The three regulators list', () => {
-  it('shows what each is waiting for, not just a status label', async () => {
+describe('Multi-role institution — CSCS holds Family C AND Family D independently', () => {
+  it('gives CSCS two independent engagement rows in the same edition, one per role', async () => {
     const list = await listRegulators(pool, editionId);
-    expect(list.map((r) => r.institution).sort()).toEqual(['CSCS', 'NGX', 'SEC']);
+    const cscsRows = list.filter((r) => r.institutionId === cscs);
+    expect(cscsRows.map((r) => r.familyCode).sort()).toEqual(['C', 'D']);
+
+    // Progressing the C role must not touch the D role.
+    await saveContact(pool, editionId, cscs, 'C', CONTACT);
+    const after = await listRegulators(pool, editionId);
+    const cRow = after.find((r) => r.institutionId === cscs && r.familyCode === 'C')!;
+    const dRow = after.find((r) => r.institutionId === cscs && r.familyCode === 'D')!;
+    expect(cRow.state).toBe('contact_added');
+    expect(dRow.state).toBe('no_contact');
+  });
+});
+
+describe('The institutional roster', () => {
+  it('lists one row per (institution, family) role, all starting at no_contact', async () => {
+    const list = await listRegulators(pool, editionId);
+    // 9 roles: SEC(A), 4×B, 2×C, 2×D (CSCS holds both C and D).
+    expect(list).toHaveLength(9);
     expect(list.every((r) => r.state === 'no_contact')).toBe(true);
     expect(list.every((r) => r.nextStep === 'Add a contact')).toBe(true);
   });

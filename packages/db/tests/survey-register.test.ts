@@ -94,7 +94,11 @@ describe('SV-010 Register comparison gate', () => {
     expect(firmCounts['S4']).toBe(11);
     expect(firmCounts['S5a']).toBe(6);
     expect(firmCounts['S5b']).toBe(3);
-    for (const code of ['S1', 'S2', 'S3', 'I-SEC', 'I-NGX', 'I-CSCS']) {
+    // Family D (I-DEP, Phase 19) is institutional/contextual, same category
+    // as the existing Family A/B/C instruments — neither DRG-OPS nor
+    // firm-specific. Its addition intentionally moves REGISTER_ITEM_COUNT
+    // 90 → 95; this loop confirms it didn't also move a count it shouldn't.
+    for (const code of ['S1', 'S2', 'S3', 'I-SEC', 'I-NGX', 'I-CSCS', 'I-DEP']) {
       expect(firmCounts[code]).toBe(0);
     }
   });

@@ -49,6 +49,10 @@ export interface Edition {
   label: string;
   status: EditionStatus;
   surveyOpenAt: Date | null;
+  /** Phase 19 (item 2) — the study-team-configured launch instant. Distinct
+   *  from `surveyOpenAt` (the real moment opening happened): this is the
+   *  plan, that is the fact. Lazy-evaluated (no cron) on edition reads. */
+  plannedOpenAt: Date | null;
   surveyCloseAt: Date | null;
   resultsPublishedAt: Date | null;
   priorEditionId: string | null;
@@ -781,11 +785,33 @@ export interface MissionCard {
 /** The four edition phases the rail is aware of. */
 export type EditionPhase = 'before_launch' | 'collection_open' | 'closing_week' | 'closed';
 
-// ─── Regulator engagement (Phase 12 — UX-OPS-007) ─────────────────────────────
+// ─── Institutional instrument families (Phase 19) ─────────────────────────────
 
-/** The three regulators, one shared code set across engagement, contacts and the
- *  I-{code} survey instruments. */
-export type RegulatorCode = 'SEC' | 'NGX' | 'CSCS';
+/**
+ * The four controlled instrument families: A (Regulatory/Supervisory),
+ * B (Exchange/Market Operator), C (Clearing/Settlement), D (Depository /
+ * Securities-account Infrastructure). Replaces the old fixed three-code
+ * `RegulatorCode` enum: adding a ninth institution of an existing role is a
+ * new `institutions`/`institution_roles` row, never a code change.
+ */
+export type InstrumentFamilyCode = 'A' | 'B' | 'C' | 'D';
+
+export interface Institution {
+  id: string;
+  name: string;
+  isActive: boolean;
+  createdAt: Date;
+}
+
+/** One role an institution holds — the (institutionId, familyCode) composite
+ *  key used across engagement, contacts and the I-{code} survey instruments.
+ *  An institution may hold more than one (CSCS: Family C and Family D). */
+export interface InstitutionRole {
+  institutionId: string;
+  familyCode: InstrumentFamilyCode;
+}
+
+// ─── Regulator engagement (Phase 12 — UX-OPS-007) ─────────────────────────────
 
 /**
  * A regulator's named contact — the ONE deliberate place in the organiser estate
@@ -816,7 +842,9 @@ export interface RegulatorHistoryEntry {
 
 /** The whole per-(edition, regulator) engagement record for the surface. */
 export interface RegulatorEngagementView {
-  institution: RegulatorCode;
+  institutionId: string;
+  familyCode: InstrumentFamilyCode;
+  /** The institution's display name (e.g. "Securities and Exchange Commission"). */
   name: string;
   mandate: string;
   /** The Phase 10 engagement status this maps onto. */

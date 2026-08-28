@@ -2,16 +2,25 @@ import { useMemo, useState } from 'react';
 
 /**
  * UX-OPS-007 — Regulators. A faithful port of the approved functional artefact
- * (v2.5). One page per regulator, two sections in fixed order (contact, then
- * survey) plus an append-only free-text history. The authoritative behaviour —
- * contact-before-link ordering, cancel-and-restart referral, terminal declined,
- * lead time → Phase 10's institution_engagement.target_by, a real per-regulator
- * survey token — lives in the domain service (@cis/domain) and its API routes;
- * this surface mirrors that flow. Local state stands in for the live edition here,
- * exactly as the other Study Operations surfaces do.
+ * (v2.5), extended for Phase 19's institutional instrument family model. One
+ * page per (institution, family) role, two sections in fixed order (contact,
+ * then survey) plus an append-only free-text history. The authoritative
+ * behaviour — contact-before-link ordering, cancel-and-restart referral,
+ * terminal declined (reversible via access:regs-gated reopen), lead time →
+ * Phase 10's institution_engagement.target_by, a real per-role survey token —
+ * lives in the domain service (@cis/domain) and its API routes; this surface
+ * mirrors that flow. Local state stands in for the live edition here, exactly
+ * as the other Study Operations surfaces do — a DELIBERATE scope decision
+ * (documented in the README), not yet wired to the live per-role API.
+ *
+ * `id` is a generic string (an institution id in the live model), not a fixed
+ * enum — the SEED below demonstrates a 4th institution (FMDQ Depository,
+ * Family D) and the multi-role case (CSCS holding both Family C and Family D
+ * independently) to show the shape survives beyond the original three.
  */
 
 type SurveyState = 'none' | 'sent' | 'done' | 'declined';
+type FamilyCode = 'A' | 'B' | 'C' | 'D';
 
 interface Contact {
   who: string;
@@ -25,7 +34,8 @@ interface HistEntry {
   what: string;
 }
 interface Reg {
-  id: 'SEC' | 'NGX' | 'CSCS';
+  id: string;
+  familyCode: FamilyCode;
   name: string;
   mandate: string;
   contact: Contact | null;
@@ -61,6 +71,7 @@ function fmt(d: string | null): string {
 const SEED: Reg[] = [
   {
     id: 'CSCS',
+    familyCode: 'C',
     name: 'Central Securities Clearing System',
     mandate: 'Clearing, settlement and custody',
     contact: null,
@@ -71,7 +82,23 @@ const SEED: Reg[] = [
     hist: [],
   },
   {
+    // CSCS holds a SECOND, independent role (Family D) alongside Family C
+    // above — the multi-role case the institutional-family model exists to
+    // handle. Same institution id, different family, its own state.
+    id: 'CSCS',
+    familyCode: 'D',
+    name: 'Central Securities Clearing System',
+    mandate: 'Depository and securities-account infrastructure',
+    contact: null,
+    by: null,
+    invited: false,
+    survey: 'none',
+    link: '/journeys/resume/cscs-dep-pending',
+    hist: [],
+  },
+  {
     id: 'SEC',
+    familyCode: 'A',
     name: 'Securities and Exchange Commission',
     mandate: 'Supervision of licensed stockbroking firms',
     contact: {
@@ -96,6 +123,7 @@ const SEED: Reg[] = [
   },
   {
     id: 'NGX',
+    familyCode: 'B',
     name: 'Nigerian Exchange Limited',
     mandate: 'Trading, membership and listing support',
     contact: {
@@ -114,6 +142,21 @@ const SEED: Reg[] = [
       { when: '11 Aug', what: 'Survey link issued to Chidi Okonkwo.' },
       { when: '19 Aug', what: 'Submitted. Trading and membership both contributed.' },
     ],
+  },
+  {
+    // A fourth institution — demonstrates the model beyond the original
+    // three without any code change (just another SEED entry, matching how
+    // the live schema needs only a new institutions/institution_roles row).
+    id: 'FMDQ-DEP',
+    familyCode: 'D',
+    name: 'FMDQ Depository Limited',
+    mandate: 'Depository and securities-account infrastructure',
+    contact: null,
+    by: null,
+    invited: false,
+    survey: 'none',
+    link: '/journeys/resume/fmdq-dep-pending',
+    hist: [],
   },
 ];
 
@@ -152,8 +195,9 @@ export function RegulatorsPage(): JSX.Element {
       <main>
         <h1 tabIndex={-1}>Regulators</h1>
         <p className="lede">
-          SEC, NGX and CSCS contribute the Institutional Perspectives section. Each is approached
-          separately and answers once.
+          Each institutional role contributes the Institutional Perspectives section and is
+          approached separately, answering once — including an institution holding more than one
+          role (CSCS: clearing/settlement and depository), which appears once per role below.
         </p>
         <div>
           {regs.map((r, i) => {
@@ -161,9 +205,9 @@ export function RegulatorsPage(): JSX.Element {
             const late = overdue(r);
             return (
               <button
-                key={r.id}
+                key={`${r.id}-${r.familyCode}`}
                 type="button"
-                className={`row${late ? ' late' : ''}`}
+                className={`regrow${late ? ' late' : ''}`}
                 onClick={() => {
                   setOpenIdx(i);
                   setEditing(false);
@@ -180,8 +224,9 @@ export function RegulatorsPage(): JSX.Element {
           })}
         </div>
         <p className="owner">
-          The section cannot be written without all three, so each is a single point of failure for
-          a promised output. That is why each holds its own lead time rather than a shared deadline.
+          The section cannot be written without every role above, so each is a single point of
+          failure for a promised output. That is why each holds its own lead time rather than a
+          shared deadline.
         </p>
       </main>
     );

@@ -9,6 +9,7 @@ interface RawEditionRow {
   label: string;
   status: string;
   survey_open_at: Date | null;
+  planned_open_at: Date | null;
   survey_close_at: Date | null;
   results_published_at: Date | null;
   prior_edition_id: string | null;
@@ -24,6 +25,7 @@ function mapEdition(row: RawEditionRow): Edition {
     label: row.label,
     status: row.status as EditionStatus,
     surveyOpenAt: row.survey_open_at,
+    plannedOpenAt: row.planned_open_at,
     surveyCloseAt: row.survey_close_at,
     resultsPublishedAt: row.results_published_at,
     priorEditionId: row.prior_edition_id,
@@ -104,6 +106,29 @@ export async function updateClosingDate(pool: Pool, id: string, closesAt: Date):
      WHERE id = $2
      RETURNING *`,
     [closesAt, id],
+  );
+  const row = result.rows[0];
+  if (!row) throw new Error(`Edition ${id} not found`);
+  return mapEdition(row);
+}
+
+/**
+ * Set the study-team-configured launch instant (Phase 19, item 2). Callers
+ * (the edition service) enforce the editability rule; this function only
+ * writes. `null` clears a previously-set plan.
+ */
+export async function updatePlannedOpenAt(
+  pool: Pool,
+  id: string,
+  plannedOpenAt: Date | null,
+): Promise<Edition> {
+  const result = await query<RawEditionRow>(
+    pool,
+    `UPDATE editions
+     SET planned_open_at = $1, updated_at = NOW()
+     WHERE id = $2
+     RETURNING *`,
+    [plannedOpenAt, id],
   );
   const row = result.rows[0];
   if (!row) throw new Error(`Edition ${id} not found`);

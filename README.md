@@ -1591,3 +1591,222 @@ last two updated for `IndustrySeiState`'s new shape — `industrySeiState` is no
 its DB-backed cases moved out of the "pure" test file). Full suite green (351/351) against a
 live Postgres; `pnpm turbo lint typecheck build` clean across all 8 packages; `pnpm audit`
 clean.
+
+## Phase 21 — Controlled Estate Reconciliation
+
+Reconciles five separate, previously-tracked gaps against six controlled documents
+(`DEC-012_ESTATE_RECONCILIATION.md`, `REOPEN_QUEUE.md`, the Engineering Handoff Readiness
+Inventory, the Engineering Screen Stitching Guide, the SharePoint route map, and the
+CIS_SCORING_ENGINEERING_BUILD_NOTE): a regression this session introduced and now reverses, a
+scoring methodology version reconciliation, a real content-ingestion boundary replacing a bare
+seed insert, a permanent regression test confirming a prior migration's completeness, and one
+genuine unresolved contradiction between two controlled documents — flagged, not silently
+resolved. The two source artefacts §2 cites by name —
+`CIS_SCORING_METHODOLOGY_SPECIFICATION_v0.15.md` and `CIS_SCORING_CONFIG_CANDIDATE_v0.15.yaml`
+— were never attached to this session; §2 says explicitly, item by item, what was implemented
+on the build note's own detail and the phase prompt's own confirmation that no numeric weight
+changed, and what was deliberately left untouched pending those two files.
+
+### §1 — STOP-on-first-reminder: reverting this session's OWN regression (DEC-012)
+
+Phase 13 shipped the correct design: a respondent's first scheduled reminder carries no STOP
+language; every reminder after that does. A later pass in this session's own prior work (Phase
+17/20) misread that design and made `carriesStop` unconditionally `true` — every reminder,
+including the first, claimed to carry STOP language. `DEC-012_ESTATE_RECONCILIATION.md`
+formally reaffirms Phase 13's original design against that misreading and records it as this
+session's own error, not a pre-existing defect — and this section owns that plainly rather than
+describing it as "a bug found."
+
+The fix touches three points that all have to agree, because the earlier defect wasn't
+contained to one of them:
+
+- `nextDueReminder` (`reminder-timing-service.ts`) — the pure `carriesStop` computation, now
+  `params.sentSteps.length > 0` (has this respondent received ANY reminder yet — robust against
+  a cadence where step 1 is disabled and step 2 fires first for some respondent — rather than
+  "is this configured step number 1").
+- The SMS body (`reminder-content-service.ts`, `managed-content.ts` seed, and the Phase 17
+  production migration) — "Reply STOP to stop reminders." was hardcoded directly into the
+  template string. It's now a `{{stop_line}}` placeholder (mirroring the existing
+  `{{progress_wording}}`/`{{recovery_url}}` convention), filled conditionally by a new
+  `assembleReminderText(..., carriesStop)`.
+- The email JSON template's `stop_link_text` field had no assembly function at all — a new
+  `assembleReminderEmail(pool, respondentId, carriesStop)` conditionally nulls it.
+
+Fixing only the pure function would have left the actual respondent-facing message content
+unchanged and still wrong. `reminder-timing.test.ts` and `reminder-content.test.ts` were
+updated to assert the corrected first-vs-subsequent behavior (previously asserting the wrong
+thing), with two new tests verifying the fully-assembled SMS/email output directly rather than
+only the `carriesStop` flag — closing the same "compiles fine but the actual output is wrong"
+gap this session's own UI bug-hunt was about.
+
+### §2 — Scoring methodology v0.14 → v0.15 reconciliation
+
+Structural reconciliation only — no numeric weight, threshold or transform changed. Both the
+build note's own changelog and the phase prompt's own §2.4 instruction agree on that point, and
+it is the basis this section proceeds on in the absence of the actual v0.15 YAML/spec files.
+
+**§2.1 — Three-state segment display (REPORTABLE / SHOWN_DIRECTIONALLY / SUPPRESSED).** A new
+`SegmentDisplayState` type (`shared-types`) and `segmentDisplayState()` (`sufficiency-service.ts`)
+collapse the existing five-state `computeSufficiency()` ladder — never a re-derived threshold —
+onto the three-state model: REPORTABLE and SUPPRESSED map directly; DIRECTIONAL and BANDED both
+collapse to SHOWN_DIRECTIONALLY (shown, not at full precision); NOT_CALCULABLE collapses to
+SUPPRESSED.
+
+_Strict non-reconstructability._ `evidence-pack-service.ts`'s `buildEvidencePack` gained a new
+construction-time rejection, `SUPPRESSED_SEGMENT_RECONSTRUCTABLE`: a `FactInput` may now carry a
+`segmentGroupId` (and one member per group an `isSegmentTotal` flag), and a group is rejected
+the moment its lone SUPPRESSED member is back-out-able — every other sibling plus the total all
+carry an exact point value (REPORTABLE or DIRECTIONAL; BANDED and SUPPRESSED never do), so
+`total − Σ(other siblings) = the suppressed value` uniquely. Two or more SUPPRESSED siblings are
+safe (one equation, multiple unknowns); a BANDED sibling is safe (no exact subtrahend). This is
+a genuinely new rule — no prior version of this codebase checked for cross-segment
+reconstruction — not a threshold retune. Covered in `evidence-pack.test.ts` (rejects the
+reconstructable case, accepts it once the total is withheld, accepts two SUPPRESSED siblings)
+and as a pure function, `isSegmentGroupReconstructable`, in `candidate-scoring-pure.test.ts`.
+
+_Separated pooled-vs-standalone display._ `pooledHeadline()` (`candidate-scoring-service.ts`,
+Phase 11) is unchanged in its pooling arithmetic — a segment still contributes to the headline
+only once it clears its own `reportabilityFloor`, exactly as before. It now ALSO returns
+`standaloneState: Record<string, SegmentDisplayState>`, each segment's own `segmentDisplayState`
+computed independently of pooling eligibility. A segment can pool (clear its own, often lower,
+pooling floor) while being SUPPRESSED standalone, and vice versa — the two were previously
+conflated into a single floor read twice; they are now two genuinely separate fields on the same
+return value. Test: `candidate-scoring-pure.test.ts`'s existing three-segment fixture, where
+segment A pools at n=3 but is SUPPRESSED standalone (n=3 < the shared floor of 10).
+
+_Not touched, on purpose._ The README's own previously-flagged `§8 threshold conflict` (the
+retail-cut 10/30 thresholds in `firm-report-service.ts`'s `FirmReportCutState` vs. the dormant,
+richer `governed_config` key `reporting.firm_investor_thresholds`) is NOT resolved here — §2.1
+was scoped by the phase prompt to Phase 6 evidence-pack and Phase 11 pooling logic only,
+`firm-report-service.ts` (Phase 6/14) is a separate surface, and reconciling it without the
+actual v0.15 YAML would mean guessing which of the two documented floors the new model actually
+intends. Left as the same open item it already was.
+
+**§2.2 — Six-institution exclusion.** Confirmed already correct, not a code change. Exclusion
+was never a hardcoded name list: `instrument_definitions.instrument_type IN ('institutional',
+'regulator')` (four rows — `I-SEC`/`I-NGX`/`I-CSCS`/`I-DEP`) is a real, structurally-enforced
+gate (`scored: false`; `getInstitutionalQuestionCodes`/`getInstitutionalInstrumentCodes`,
+consumed by `evidence-pack-service.ts`'s `INSTITUTIONAL_AS_INDEX`/`FIRM_INSTITUTIONAL_CUT`
+checks, and by every metric's own `config.questionIds` in `calculation-service.ts`'s
+`runScoring`). Because NASD OTC, LCFE and FMDQ Securities Exchange share Family B's single
+`I-NGX` instrument, and FMDQ Clear/FMDQ Depository share Family C/D's `I-CSCS`/`I-DEP` (Phase
+19), all eight seeded institutions — the six named in this item plus CSCS's two roles — are
+already covered by four instrument codes, with zero code change needed if a ninth institution of
+an existing family registers later (the same rule Phase 19's Item 1 already established). New
+regression coverage added to `institution-families.test.ts`: every non-survey instrument is
+`scored: false`; the institutional/regulator instrument set is exactly
+`I-CSCS, I-DEP, I-NGX, I-SEC`; and no active `metric_definitions` row's `config.questionIds`
+ever names an institutional question code.
+
+**§2.3 — Firm-level SEI independence.** Confirmed already correct, not a code change.
+Firm-level `SEI` is computed by the ordinary, generic `runScoring()` pass
+(`calculation-service.ts`) for every firm × every active metric — including `SEI`, one of the
+five seeded `INDEX_CODES` — with zero dependency on `industrySeiState`. `industrySeiState()`
+(`candidate-scoring-service.ts`) is a pure downstream reader: it loads already-computed
+firm-level `SEI` rows via `listCalculatedResults` and aggregates; it never computes a firm's own
+value. New test in `institution-families.test.ts` makes this explicit rather than implicit in
+the existing aggregate-behavior tests: it reads a firm's own SEI result directly — including a
+below-floor firm's SUPPRESSED row — BEFORE `industrySeiState` is ever called in the same test,
+then confirms the aggregate reads the same rows back afterward.
+
+**§2.4 — v0.14 → v0.15 citations.** Re-pointed where the cited substance is confirmed
+unchanged: the `MethodologyStatus` doc comment (`shared-types`) citing the Phase 11 build
+note's official-use hard gate now notes it was "reaffirmed unchanged in v0.15 (Phase 21 §2.4)".
+`candidate-scoring-service.ts`'s module doc was reworded to state plainly that its numeric core
+— every weight, transform and threshold — is still read from the v0.14 YAML
+(`CIS_SCORING_CONFIG_CANDIDATE_v0.14.yaml`, `scoring-config.ts`), and that the v0.15
+reconciliation changed structure, not numbers. **Deliberately NOT touched**: the YAML filename
+itself, and the seeded `metric_definitions`/candidate-config version number (142). Renaming the
+file or bumping its version without the actual `CIS_SCORING_CONFIG_CANDIDATE_v0.15.yaml` in hand
+would misrepresent numeric behavior as having moved to a new version when it has not — that
+file swap, whenever the real v0.15 config lands, is the one remaining step to close this item
+fully, and needs no other code change once it does.
+
+### §3 — Survey content ingestion boundary (`SURVEY-REGISTER-EXPORT`)
+
+`REOPEN_QUEUE.md` and the Engineering Handoff Readiness Inventory both record the same gap: no
+machine-readable, controlled Survey Instruments Register export exists yet, and the seed content
+reaches the database through a bare migration-style insert rather than a validated import path.
+A new module, `packages/db/src/seed/register-ingestion.ts`, is that path: a versioned
+`bindData(payload)`-shaped schema (`RegisterImportPayload` — `schemaVersion`, `source:
+'interim_seed' | 'approved_export'`, a human-readable `sourceLabel`, and per-instrument question
+items), a structural validator (`validateRegisterPayload` — non-empty schema version, a
+recognized source, non-empty `sourceLabel`, per-item `question_id` uniqueness and non-empty
+text, `kind`/`scope` enum membership, all failing loudly and specifically rather than on a bare
+Postgres constraint), and the real loader (`importSurveyRegister`) that performs the same writes
+the old direct-insert path did, but only after validation, tagging each instrument version's
+`schema_snapshot` with the payload's `source`/`schemaVersion`/`sourceLabel` for provenance.
+
+`register.ts`'s `seedSurveyRegister` is now a thin caller: it wraps today's known-good
+`survey-register-seed.json` content as the INTERIM payload (`source: 'interim_seed'`) and feeds
+it through this exact loader — the same content, never discarded, now flowing through a real
+boundary instead of a direct insert. When the actual controlled Register export lands, binding
+it is a data swap through the same `importSurveyRegister` call, never a code change. SV-010
+(`survey-register.test.ts`) passes unchanged against content now loaded through the boundary —
+proof the swap didn't alter what gets seeded. A new `register-ingestion.test.ts` (15 tests)
+exercises the boundary directly: every validation rejection (bad `kind`, bad `scope`, duplicate
+`question_id`, empty `text`/`schemaVersion`/`sourceLabel`, an unrecognized `source`, a
+non-array/non-object shape), confirmation that a rejected payload touches the database not at
+all, and that both `interim_seed` and `approved_export` provenance round-trip correctly onto the
+stored `schema_snapshot`.
+
+### §4 — Channel vocabulary sweep (DEC-010)
+
+Confirmed already clean — no production change needed. `DEC-012_ESTATE_RECONCILIATION.md`
+records a prior near-miss where a WhatsApp reference was found only by searching markup, missing
+one still present in a code/copy string — the "search every layer, not just markup" lesson. A
+new permanent regression test, `channel-vocabulary.test.ts`, recursively scans five source trees
+(`apps/admin/src`, `apps/api/src`, `packages/domain/src`, `packages/db/src`, `packages/survey/src`)
+across every `.ts`/`.tsx`/`.js`/`.json`/`.md`/`.yaml`/`.yml` file for case-insensitive
+"whatsapp" outside a DEC-010-citing comment (including JSX `{/* */}` comments). The codebase was
+already clean at every layer; this closes the gap by making that fact permanently checked rather
+than re-verified by hand each time. UX-INS-001/002 (`FirmPortal.tsx`) were confirmed to
+implement Text as their channel, per the same DEC-010 comment this test allowlists.
+
+### §5 — ⚠️ Escalation, flagged and NOT resolved: six bespoke institutional instruments vs. one shared Family B instrument
+
+A genuine contradiction between two controlled documents, left unresolved in code per this
+phase's own explicit instruction not to pick a side:
+
+- `CIS_Engineering_Screen_Stitching_Guide.md` describes "six bespoke instruments: SEC, NGX,
+  CSCS, LCFE, NASD, FMDQ" — one instrument per named institution.
+- Phase 19's own source document
+  (`CIS_Institutional_Instrument_Families_Register_Extension`, v1.1) — which this codebase was
+  actually built from — specifies Family B as ONE shared instrument (`I-NGX`) used by Nigerian
+  Exchange Limited, NASD OTC Securities Exchange, Lagos Commodities and Futures Exchange AND
+  FMDQ Securities Exchange Limited together, not four separate instruments. `institution-family-
+service.ts`'s `FAMILY_META` maps family `'B'` to the single `instrumentCode: 'I-NGX'`, exactly
+  as Phase 19 built it and as this session's own Phase 21 §2.2 work above continues to rely on
+  structurally.
+
+Phase 19's schema is left exactly as-is here — this section flags the tension for a product/
+compliance decision, it does not adjudicate which controlled document is correct. Resolving it
+either direction (splitting `I-NGX` into three/four bespoke instruments, or correcting the
+Stitching Guide's prose) is out of scope for this phase and would itself need controlled-document
+sign-off before any schema change.
+
+**Separate, related, but distinct item — already fixed (§2.2/Item 5's `is_active`
+enforcement).** LCFE, NASD OTC Securities Exchange, FMDQ Securities Exchange Limited, FMDQ Clear
+and FMDQ Depository were seeded with `is_active` set but the column was never enforced anywhere
+— `seedInstitutionEngagement` was reading `listInstitutionRoles` (every institution) rather than
+an active-only view, so all eight institutions received engagement rows regardless of
+registration status. Fixed: a new `listActiveInstitutionRoles(pool)` (`institutions.ts`, joins
+`institution_roles` to `institutions` filtering `is_active = TRUE`) is now what
+`seedInstitutionEngagement` reads, so the five institutions under CIS review — "not registered
+and not in collection" per the Stitching Guide §8 — get no engagement row until CIS registers
+them and someone flips the flag, a data change, never a code change. Verified in
+`regulator-engagement.test.ts` (roster length 9 → 4 active; a new test asserts the five inactive
+institutions are excluded by name). Per this phase's explicit instruction, the not-yet-controlled
+scope-gate question for LCFE/NASD/FMDQ was deliberately NOT built.
+
+### Verification
+
+`pnpm --filter @cis/domain exec vitest run` (29 files, 319 tests) and
+`pnpm --filter @cis/db exec vitest run --no-file-parallelism` (3 files, 25 tests — the db
+package's test files race on Postgres's migration advisory lock when vitest parallelizes across
+files, a pre-existing infra quirk unrelated to this phase; sequential run is fully green) both
+pass against a live Postgres. `pnpm turbo build lint typecheck` clean across all 8 packages
+(no new lint errors; the pre-existing `no-non-null-assertion` warnings are unchanged and
+untouched by this phase). `pnpm audit` reports 3 pre-existing devDependency advisories
+(`js-yaml` via `eslint`, `vitest`/`@vitest/mocker`) — none introduced by this phase (no
+`package.json` or lockfile changed), all toolchain-only with no runtime/production exposure.

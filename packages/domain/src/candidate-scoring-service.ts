@@ -19,16 +19,25 @@ import type { CalculationRun } from '@cis/shared-types';
 import { DomainError } from './errors';
 import { datasetHashFor } from './calculation-service';
 import { scoreItem, isSubstantive } from './scoring-transforms';
-import { computeSufficiency } from './sufficiency-service';
+import { computeSufficiency, segmentDisplayState } from './sufficiency-service';
+import type { SegmentDisplayState } from '@cis/shared-types';
 
 /**
- * CIS-SCORE-2026 v0.14 candidate scoring engine (Phase 11). Runs the real
- * candidate methodology, always under `TEST_UNAPPROVED`, and enforces the hard
- * gate that such output can never reach an official evidence pack, AI generation
- * or a released report. It also owns: item-level DMI/OMI completeness, firm-scope
+ * CIS-SCORE-2026 candidate scoring engine (Phase 11). Runs the real candidate
+ * methodology, always under `TEST_UNAPPROVED`, and enforces the hard gate that
+ * such output can never reach an official evidence pack, AI generation or a
+ * released report. It also owns: item-level DMI/OMI completeness, firm-scope
  * -safe investor aggregation, the privacy-safe pooled public headline with its
- * mandatory composition disclosure, the Industry-SEI NOT_CALCULABLE block, and
- * the like-for-like cross-edition recalculation.
+ * mandatory composition disclosure (now reporting each segment's standalone
+ * display state alongside, per Phase 21 §2.1), the Industry-SEI
+ * NOT_CALCULABLE block, and the like-for-like cross-edition recalculation.
+ *
+ * Its numeric core — every weight, transform and threshold — is still read
+ * from the sole authoritative v0.14 YAML config (`CONFIG_FILENAME` in
+ * `scoring-config.ts`); the v0.14 → v0.15 reconciliation (Phase 21 §2)
+ * changed structure, not numbers — see README "Phase 21 §2" for exactly what
+ * did and did not change, and why the file itself was not renamed or
+ * reseeded under a new version without the actual v0.15 YAML in hand.
  *
  * "Build the framework now. Do not invent the methodology." Every weight,
  * transform and threshold is read from the sole authoritative YAML config.
@@ -212,6 +221,18 @@ export interface PooledHeadline {
   excludedSegments: string[];
   /** The mandatory disclosure line — a required structured field, never optional prose. */
   disclosure: string;
+  /**
+   * Phase 21 §2.1 (v0.15) — each input segment's STANDALONE display state
+   * (`segmentDisplayState`, keyed off its own unit count), reported
+   * alongside but computed INDEPENDENTLY of pooling eligibility above. A
+   * segment can be excluded from the pooled headline (sub-floor for
+   * pooling) while still being REPORTABLE or SHOWN_DIRECTIONALLY on its own,
+   * and a segment that clears the pooling floor is not thereby guaranteed
+   * REPORTABLE standalone (pooling and standalone floors are governed
+   * separately — see `firm_investor_thresholds` in governed_config). Pooling
+   * inclusion/exclusion above is UNCHANGED by this field.
+   */
+  standaloneState: Record<string, SegmentDisplayState>;
 }
 
 /**
@@ -241,7 +262,19 @@ export function pooledHeadline(metric: string, segments: PooledSegmentInput[]): 
     headline === null
       ? `${metric} not reportable — no segment clears its floor.`
       : `${metric} = ${Math.round(headline)}, based on ${totalUnits} reportable investor units: ${parts.join(' and ')}.`;
-  return { metric, headline, totalUnits, composition, excludedSegments, disclosure };
+  const standaloneState: Record<string, SegmentDisplayState> = {};
+  for (const s of segments) {
+    standaloneState[s.segment] = segmentDisplayState(s.unitScores.length);
+  }
+  return {
+    metric,
+    headline,
+    totalUnits,
+    composition,
+    excludedSegments,
+    disclosure,
+    standaloneState,
+  };
 }
 
 // ─── Industry SEI — real derivation from reportable Firm_SEI (Phase 19, item 5) ─

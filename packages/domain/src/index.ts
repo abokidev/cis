@@ -86,7 +86,10 @@ export {
   bandForProportion,
   SUPPRESS_BELOW,
   REPORTABLE_AT,
+  segmentDisplayState,
+  isSegmentGroupReconstructable,
 } from './sufficiency-service';
+export type { ReconstructabilityMember } from './sufficiency-service';
 export {
   isFirmEligible,
   eligibleFirmIds,

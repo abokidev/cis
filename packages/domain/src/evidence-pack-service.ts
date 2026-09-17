@@ -17,6 +17,7 @@ import type {
 } from '@cis/shared-types';
 import { DomainError } from './errors';
 import { assertRunOfficialUsable } from './candidate-scoring-service';
+import { isSegmentGroupReconstructable } from './sufficiency-service';
 
 /**
  * Evidence-pack construction — the reporting-facing boundary. Every rule in
@@ -56,6 +57,15 @@ export interface FactInput {
   band?: string | null;
   sourceResultId?: string | null;
   sourceQuestionIds?: string[];
+  /**
+   * Phase 21 §2.1 (v0.15) — identifies this fact as one member of a segment
+   * breakdown (e.g. a firm-size or region cut) sharing one group id, so the
+   * non-reconstructability check can see every sibling together. Facts
+   * without a `segmentGroupId` are not checked against each other.
+   */
+  segmentGroupId?: string;
+  /** Marks this fact as its group's TOTAL row, rather than one segment. */
+  isSegmentTotal?: boolean;
 }
 
 export interface BuildPackInput {
@@ -166,6 +176,35 @@ export async function buildEvidencePack(
           'CROSS_FIRM_LEAK',
         );
       }
+    }
+  }
+
+  // Strict non-reconstructability (Phase 21 §2.1): a SUPPRESSED segment must
+  // never be back-out-able by subtracting every other exact sibling from a
+  // shown group total. Checked per `segmentGroupId`, across the whole pack —
+  // this is a construction-time rejection, not a downstream filter, exactly
+  // like every other EVIDENCE_PACK_CONTRACT rule above.
+  const segmentGroups = new Map<string, FactInput[]>();
+  for (const fact of input.facts) {
+    if (!fact.segmentGroupId) continue;
+    const members = segmentGroups.get(fact.segmentGroupId) ?? [];
+    members.push(fact);
+    segmentGroups.set(fact.segmentGroupId, members);
+  }
+  for (const [groupId, members] of segmentGroups) {
+    if (
+      isSegmentGroupReconstructable(
+        members.map((m) => ({
+          ...(m.isSegmentTotal !== undefined ? { isTotal: m.isSegmentTotal } : {}),
+          sufficiencyState: m.sufficiencyState,
+        })),
+      )
+    ) {
+      throw new EvidencePackError(
+        `Segment group "${groupId}" is reconstructable: its single SUPPRESSED segment can be ` +
+          'derived by subtracting every other exact sibling from the shown total',
+        'SUPPRESSED_SEGMENT_RECONSTRUCTABLE',
+      );
     }
   }
 

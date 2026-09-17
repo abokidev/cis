@@ -13,6 +13,8 @@ import {
   canCompareHeadlinesDirectly,
   computeLikeForLike,
   evaluateBoard,
+  segmentDisplayState,
+  isSegmentGroupReconstructable,
   type BoardContext,
   type EditionSegmentEvidence,
 } from '../src';
@@ -72,6 +74,92 @@ describe('Pooled public headline — plain unit mean over reportable segments', 
     ]);
     expect(result.headline).toBeNull();
     expect(result.disclosure).toContain('not reportable');
+  });
+
+  it('computes standalone display state independently of pooling eligibility (Phase 21 §2.1)', () => {
+    const result = pooledHeadline('IEI', [
+      { segment: 'A', label: 'retail', unitScores: [100, 100, 100], reportabilityFloor: 3 },
+      { segment: 'B', label: 'local institutions', unitScores: [0, 0], reportabilityFloor: 2 },
+      { segment: 'C', label: 'foreign institutions', unitScores: [50], reportabilityFloor: 3 },
+    ]);
+    // A pools (n=3 clears its own reportabilityFloor of 3) but at n=3 it is
+    // SUPPRESSED standalone (below the shared segmentDisplayState floor of
+    // 10) — pooling inclusion and standalone display are genuinely separate
+    // decisions, not the same gate read twice.
+    expect(result.excludedSegments).not.toContain('A');
+    expect(result.standaloneState['A']).toBe('SUPPRESSED');
+    expect(result.standaloneState['B']).toBe('SUPPRESSED');
+    // C is excluded from pooling (n=1 < its own floor of 3) but its
+    // standalone state is reported too, on the same independent axis.
+    expect(result.excludedSegments).toContain('C');
+    expect(result.standaloneState['C']).toBe('SUPPRESSED');
+  });
+});
+
+describe('Segment display state (Phase 21 §2.1)', () => {
+  it('collapses the sufficiency ladder to REPORTABLE / SHOWN_DIRECTIONALLY / SUPPRESSED', () => {
+    expect(segmentDisplayState(9)).toBe('SUPPRESSED');
+    expect(segmentDisplayState(10)).toBe('SHOWN_DIRECTIONALLY');
+    expect(segmentDisplayState(29)).toBe('SHOWN_DIRECTIONALLY');
+    expect(segmentDisplayState(30)).toBe('REPORTABLE');
+    // A binary-consequence signal is BANDED at any n above the floor — still
+    // SHOWN_DIRECTIONALLY, never REPORTABLE (never a point value).
+    expect(segmentDisplayState(50, { binaryConsequenceSignal: true })).toBe('SHOWN_DIRECTIONALLY');
+    expect(segmentDisplayState(5, { binaryConsequenceSignal: true })).toBe('SUPPRESSED');
+  });
+});
+
+describe('Strict segment non-reconstructability (Phase 21 §2.1)', () => {
+  it('flags a lone SUPPRESSED segment as reconstructable against an exact total and exact siblings', () => {
+    expect(
+      isSegmentGroupReconstructable([
+        { sufficiencyState: 'REPORTABLE' },
+        { sufficiencyState: 'REPORTABLE' },
+        { sufficiencyState: 'SUPPRESSED' },
+        { isTotal: true, sufficiencyState: 'REPORTABLE' },
+      ]),
+    ).toBe(true);
+  });
+
+  it('is safe once the total is withheld', () => {
+    expect(
+      isSegmentGroupReconstructable([
+        { sufficiencyState: 'REPORTABLE' },
+        { sufficiencyState: 'REPORTABLE' },
+        { sufficiencyState: 'SUPPRESSED' },
+      ]),
+    ).toBe(false);
+  });
+
+  it('is safe with two or more SUPPRESSED siblings (one equation, multiple unknowns)', () => {
+    expect(
+      isSegmentGroupReconstructable([
+        { sufficiencyState: 'REPORTABLE' },
+        { sufficiencyState: 'SUPPRESSED' },
+        { sufficiencyState: 'SUPPRESSED' },
+        { isTotal: true, sufficiencyState: 'REPORTABLE' },
+      ]),
+    ).toBe(false);
+  });
+
+  it('is safe when a non-suppressed sibling is BANDED (carries no exact value)', () => {
+    expect(
+      isSegmentGroupReconstructable([
+        { sufficiencyState: 'BANDED' },
+        { sufficiencyState: 'SUPPRESSED' },
+        { isTotal: true, sufficiencyState: 'REPORTABLE' },
+      ]),
+    ).toBe(false);
+  });
+
+  it('a DIRECTIONAL sibling still carries a point value, so reconstruction still applies', () => {
+    expect(
+      isSegmentGroupReconstructable([
+        { sufficiencyState: 'DIRECTIONAL' },
+        { sufficiencyState: 'SUPPRESSED' },
+        { isTotal: true, sufficiencyState: 'REPORTABLE' },
+      ]),
+    ).toBe(true);
   });
 });
 

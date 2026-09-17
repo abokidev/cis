@@ -1715,12 +1715,85 @@ note's official-use hard gate now notes it was "reaffirmed unchanged in v0.15 (P
 `candidate-scoring-service.ts`'s module doc was reworded to state plainly that its numeric core
 — every weight, transform and threshold — is still read from the v0.14 YAML
 (`CIS_SCORING_CONFIG_CANDIDATE_v0.14.yaml`, `scoring-config.ts`), and that the v0.15
-reconciliation changed structure, not numbers. **Deliberately NOT touched**: the YAML filename
-itself, and the seeded `metric_definitions`/candidate-config version number (142). Renaming the
-file or bumping its version without the actual `CIS_SCORING_CONFIG_CANDIDATE_v0.15.yaml` in hand
-would misrepresent numeric behavior as having moved to a new version when it has not — that
-file swap, whenever the real v0.15 config lands, is the one remaining step to close this item
-fully, and needs no other code change once it does.
+reconciliation changed structure, not numbers. **Deliberately NOT touched at the time**: the
+YAML filename itself, and the seeded `metric_definitions`/candidate-config version number.
+Renaming the file or bumping its version without the actual
+`CIS_SCORING_CONFIG_CANDIDATE_v0.15.yaml` in hand would have misrepresented numeric behavior as
+having moved to a new version when it had not. **This is now done — see the follow-up
+immediately below**, where that exact file was supplied and the swap completed.
+
+### Follow-up — v0.15 YAML supplied directly; §11 completeness; the new cross-segment rule
+
+A follow-up round, after the actual `CIS_SCORING_CONFIG_CANDIDATE_v0.15.yaml` was supplied
+directly (read from disk, not paraphrased) and the person running this session independently
+read the prose `CIS_SCORING_METHODOLOGY_SPECIFICATION_v0.15.md` from SharePoint and confirmed
+two things ahead of this work: no numeric weight changed (`Firm_DMI` and `Retail_ICI`'s weighted
+components verified identical), and the prose spec's own §2.2 exclusion list text still names
+only three institutions — validating, not undermining, this session's decision to key exclusion
+off instrument type rather than off any literal name list (§2.2, above).
+
+**The YAML swap, done.** `CIS_SCORING_CONFIG_CANDIDATE_v0.15.yaml` now sits alongside the v0.14
+file in `packages/db/src/seed/` (the v0.14 file is kept, never deleted — it's the prior
+authoritative version a signed-off v0.14 run's provenance still points to).
+`scoring-config.ts`'s `CONFIG_FILENAME` now points to it; `seedCandidateScoringConfig` now seeds
+`metric_definitions` as version 15. Diffing the two files directly (not from memory) confirms
+the changes are exactly the ones this session's §2.1 work already anticipated structurally, and
+nothing else: every transform, weight and threshold is byte-identical; only `decision_status.D1`
+(now `PRODUCT_DECISION_APPLIED_PENDING_METHODOLOGY_VALIDATION`, with a candidate name that
+explicitly says `_with_directional_standalone_display`), the `IEI`/`ICI` `headline.disclosure`
+blocks (new `standalone_below_floor_display`), and the `privacy` block (restructured into
+`standalone_segment_display.{shown_directionally,suppressed}`) changed. `methodologyVersionString()`
+now reports `CIS-SCORE-2026@0.15`; the two DB-backed tests asserting the stamped
+`methodologyVersion` literal were updated to match — this is a real, expected version bump, not
+a fixed bug.
+
+**§11 investor-side item-level completeness — built, not fixed.** The follow-up asked whether
+Retail ICI, Local IEI, Foreign IEI and Foreign ICI's completeness logic already implements
+§11's partial-allowance rules ("at least 2 of Q5–Q7", "at least 3 of 4 Q1 attributes") or was
+silently too strict. The actual finding is a level below either: **no production code computes
+per-investor-relationship eligibility for ANY of these six index-completeness rules at all** —
+`pooledHeadline()` and `computeLikeForLike()` have always been pure aggregators taking
+already-filtered `unitScores`/`unitScoresBySegment` as their input, and a repo-wide search
+(including `apps/api`, `apps/admin`) turns up no caller of either function outside tests. So
+this isn't a bug silently undercounting real evidence — the pipeline that would do the
+undercounting doesn't exist yet. Rather than leave the gap open until that larger pipeline is
+built, six pure, tested predicates were added now (`candidate-scoring-service.ts`, "§11
+investor-side item-level completeness"), matching the spec's table exactly:
+
+| Index                | Rule                                                 | Partial allowance? |
+| -------------------- | ---------------------------------------------------- | ------------------ |
+| `retailIeiEligible`  | S4-Q1, Q2, Q3 all required                           | No                 |
+| `retailIciEligible`  | S4-Q4 required, **+ at least 2 of** Q5/Q6/Q7         | **Yes**            |
+| `localIeiEligible`   | **at least 3 of 4** S5a-Q1 attributes, + S5a-Q2      | **Yes**            |
+| `localIciEligible`   | S5a-Q5 and S5a-Q6 both required                      | No                 |
+| `foreignIeiEligible` | S5b-Q1 + aggregated Q2 + aggregated Q3, all required | No                 |
+| `foreignIciEligible` | aggregated Q4 + S5b-Q8, both required                | No                 |
+
+Each reuses `isSubstantive` (never a re-derived missing-data check) and takes already-fetched
+answer values — none reads the database or knows how a grid answer (S5a-Q1's four rows) is
+actually stored; that remains the future pipeline's job. Tested exhaustively in
+`candidate-scoring-pure.test.ts`, including the exact partial-allowance boundary cases (2-of-3
+passes, 1-of-3 fails; 3-of-4 passes, 2-of-4 fails) and confirming the four full-completeness
+rules tolerate no missing item. **Still open, and named as such rather than implied done**:
+wiring these predicates to real per-respondent database reads and actually producing the
+`unitScores`/aggregated-Q2-Q3-Q4 values `pooledHeadline` needs is a separate, larger, not-yet-built
+pipeline — this follow-up closed the completeness-_rule_ gap, not the full investor-scoring
+pipeline.
+
+**The new `prohibit_cross_segment_comparison_unless_all_compared_segments_clear_floor` rule —
+confirmed already implemented, not a gap.** v0.15's restructured `privacy.
+standalone_segment_display.shown_directionally` block adds this rule for the first time in the
+document. The codebase's one production cross-segment comparison
+(`national-report-service.ts`'s `PUB_07_LOCAL_VS_FOREIGN`, `suppress_below_floor` rule) already
+enforces exactly this: it publishes only once BOTH the local and foreign institutional segments
+clear the REPORTABLE floor, and suppresses the comparison outright — not merely caveats it — the
+moment either segment is only DIRECTIONAL/thin. A new test in `national-report.test.ts` makes
+the v0.15 citation explicit and adds the "both segments thin" case the prior tests didn't cover.
+No code change needed.
+
+Verified: `@cis/domain` (29 files, 326 tests) and `@cis/db` (3 files, 25 tests, sequential) both
+green against a live Postgres seeded from the real v0.15 config; `pnpm turbo build lint
+typecheck` clean across all 8 packages.
 
 ### §3 — Survey content ingestion boundary (`SURVEY-REGISTER-EXPORT`)
 

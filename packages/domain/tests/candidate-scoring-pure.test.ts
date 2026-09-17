@@ -1,9 +1,10 @@
 /**
- * CIS-SCORE-2026 v0.14 candidate methodology — Phase 11 PURE-function DoD.
+ * CIS-SCORE-2026 v0.15 candidate methodology — Phase 11 PURE-function DoD.
  * No database: transform binding, the privacy-safe pooled headline, like-for-like
  * cross-edition recalculation, the Industry-SEI NOT_CALCULABLE methodology block,
- * and the mission-board wiring of conditions 7/8 to the item-level complete
- * forecasts. Every value is read from the sole authoritative YAML config.
+ * the §11 investor-side item-level completeness predicates, and the mission-board
+ * wiring of conditions 7/8 to the item-level complete forecasts. Every value is
+ * read from the sole authoritative YAML config.
  */
 import { describe, it, expect } from 'vitest';
 import type { MissionSegment, SegmentForecast } from '@cis/shared-types';
@@ -15,6 +16,12 @@ import {
   evaluateBoard,
   segmentDisplayState,
   isSegmentGroupReconstructable,
+  retailIeiEligible,
+  retailIciEligible,
+  localIeiEligible,
+  localIciEligible,
+  foreignIeiEligible,
+  foreignIciEligible,
   type BoardContext,
   type EditionSegmentEvidence,
 } from '../src';
@@ -163,6 +170,56 @@ describe('Strict segment non-reconstructability (Phase 21 §2.1)', () => {
   });
 });
 
+describe('§11 investor-side item-level completeness (v0.15 follow-up)', () => {
+  it('Retail IEI requires ALL of S4-Q1/Q2/Q3 — no partial allowance', () => {
+    expect(retailIeiEligible({ q1: '8', q2: '9', q3: '7' })).toBe(true);
+    expect(retailIeiEligible({ q1: '8', q2: '9', q3: null })).toBe(false);
+    expect(retailIeiEligible({ q1: '8', q2: "Don't know", q3: '7' })).toBe(false);
+  });
+
+  it('Retail ICI requires Q4 PLUS at least 2 of the Q5-Q7 behavioural bundle', () => {
+    // Full completeness clears it.
+    expect(retailIciEligible({ q4: '8', q5: 'Yes', q6: 'No', q7: 'Yes' })).toBe(true);
+    // Exactly 2 of 3 — the explicit partial allowance §11 grants.
+    expect(retailIciEligible({ q4: '8', q5: 'Yes', q6: 'No', q7: null })).toBe(true);
+    expect(retailIciEligible({ q4: '8', q5: null, q6: 'No', q7: 'Yes' })).toBe(true);
+    // Only 1 of 3 — below the allowance, correctly excluded.
+    expect(retailIciEligible({ q4: '8', q5: 'Yes', q6: null, q7: null })).toBe(false);
+    // Q4 itself is never optional, even with all three behavioural items present.
+    expect(retailIciEligible({ q4: null, q5: 'Yes', q6: 'No', q7: 'Yes' })).toBe(false);
+  });
+
+  it('Local IEI requires at least 3 of the 4 S5a-Q1 attributes, PLUS S5a-Q2', () => {
+    // All 4 attributes present.
+    expect(localIeiEligible({ q1Attributes: ['8', '7', '9', '6'], q2: '5' })).toBe(true);
+    // Exactly 3 of 4 — the explicit partial allowance §11 grants.
+    expect(localIeiEligible({ q1Attributes: ['8', '7', '9', null], q2: '5' })).toBe(true);
+    // Only 2 of 4 — below the allowance, correctly excluded.
+    expect(localIeiEligible({ q1Attributes: ['8', '7', null, null], q2: '5' })).toBe(false);
+    // 3 of 4 attributes but Q2 missing — still ineligible, Q2 is never optional.
+    expect(localIeiEligible({ q1Attributes: ['8', '7', '9', null], q2: null })).toBe(false);
+  });
+
+  it('Local ICI requires BOTH S5a-Q5 and S5a-Q6 — no partial allowance', () => {
+    expect(localIciEligible({ q5: 'Yes', q6: 'No' })).toBe(true);
+    expect(localIciEligible({ q5: 'Yes', q6: null })).toBe(false);
+    expect(localIciEligible({ q5: null, q6: 'No' })).toBe(false);
+  });
+
+  it('Foreign IEI requires S5b-Q1 PLUS both aggregated Q2 and Q3 — an absent aggregate fails it', () => {
+    expect(foreignIeiEligible({ q1: '8', aggregatedQ2: 70, aggregatedQ3: 65 })).toBe(true);
+    expect(foreignIeiEligible({ q1: '8', aggregatedQ2: null, aggregatedQ3: 65 })).toBe(false);
+    expect(foreignIeiEligible({ q1: '8', aggregatedQ2: 70, aggregatedQ3: null })).toBe(false);
+    expect(foreignIeiEligible({ q1: null, aggregatedQ2: 70, aggregatedQ3: 65 })).toBe(false);
+  });
+
+  it('Foreign ICI requires aggregated Q4 PLUS S5b-Q8 — an absent aggregate fails it', () => {
+    expect(foreignIciEligible({ aggregatedQ4: 55, q8: 'Yes' })).toBe(true);
+    expect(foreignIciEligible({ aggregatedQ4: null, q8: 'Yes' })).toBe(false);
+    expect(foreignIciEligible({ aggregatedQ4: 55, q8: null })).toBe(false);
+  });
+});
+
 describe('Like-for-like cross-edition recalculation', () => {
   it('refuses direct comparison when reportable segment sets differ', () => {
     expect(canCompareHeadlinesDirectly(['retail', 'local'], ['retail', 'local'])).toBe(true);
@@ -197,7 +254,7 @@ describe('Like-for-like cross-edition recalculation', () => {
 
 describe('Methodology identity', () => {
   it('stamps runs with the candidate id@version', () => {
-    expect(methodologyVersionString()).toBe('CIS-SCORE-2026@0.14');
+    expect(methodologyVersionString()).toBe('CIS-SCORE-2026@0.15');
   });
 });
 

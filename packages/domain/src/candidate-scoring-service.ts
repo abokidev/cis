@@ -23,21 +23,23 @@ import { computeSufficiency, segmentDisplayState } from './sufficiency-service';
 import type { SegmentDisplayState } from '@cis/shared-types';
 
 /**
- * CIS-SCORE-2026 candidate scoring engine (Phase 11). Runs the real candidate
- * methodology, always under `TEST_UNAPPROVED`, and enforces the hard gate that
- * such output can never reach an official evidence pack, AI generation or a
- * released report. It also owns: item-level DMI/OMI completeness, firm-scope
- * -safe investor aggregation, the privacy-safe pooled public headline with its
- * mandatory composition disclosure (now reporting each segment's standalone
- * display state alongside, per Phase 21 §2.1), the Industry-SEI
- * NOT_CALCULABLE block, and the like-for-like cross-edition recalculation.
+ * CIS-SCORE-2026 v0.15 candidate scoring engine (Phase 11). Runs the real
+ * candidate methodology, always under `TEST_UNAPPROVED`, and enforces the hard
+ * gate that such output can never reach an official evidence pack, AI
+ * generation or a released report. It also owns: item-level DMI/OMI
+ * completeness, the §11 investor-side item-level completeness predicates,
+ * firm-scope-safe investor aggregation, the privacy-safe pooled public
+ * headline with its mandatory composition disclosure (reporting each
+ * segment's standalone display state alongside, per Phase 21 §2.1/v0.15
+ * `standalone_segment_display`), the Industry-SEI NOT_CALCULABLE block, and
+ * the like-for-like cross-edition recalculation.
  *
- * Its numeric core — every weight, transform and threshold — is still read
- * from the sole authoritative v0.14 YAML config (`CONFIG_FILENAME` in
- * `scoring-config.ts`); the v0.14 → v0.15 reconciliation (Phase 21 §2)
- * changed structure, not numbers — see README "Phase 21 §2" for exactly what
- * did and did not change, and why the file itself was not renamed or
- * reseeded under a new version without the actual v0.15 YAML in hand.
+ * Its numeric core — every weight, transform and threshold — is read from the
+ * sole authoritative v0.15 YAML config (`CONFIG_FILENAME` in
+ * `scoring-config.ts`); the v0.14 → v0.15 reconciliation (Phase 21 §2, closed
+ * once the actual YAML was supplied and diffed directly) changed structure,
+ * not numbers — see README "Phase 21 §2" for exactly what did and did not
+ * change.
  *
  * "Build the framework now. Do not invent the methodology." Every weight,
  * transform and threshold is read from the sole authoritative YAML config.
@@ -184,6 +186,93 @@ export async function firmDmiScores(
     out.push({ firmId, score });
   }
   return out;
+}
+
+// ─── §11 investor-side item-level completeness (v0.15 follow-up) ──────────────
+//
+// No prior version of this codebase computed per-investor-relationship
+// eligibility for these six index-completeness rules — `pooledHeadline` and
+// `computeLikeForLike` below are pure aggregators that have always taken
+// already-filtered unit scores as their input; nothing yet produces those
+// scores from raw survey answers (confirmed by search: no caller of either
+// function exists in this codebase outside tests). These six pure predicates
+// are the exact §11 rule each eventual investor-unit-score reader must apply
+// — built and tested now, against the methodology spec's table, so that
+// pipeline is wired against the correct partial-completeness allowances from
+// day one, rather than a full-completeness assumption that would silently
+// exclude genuinely eligible responses (the risk this follow-up flagged).
+// Each takes already-fetched raw answer values; none reads the database or
+// knows how a grid answer is stored — that remains the caller's job.
+// Reuses `isSubstantive` throughout — never a re-derived missing-data check.
+
+export interface RetailIeiAnswers {
+  q1: unknown;
+  q2: unknown;
+  q3: unknown;
+}
+/** Retail IEI (§11): S4-Q1, S4-Q2 and S4-Q3 all required — no partial allowance. */
+export function retailIeiEligible(a: RetailIeiAnswers): boolean {
+  return isSubstantive(a.q1) && isSubstantive(a.q2) && isSubstantive(a.q3);
+}
+
+export interface RetailIciAnswers {
+  q4: unknown;
+  q5: unknown;
+  q6: unknown;
+  q7: unknown;
+}
+/** Retail ICI (§11): S4-Q4 required, PLUS at least 2 of the behavioural bundle
+ *  (S4-Q5/Q6/Q7) — the explicit partial allowance this follow-up flagged. */
+export function retailIciEligible(a: RetailIciAnswers): boolean {
+  if (!isSubstantive(a.q4)) return false;
+  const behavioural = [a.q5, a.q6, a.q7].filter(isSubstantive).length;
+  return behavioural >= 2;
+}
+
+export interface LocalIeiAnswers {
+  /** The four S5a-Q1 grid-row values (service quality, reporting quality,
+   *  responsiveness, operational efficiency), however the caller parsed the
+   *  grid answer — this function only counts how many are substantive. */
+  q1Attributes: unknown[];
+  q2: unknown;
+}
+/** Local IEI (§11): at least 3 of the 4 S5a-Q1 attributes, PLUS S5a-Q2 — the
+ *  other explicit partial allowance this follow-up flagged. */
+export function localIeiEligible(a: LocalIeiAnswers): boolean {
+  const attributeCount = a.q1Attributes.filter(isSubstantive).length;
+  return attributeCount >= 3 && isSubstantive(a.q2);
+}
+
+export interface LocalIciAnswers {
+  q5: unknown;
+  q6: unknown;
+}
+/** Local ICI (§11): S5a-Q5 and S5a-Q6 both required — no partial allowance. */
+export function localIciEligible(a: LocalIciAnswers): boolean {
+  return isSubstantive(a.q5) && isSubstantive(a.q6);
+}
+
+export interface ForeignIeiAnswers {
+  q1: unknown;
+  /** The institution-level aggregate of firm-specific Q2
+   *  (`aggregate_firm_specific_within_institution: mean`) — null when no
+   *  contributing firm-specific answer exists yet, never invented as 0. */
+  aggregatedQ2: number | null;
+  aggregatedQ3: number | null;
+}
+/** Foreign IEI (§11): S5b-Q1 (shared) plus BOTH aggregated Q2 and Q3 — no
+ *  partial allowance; an absent aggregate fails it, same as a missing item. */
+export function foreignIeiEligible(a: ForeignIeiAnswers): boolean {
+  return isSubstantive(a.q1) && a.aggregatedQ2 !== null && a.aggregatedQ3 !== null;
+}
+
+export interface ForeignIciAnswers {
+  aggregatedQ4: number | null;
+  q8: unknown;
+}
+/** Foreign ICI (§11): aggregated Q4 plus S5b-Q8 — no partial allowance. */
+export function foreignIciEligible(a: ForeignIciAnswers): boolean {
+  return a.aggregatedQ4 !== null && isSubstantive(a.q8);
 }
 
 // ─── Firm-scope-safe investor aggregation (§5) ────────────────────────────────

@@ -222,7 +222,7 @@ export {
 } from './mission-board-service';
 export type { BoardContext, RemediationCohort } from './mission-board-service';
 
-// ── Phase 11: Candidate scoring methodology (CIS-SCORE-2026 v0.14) ────────────
+// ── Phase 11: Candidate scoring methodology (CIS-SCORE-2026 v0.15) ────────────
 export { isSubstantive, applyTransform, scoreItem, transformFor } from './scoring-transforms';
 export {
   assertRunOfficialUsable,
@@ -230,6 +230,12 @@ export {
   omiCompleteFirmIds,
   missingOmiRoleCounts,
   firmDmiScores,
+  retailIeiEligible,
+  retailIciEligible,
+  localIeiEligible,
+  localIciEligible,
+  foreignIeiEligible,
+  foreignIciEligible,
   firmSpecificInvestorAnswers,
   pooledHeadline,
   industrySeiState,
@@ -246,6 +252,12 @@ export type {
   EditionSegmentEvidence,
   LikeForLike,
   CandidateRunResult,
+  RetailIeiAnswers,
+  RetailIciAnswers,
+  LocalIeiAnswers,
+  LocalIciAnswers,
+  ForeignIeiAnswers,
+  ForeignIciAnswers,
 } from './candidate-scoring-service';
 
 // ── Phase 14: Firm private results (UX-FRM-RES-001) ──────────────────────────

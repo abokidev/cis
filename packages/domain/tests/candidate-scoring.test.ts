@@ -1,5 +1,5 @@
 /**
- * CIS-SCORE-2026 v0.14 candidate methodology — Phase 11 DoD (DB-backed).
+ * CIS-SCORE-2026 v0.15 candidate methodology — Phase 11 DoD (DB-backed).
  *
  *  - TEST_UNAPPROVED hard gate: a run produced under the candidate methodology
  *    can NEVER back an official evidence pack, AI (national) generation, firm
@@ -109,7 +109,7 @@ describe('TEST_UNAPPROVED hard gate — candidate output cannot reach official p
   it('runCandidateScoring always marks the run TEST_UNAPPROVED', async () => {
     const { run } = await runCandidateScoring(pool, editionId);
     expect(run.methodologyStatus).toBe('TEST_UNAPPROVED');
-    expect(run.methodologyVersion).toBe('CIS-SCORE-2026@0.14');
+    expect(run.methodologyVersion).toBe('CIS-SCORE-2026@0.15');
   });
 
   it('buildEvidencePack refuses a TEST_UNAPPROVED run with a specific error', async () => {
@@ -297,7 +297,7 @@ describe('Like-for-like cross-edition comparison is a new, immutable, labelled r
     expect(cmp.originalHeadlineB).toBe(90);
     // Persisted and immutable.
     const fetched = await getComparisonRun(pool, cmp.id);
-    expect(fetched?.methodologyVersion).toBe('CIS-SCORE-2026@0.14');
+    expect(fetched?.methodologyVersion).toBe('CIS-SCORE-2026@0.15');
   });
 });
 

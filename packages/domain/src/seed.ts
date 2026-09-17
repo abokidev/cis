@@ -194,8 +194,8 @@ export async function seedReferenceData(pool: Pool): Promise<SeededReferenceData
   await seedInstitutionEngagement(pool, edition.id);
 
   // ── Candidate scoring methodology (Phase 11) ──────────────────────────────────
-  // CIS-SCORE-2026 v0.14 candidate config, persisted from its authoritative YAML
-  // as version 14 / is_active=FALSE (TEST_UNAPPROVED — never the active config).
+  // CIS-SCORE-2026 v0.15 candidate config, persisted from its authoritative YAML
+  // as version 15 / is_active=FALSE (TEST_UNAPPROVED — never the active config).
   await seedCandidateScoringConfig(pool);
 
   // ── Managed wording defaults (Phase 15) ──────────────────────────────────────

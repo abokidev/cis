@@ -344,6 +344,7 @@ export {
   getReminderContent,
   stopReminders,
   assembleReminderText,
+  assembleReminderEmail,
   assembleFirstMessageText,
   ReminderContentError,
 } from './reminder-content-service';

@@ -27,17 +27,22 @@ function mapInstitution(r: RawInstitutionRow): Institution {
  * runs, exactly like every other piece of reference data it seeds.
  */
 export async function seedInstitutions(pool: Pool): Promise<void> {
+  // LCFE, NASD OTC and the three FMDQ entities are under CIS review — "not
+  // registered and not in collection" per the Engineering Screen Stitching
+  // Guide §8. Seeded inactive; `seedInstitutionEngagement` skips inactive
+  // institutions, so they carry no engagement row until CIS registers them
+  // and someone flips this flag — a data change, not a code change.
   await query(
     pool,
-    `INSERT INTO institutions (name) VALUES
-       ('Securities and Exchange Commission'),
-       ('Nigerian Exchange Limited'),
-       ('NASD OTC Securities Exchange'),
-       ('Lagos Commodities and Futures Exchange'),
-       ('FMDQ Securities Exchange Limited'),
-       ('Central Securities Clearing System'),
-       ('FMDQ Clear Limited'),
-       ('FMDQ Depository Limited')
+    `INSERT INTO institutions (name, is_active) VALUES
+       ('Securities and Exchange Commission', TRUE),
+       ('Nigerian Exchange Limited', TRUE),
+       ('NASD OTC Securities Exchange', FALSE),
+       ('Lagos Commodities and Futures Exchange', FALSE),
+       ('FMDQ Securities Exchange Limited', FALSE),
+       ('Central Securities Clearing System', TRUE),
+       ('FMDQ Clear Limited', FALSE),
+       ('FMDQ Depository Limited', FALSE)
      ON CONFLICT (name) DO NOTHING`,
   );
   await query(
@@ -90,6 +95,23 @@ export async function listInstitutionRoles(pool: Pool): Promise<InstitutionRole[
     pool,
     `SELECT institution_id, family_code FROM institution_roles
       ORDER BY family_code, institution_id`,
+  );
+  return res.rows.map(mapRole);
+}
+
+/** Every (institution, family) role for an institution CIS has actually
+ *  registered — excludes institutions under CIS review (`is_active = false`).
+ *  This is what `seedInstitutionEngagement` reads, so an institution "not
+ *  registered and not in collection" (Screen Stitching Guide §8) gets no
+ *  engagement row until CIS registers it. */
+export async function listActiveInstitutionRoles(pool: Pool): Promise<InstitutionRole[]> {
+  const res = await query<RawRoleRow>(
+    pool,
+    `SELECT r.institution_id, r.family_code
+       FROM institution_roles r
+       JOIN institutions i ON i.id = r.institution_id
+      WHERE i.is_active = TRUE
+      ORDER BY r.family_code, r.institution_id`,
   );
   return res.rows.map(mapRole);
 }

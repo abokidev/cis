@@ -2,9 +2,12 @@
  * UX-RET-007 v2.3 — Phase 17 DoD tests.
  *
  * Seven gates:
- *  1. STOP-language verification: every scheduled reminder carries STOP; only the
- *     separate initial link delivery does not. (Gate confirmed against actual
- *     reminder-timing-service.ts: Phase 13 exempted step 1 — now corrected.)
+ *  1. STOP-language verification (DEC-012, Phase 21 revert): a respondent's
+ *     FIRST scheduled reminder carries no STOP; every one after it does. The
+ *     separate initial link delivery is not in this cadence and never carries
+ *     STOP either way. (Phase 17 wrongly put STOP on every reminder including
+ *     the first, believing Phase 13's original exemption was a bug — it was
+ *     not; DEC-012 reaffirms the original rule.)
  *  2. SMS-length: reminder body + representative URL ≤ 160 chars.
  *  3. Progress-wording: two respondents at different positions get different phrasing.
  *  4. Channel-inheritance: reminder delivery channel matches UX-RET-001 preference.
@@ -34,6 +37,8 @@ import {
   setReminderSchedule,
   setReminderCap,
   nextDueReminder,
+  assembleReminderText,
+  assembleReminderEmail,
   type ReminderSchedule,
 } from '../src';
 import { getTestPool, runMigrations, truncateAllTables, closeTestPool } from '../../db/tests/setup';
@@ -82,8 +87,8 @@ async function investor(
 
 // ─── Gate 1: STOP-language verification ─────────────────────────────────────
 
-describe('Gate 1 — STOP-language (§2 Phase 17 verification)', () => {
-  it('every scheduled reminder step carries STOP', () => {
+describe('Gate 1 — STOP-language (DEC-012, Phase 21 revert)', () => {
+  it('carries STOP once a respondent has already received a reminder, never on their first', () => {
     const last = new Date('2026-06-01T00:00:00Z');
     const closeAt = new Date('2026-07-01T00:00:00Z');
     for (const sentSteps of [[], [1], [1, 2]]) {
@@ -96,12 +101,12 @@ describe('Gate 1 — STOP-language (§2 Phase 17 verification)', () => {
         asOf: new Date('2026-07-01T00:00:00Z'),
       });
       if (due !== null) {
-        expect(due.carriesStop).toBe(true);
+        expect(due.carriesStop).toBe(sentSteps.length > 0);
       }
     }
   });
 
-  it('step 1 (first scheduled reminder) carries STOP — Phase 13 bug corrected', () => {
+  it('step 1 (a respondent’s first scheduled reminder) carries NO STOP — DEC-012', () => {
     const last = new Date('2026-06-01T00:00:00Z');
     const due = nextDueReminder({
       schedule: SCHEDULE,
@@ -112,7 +117,25 @@ describe('Gate 1 — STOP-language (§2 Phase 17 verification)', () => {
       asOf: new Date(last.getTime() + 3 * DAY),
     });
     expect(due?.step).toBe(1);
-    expect(due?.carriesStop).toBe(true);
+    expect(due?.carriesStop).toBe(false);
+  });
+
+  it('the assembled SMS body actually omits/includes the STOP line, not just the flag', async () => {
+    // Real, rendered-output check — the flag alone proves nothing if the
+    // template still hardcodes the sentence regardless of it.
+    const { respondentId } = await investor('stop-line@x.example');
+    const noStop = await assembleReminderText(pool, respondentId, '/r/tok1', false);
+    const withStop = await assembleReminderText(pool, respondentId, '/r/tok1', true);
+    expect(noStop).not.toContain('STOP');
+    expect(withStop).toContain('Reply STOP to stop reminders.');
+  });
+
+  it('the assembled email carries no stop link text on a first reminder, and the live wording on later ones', async () => {
+    const { respondentId } = await investor('stop-email@x.example');
+    const noStop = await assembleReminderEmail(pool, respondentId, false);
+    const withStop = await assembleReminderEmail(pool, respondentId, true);
+    expect(noStop.stopLinkText).toBeNull();
+    expect(withStop.stopLinkText).toBe('Stop these reminders');
   });
 });
 
@@ -134,11 +157,20 @@ describe('Gate 2 — SMS length ≤ 160 chars', () => {
     expect(len).toBeLessThanOrEqual(SMS_MAX);
   });
 
-  it('reminder_text seed fits in one segment', async () => {
+  it('reminder_text seed fits in one segment (worst case: {{stop_line}} unexpanded)', async () => {
     const live = await getLiveContent(pool, 'reminder_content', 'reminder_text');
     expect(live).not.toBeNull();
     const len = measureSms(live!.version.body);
     expect(len).toBeLessThanOrEqual(SMS_MAX);
+  });
+
+  it('the ASSEMBLED reminder_text fits in one segment with the real STOP line filled in', async () => {
+    // The raw-seed check above strips {{stop_line}} to nothing, same as every
+    // other placeholder — it never measures what actually gets sent once
+    // assembleReminderText fills it in. Check the real worst case directly.
+    const { respondentId } = await investor('sms-len@x.example', 0);
+    const withStop = await assembleReminderText(pool, respondentId, 'x'.repeat(URL_BUDGET), true);
+    expect(withStop.length).toBeLessThanOrEqual(SMS_MAX);
   });
 
   it('a body that would exceed 160 chars is detectable by the length check', () => {

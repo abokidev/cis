@@ -22,9 +22,15 @@ import { DomainError } from './errors';
  *    from when someone STOPPED), never against a shared calendar date. The final
  *    step is timed against the edition CLOSE (`closes − N days`), a LIVE reference
  *    that moves if the close date moves.
- *  - STOP language is carried on every scheduled reminder without exception. The
- *    only STOP-free message is the separate one-time initial link delivery (Phase
- *    3/9), which is not part of this engine's cadence at all.
+ *  - STOP language: the FIRST scheduled reminder in the cadence carries no STOP;
+ *    every reminder after it does (DEC-012, "Declined: allowing STOP on the first
+ *    inactivity reminder" — reaffirmed 2026-08-20 estate reconciliation). STOP on
+ *    a first message asks someone to decide about future messages before they
+ *    know whether any will come; the cost is asymmetric — a second message
+ *    carrying STOP is a small annoyance, a first message carrying STOP
+ *    permanently removes people who would have completed. This is DISTINCT from
+ *    the separate one-time initial link delivery (Phase 3/9), which was never
+ *    part of this engine's cadence and never carries STOP either way.
  *  - A configurable CAP bounds total reminders; the schedule and cap are governed
  *    config (`reminders.schedule` / `reminders.cap`), editable during fieldwork.
  *  - INVESTOR-SIDE ONLY (retail/local/foreign). Firm-side seat-holders (S1/S2/S3)
@@ -108,7 +114,13 @@ export interface DueReminder {
 /**
  * The single reminder (if any) due for one response at `asOf`: the earliest
  * enabled, not-yet-sent step whose trigger time has passed, provided the cap is
- * not reached. STOP is carried on every scheduled reminder. Pure — no DB, no clock.
+ * not reached. Pure — no DB, no clock.
+ *
+ * STOP flag (DEC-012): the FIRST reminder this respondent ever receives from
+ * this cadence carries no STOP — `sentSteps` is empty. Every reminder after it
+ * does. This is deliberately based on "has this respondent received any
+ * reminder yet," not on the literal step NUMBER, so it stays correct even if
+ * step 1 is disabled and step 2 fires first for someone.
  */
 export function nextDueReminder(params: {
   schedule: ReminderSchedule;
@@ -128,7 +140,8 @@ export function nextDueReminder(params: {
       return {
         step: s.step,
         scheduledFor: trigger,
-        carriesStop: true,
+        // DEC-012: no STOP on this respondent's first reminder.
+        carriesStop: params.sentSteps.length > 0,
       };
     }
   }

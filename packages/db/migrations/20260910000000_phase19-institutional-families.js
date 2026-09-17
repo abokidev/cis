@@ -68,16 +68,20 @@ exports.up = async (pgm) => {
   );
 
   // Seed every institution named in the controlled extension's mapping table.
+  // LCFE, NASD OTC and the three FMDQ entities are under CIS review — "not
+  // registered and not in collection" per the Engineering Screen Stitching
+  // Guide §8 (Phase 21) — seeded inactive; seedInstitutionEngagement skips
+  // inactive institutions.
   pgm.sql(`
-    INSERT INTO institutions (name) VALUES
-      ('Securities and Exchange Commission'),
-      ('Nigerian Exchange Limited'),
-      ('NASD OTC Securities Exchange'),
-      ('Lagos Commodities and Futures Exchange'),
-      ('FMDQ Securities Exchange Limited'),
-      ('Central Securities Clearing System'),
-      ('FMDQ Clear Limited'),
-      ('FMDQ Depository Limited')
+    INSERT INTO institutions (name, is_active) VALUES
+      ('Securities and Exchange Commission', TRUE),
+      ('Nigerian Exchange Limited', TRUE),
+      ('NASD OTC Securities Exchange', FALSE),
+      ('Lagos Commodities and Futures Exchange', FALSE),
+      ('FMDQ Securities Exchange Limited', FALSE),
+      ('Central Securities Clearing System', TRUE),
+      ('FMDQ Clear Limited', FALSE),
+      ('FMDQ Depository Limited', FALSE)
   `);
   pgm.sql(`
     INSERT INTO institution_roles (institution_id, family_code)

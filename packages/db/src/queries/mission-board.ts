@@ -1,7 +1,7 @@
 import { Pool } from 'pg';
 import type { InstrumentFamilyCode } from '@cis/shared-types';
 import { query } from '../client';
-import { listInstitutionRoles } from './institutions';
+import { listActiveInstitutionRoles } from './institutions';
 
 /**
  * Mission-board persistent state. Only `institution_engagement` is stored;
@@ -59,12 +59,15 @@ const ENG_SELECT = `
     FROM institution_engagement e
     JOIN institutions i ON i.id = e.institution_id`;
 
-/** Seed one engagement row per (institution, family) role that exists —
- *  status not_started, target_by NULL (DECISION NEEDED; condition 16 stays
- *  inert until a real date is set). A ninth institution of an existing role
- *  needs no code change here: it is picked up from `institution_roles`. */
+/** Seed one engagement row per (institution, family) role CIS has actually
+ *  registered — status not_started, target_by NULL (DECISION NEEDED;
+ *  condition 16 stays inert until a real date is set). A ninth institution of
+ *  an existing role needs no code change here: it is picked up from
+ *  `institution_roles`, once registered (`is_active = TRUE`; §8 of the Screen
+ *  Stitching Guide — LCFE, NASD and the FMDQ entities are "under CIS review
+ *  and not registered and not in collection" and get no row until then). */
 export async function seedInstitutionEngagement(pool: Pool, editionId: string): Promise<void> {
-  const roles = await listInstitutionRoles(pool);
+  const roles = await listActiveInstitutionRoles(pool);
   for (const role of roles) {
     await query(
       pool,

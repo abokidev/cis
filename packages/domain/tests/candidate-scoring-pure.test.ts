@@ -22,6 +22,14 @@ import {
   localIciEligible,
   foreignIeiEligible,
   foreignIciEligible,
+  retailIeiRelationshipScore,
+  retailIciRelationshipScore,
+  localIeiRelationshipScore,
+  localIciRelationshipScore,
+  foreignIeiUnitScore,
+  foreignIciUnitScore,
+  foreignIeiFirmSpecificObservation,
+  foreignIciFirmSpecificObservation,
   type BoardContext,
   type EditionSegmentEvidence,
 } from '../src';
@@ -382,5 +390,61 @@ describe('Mission board — Industry SEI methodology block', () => {
       }),
     );
     expect(cards.some((c) => c.kind === 'methodology_block')).toBe(false);
+  });
+});
+
+describe('Phase 22 §7/§8 relationship-level investor scores (pure)', () => {
+  const n1 = (x: number): number => ((x - 1) / 9) * 100;
+
+  it('retailIeiRelationshipScore = mean(N1(Q1),N1(Q2),N1(Q3)), null when ineligible', () => {
+    expect(retailIeiRelationshipScore({ q1: '8', q2: '7', q3: '9' })).toBeCloseTo(
+      (n1(8) + n1(7) + n1(9)) / 3,
+      6,
+    );
+    expect(retailIeiRelationshipScore({ q1: '8', q2: null, q3: '9' })).toBeNull();
+  });
+
+  it('retailIciRelationshipScore = 0.5(N1(Q4)) + 0.5(mean of valid Q5-Q7 after N8), null when ineligible', () => {
+    const score = retailIciRelationshipScore({ q4: '8', q5: 'Yes', q6: 'No', q7: null });
+    expect(score).toBeCloseTo(0.5 * n1(8) + 0.5 * ((0 + 100) / 2), 6);
+    // Only 1 of 3 behavioural items — below §11's allowance.
+    expect(retailIciRelationshipScore({ q4: '8', q5: 'Yes', q6: null, q7: null })).toBeNull();
+  });
+
+  it('localIeiRelationshipScore = mean(S5a-Q1_composite, Q2), tolerating 3 of 4 attributes', () => {
+    const score = localIeiRelationshipScore({ q1Attributes: ['8', '8', '8', null], q2: '8' });
+    expect(score).toBeCloseTo(n1(8), 6); // every valid input is 8, so composite and Q2 agree
+    expect(localIeiRelationshipScore({ q1Attributes: ['8', '8', null, null], q2: '8' })).toBeNull();
+  });
+
+  it('localIciRelationshipScore = mean(N1(Q5), N8(Q6)), null when either is missing', () => {
+    expect(localIciRelationshipScore({ q5: '8', q6: 'No' })).toBeCloseTo((n1(8) + 100) / 2, 6);
+    expect(localIciRelationshipScore({ q5: '8', q6: null })).toBeNull();
+  });
+
+  it('foreignIeiUnitScore aggregates firm-specific Q2/Q3 across the institution BEFORE combining with shared Q1', () => {
+    const score = foreignIeiUnitScore({ q1: '8', q2Values: ['9', '7'], q3Values: ['6'] });
+    const aggregatedQ2 = (n1(9) + n1(7)) / 2;
+    const aggregatedQ3 = n1(6);
+    expect(score).toBeCloseTo((n1(8) + aggregatedQ2 + aggregatedQ3) / 3, 6);
+    // No contributing firm-specific Q2/Q3 at all — an absent aggregate fails
+    // eligibility, same as a missing item (§11).
+    expect(foreignIeiUnitScore({ q1: '8', q2Values: [], q3Values: [] })).toBeNull();
+  });
+
+  it('foreignIciUnitScore aggregates firm-specific Q4 across the institution before combining with shared Q8', () => {
+    const score = foreignIciUnitScore({ q4Values: ['9', '7'], q8: '8' });
+    expect(score).toBeCloseTo(((n1(9) + n1(7)) / 2 + n1(8)) / 2, 6);
+    expect(foreignIciUnitScore({ q4Values: [], q8: '8' })).toBeNull();
+  });
+
+  it('firm-attributable foreign observations use ONLY firm-specific components — never the shared items', () => {
+    // Same firm-specific inputs as above, but per-relationship rather than
+    // aggregated across the institution — a different, smaller mean.
+    expect(foreignIeiFirmSpecificObservation({ q2: '9', q3: '6' })).toBeCloseTo(
+      (n1(9) + n1(6)) / 2,
+      6,
+    );
+    expect(foreignIciFirmSpecificObservation({ q4: '9' })).toBeCloseTo(n1(9), 6);
   });
 });

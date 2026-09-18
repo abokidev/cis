@@ -60,3 +60,42 @@ export async function getFirmAttributableInvestorAnswers(
   );
   return res.rows.map((x) => ({ questionId: x.question_id, scope: x.scope, a: x.a }));
 }
+
+/**
+ * Every response for one investor instrument (S4/S5a/S5b) across an entire
+ * edition — the raw material for Phase 22's relationship/unit-level investor
+ * scoring. One row per (respondent, question, rated firm); a SHARED item
+ * (e.g. S5b-Q1/Q8) carries `ratedFirmId: null` — the same distinction
+ * `getFirmAttributableInvestorAnswers` already enforces, just ungrouped by
+ * firm so a caller can build one relationship score per respondent×firm and
+ * then re-aggregate it BOTH by respondent (national unit scores) and by firm
+ * (`Firm_Investor_IEI_f`/`Firm_ICI_f`) from the exact same underlying data —
+ * one computation, two aggregations, never two computations.
+ */
+export async function getInvestorInstrumentAnswers(
+  pool: Pool,
+  editionId: string,
+  instrumentCode: string,
+): Promise<
+  Array<{ respondentId: string; questionId: string; ratedFirmId: string | null; a: string | null }>
+> {
+  const res = await query<{
+    respondent_id: string;
+    question_id: string;
+    rated_firm_id: string | null;
+    a: string | null;
+  }>(
+    pool,
+    `SELECT r.respondent_id, r.question_id, r.rated_firm_id, (r.answer->>'a') AS a
+       FROM responses r
+       JOIN respondents resp ON resp.id = r.respondent_id
+      WHERE resp.edition_id = $1 AND resp.instrument_code = $2`,
+    [editionId, instrumentCode],
+  );
+  return res.rows.map((x) => ({
+    respondentId: x.respondent_id,
+    questionId: x.question_id,
+    ratedFirmId: x.rated_firm_id,
+    a: x.a,
+  }));
+}

@@ -1883,3 +1883,155 @@ pass against a live Postgres. `pnpm turbo build lint typecheck` clean across all
 untouched by this phase). `pnpm audit` reports 3 pre-existing devDependency advisories
 (`js-yaml` via `eslint`, `vitest`/`@vitest/mocker`) — none introduced by this phase (no
 `package.json` or lockfile changed), all toolchain-only with no runtime/production exposure.
+
+## Phase 22 — Investor-Unit Scoring Pipeline (Wiring, Not Inventing)
+
+Closes the last piece of open scope from the v0.15 reconciliation: the previous session's
+finding was that `pooledHeadline` and `computeLikeForLike` were correct, tested, PURE
+functions with no production caller anywhere in the codebase, and that the six §11 eligibility
+predicates were built and correct in isolation but never actually invoked against real answers.
+This phase is assembly, not invention — every formula was already in the methodology spec
+(§7/§8/§9/§10/§11/§13), every component piece already existed; the job was wiring them into
+one real, database-backed pipeline and proving it with a test that exercises real seeded
+`responses` rows through the real production entry point, `runCandidateScoring`.
+
+### §2.1 — Relationship-level scores: one implementation, shared
+
+`candidate-scoring-service.ts` gained the real relationship-level score functions
+(`retailIeiRelationshipScore`, `retailIciRelationshipScore`, `localIeiRelationshipScore`,
+`localIciRelationshipScore`, `foreignIeiUnitScore`, `foreignIciUnitScore`) plus the
+firm-attribution-only foreign variants (`foreignIeiFirmSpecificObservation`,
+`foreignIciFirmSpecificObservation`). None of these existed before this phase — the firm-side
+combined-score logic Phase 11 built (`Firm_Investor_IEI_f`/`Firm_ICI_f`, §7.4/§8.4) had never
+actually been implemented either; `firmSpecificInvestorAnswers` was a raw fetch with no
+aggregation. So there was nothing to extract — instead, each relationship score was built ONCE
+and is read by BOTH consumers from the same underlying grouped data: `retailInvestorObservations`
+/`localInvestorObservations`/`foreignInvestorFirmObservations` return one array of
+`{respondentId, firmId, iei, ici}` per instrument, re-aggregated two ways — by respondent for
+the national unit score (`investorSegmentUnitScores`), by firm for the combined score
+(`firmInvestorScores`) — never two separate computations. Each applies its §11 eligibility
+predicate first (built in the prior follow-up); an ineligible relationship contributes to
+neither aggregation, never imputed to neutral.
+
+Foreign is deliberately NOT forced into the same relationship-then-collapse shape as
+retail/local, per §7.3/§8.3's own explicit wording — it's computed directly per institution
+(`foreignIeiUnitScore`/`foreignIciUnitScore`), aggregating firm-specific `Q2_i`/`Q3_i`/`Q4_i`
+across every firm that institution rated BEFORE combining with the shared `Q1`/`Q8`. S5a-Q1 is
+stored as one grid response (`{row: {Rating: value}}`) under a single question code, not four
+separately-coded rows — `parseS5aQ1Attributes` extracts the four named attributes the "at least
+3 of 4" rule needs directly from that JSON, rather than pretending each attribute has its own
+DB-queryable code (it doesn't).
+
+**Flagged framework interpretation, not invented silently**: the methodology names a national
+`Foreign_IEI_unit_i`/`Foreign_ICI_unit_i` but never a "Foreign_IEI_relationship" for FIRM
+attribution — only "firm-specific experience observations attributable to f, using only the
+firm-specific components." `foreignIeiFirmSpecificObservation`/`foreignIciFirmSpecificObservation`
+apply the same "mean of valid firm-specific components" shape every other relationship score
+uses, for consistency. This is documented in code and here rather than silently assumed.
+
+### §2.2 — Investor-unit collapse + §11 wiring; §2.3 — segment display state
+
+`investorSegmentUnitScores(pool, editionId)` is principle 7's actual implementation
+("multi-firm respondents receive one national respondent/institution weight after their firm
+relationships are collapsed") — retail/local collapse to one unit per respondent (the mean of
+that respondent's valid relationship scores across every firm they rated); foreign is already
+one score per institution. Segment eligibility for pooling reuses Phase 21's existing
+`segmentDisplayState`/`REPORTABLE_AT` — the methodology never defines a separate
+pooling-specific floor number (§7.5: "only if it clears its reportability floor," then "let `E`
+be the set of REPORTABLE segments" — the same word, the same threshold), so none was invented.
+
+### §2.4/§2.5 — `pooledHeadline`'s real caller, with real persistence
+
+`runInvestorPooling(pool, editionId, calculationRunId)` is the real caller `pooledHeadline` has
+never had: pulls real unit scores, calls `pooledHeadline` for IEI and ICI, and persists each as
+a genuine `calculated_results` row (`subject_type: 'market'`, `metric_code: 'IEI'`/`'ICI'`,
+under whatever run it's given — always `TEST_UNAPPROVED` via that run). It is now a real stage
+of `runCandidateScoring` itself, not a separate parallel entry point.
+
+The §9 structured composition disclosure needed somewhere to live that a hand-built `reason`
+string couldn't honestly provide — a new migration
+(`20260918000000_phase22-investor-pooling.js`) adds a single nullable `composition JSONB`
+column to `calculated_results`, populated ONLY for a pooled market IEI/ICI row, NULL for every
+other result. A non-contributing segment (below-floor) is OMITTED from the array entirely —
+`pooledHeadline`'s own `composition` field already only lists reportable segments; this only
+persists that unchanged, never zeroing a segment that didn't contribute.
+
+A below-floor segment is excluded from the headline and denominator regardless of whether its
+OWN standalone state is `SHOWN_DIRECTIONALLY` or `SUPPRESSED` — that distinction only ever
+governs standalone display (`pooledHeadline`'s independent `standaloneState` field, from Phase
+21 §2.1), never pooling eligibility. Verified explicitly: a local segment at n=3 (`SUPPRESSED`)
+and a foreign segment at n=15 (`SHOWN_DIRECTIONALLY`) are BOTH excluded from the pooled headline
+identically, while their own standalone states remain genuinely different facts.
+
+### §2.6 — `Firm_SEI_f`, now from a real `Firm_Investor_IEI_f`
+
+`runCandidateScoring` gained a real per-firm SEI stage: for every firm with a valid `S1-Q11`
+(`Firm_Expectation_f`) and a valid `Firm_Investor_IEI_f` (now real, from `firmInvestorScores` —
+never a stub), it computes `Firm_SEI_f = 100 - abs(Firm_Expectation_f - Firm_Investor_IEI_f)`
+and persists it as a firm-level `calculated_results` row, `REPORTABLE` unconditionally per §10
+("private-report calculable... regardless of volume"). This is NOT the public Industry SEI
+eligibility gate — `industrySeiState()` still reads from a DIFFERENT, separately-signed-off run
+and its `industry_sei_min_firm_investor_observations` floor is still `PENDING_VALIDATOR`,
+completely untouched, exactly as instructed.
+
+### §2.7 — `computeLikeForLike`, wired the same way
+
+`recordInvestorLikeForLike(pool, {metricCode, editionAId, editionBId, runAId, runBId})` builds
+each edition's real `EditionSegmentEvidence` from data `runInvestorPooling` already persisted
+for that edition's run (real unit scores, real reportable set, the real published headline read
+back from `calculated_results`) — never a hand-built fixture — then calls the existing
+`recordLikeForLikeComparison` exactly as before. The same "give the pure function a real
+caller" fix applied to `pooledHeadline` above, applied to the second stranded function.
+
+### No orphan pure functions remain from this phase's work
+
+Every function Phase 22 touched has a real, database-backed caller reachable from
+`runCandidateScoring`: the relationship scores are called by `retailInvestorObservations`/
+`localInvestorObservations`/`foreignInvestorUnitScores`/`foreignInvestorFirmObservations`,
+which are called by `investorSegmentUnitScores`/`firmInvestorScores`, which are called by
+`runInvestorPooling` and the new firm-SEI stage, which are both called by `runCandidateScoring`
+itself. `recordInvestorLikeForLike` calls `investorEditionSegmentEvidence` (which calls
+`investorSegmentUnitScores`) then the existing `recordLikeForLikeComparison`. Nothing new added
+here is a pure function awaiting a caller that doesn't exist.
+
+### Explicit constraints respected, not re-litigated
+
+- No shared market-level item (`S5b-Q1`/`S5b-Q8`) enters a firm-specific record —
+  `foreignInvestorFirmObservations` reads only `S5b-Q2`/`Q3`/`Q4`, structurally, the same rule
+  Phase 11 already enforced for `firmSpecificInvestorAnswers`.
+- Institutional responses (SEC/NGX/CSCS/LCFE/NASD/FMDQ) never enter this pipeline — not via a
+  runtime check, but by construction: `getInvestorInstrumentAnswers` is only ever called with
+  `'S4'`/`'S5a'`/`'S5b'`, never an institutional instrument code.
+- Every new `calculated_results` row this phase produces is still barred from official use —
+  verified directly: `buildEvidencePack` against a `runCandidateScoring` run still throws
+  `TEST_UNAPPROVED_RUN`, IEI/ICI/firm-SEI rows included, no exception introduced.
+- No official imputation: every aggregation in this phase uses "mean of valid," excluding a
+  missing/ineligible item rather than substituting a neutral value.
+
+### The production entry point
+
+`runCandidateScoring(pool, editionId)` (`candidate-scoring-service.ts`) — unchanged as the
+single entry point, now with two additional real stages (firm-side SEI, investor-side IEI/ICI
+pooling) alongside its existing DMI and Industry-SEI-NOT_CALCULABLE stages.
+`recordInvestorLikeForLike` is the equivalent real entry point for the like-for-like
+comparison, called separately (per the existing `recordLikeForLikeComparison` pattern) once two
+signed runs exist to compare.
+
+### Verification
+
+A new `Phase 22` describe block in `candidate-scoring.test.ts` seeds 50 real respondents (32
+retail — 30 fully eligible, one exactly at §11's 2-of-3 partial-allowance boundary, one
+deliberately 1-of-3 and excluded from ICI only; 3 local, deliberately below `SUPPRESS_BELOW`;
+15 foreign, deliberately between `SUPPRESS_BELOW` and `REPORTABLE_AT`) and calls the real
+`runCandidateScoring` — not `pooledHeadline` in isolation — asserting the real, persisted
+`calculated_results` row for IEI/ICI at `subject_type: 'market'`, its composition (retail only,
+local/foreign omitted, never zeroed), the real firm-level SEI, and the `TEST_UNAPPROVED` gate.
+A second test exercises `investorSegmentUnitScores`/`firmInvestorScores` directly to confirm
+they expose the same real data. A third seeds two real editions with genuinely differing
+reportable segment sets and calls `recordInvestorLikeForLike`, asserting the correct common
+segment set, both recalculated values, and both original headlines preserved. Pure-function
+coverage for the new relationship scores was added to `candidate-scoring-pure.test.ts`.
+Verified: `@cis/domain` (29 files, 336 tests) and `@cis/db` (3 files, 25 tests, sequential)
+green against a live Postgres; `pnpm turbo build lint typecheck` clean across all 8 packages;
+`pnpm audit` unchanged (the same 3 pre-existing devDependency advisories, no `package.json` or
+lockfile touched).

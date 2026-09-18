@@ -384,8 +384,20 @@ export type SegmentDisplayState = 'REPORTABLE' | 'SHOWN_DIRECTIONALLY' | 'SUPPRE
 
 export type SubjectType = 'firm' | 'segment' | 'market';
 
+/** Phase 22 (§9) — a pooled public headline's structured composition
+ *  disclosure: which segments actually contributed and their achieved unit
+ *  count. A non-contributing segment is OMITTED from this array entirely —
+ *  never present with a zero count. */
+export interface CalculatedResultComposition {
+  segment: string;
+  label: string;
+  count: number;
+}
+
 /** Immutable calculation result. BANDED carries a band, never a point value;
- *  SUPPRESSED carries neither value nor band. */
+ *  SUPPRESSED carries neither value nor band. `composition` is populated only
+ *  for a pooled public headline result (`subjectType: 'market'`, `metricCode`
+ *  IEI/ICI) — null for every other result. */
 export interface CalculatedResult {
   id: string;
   calculationRunId: string;
@@ -398,6 +410,7 @@ export interface CalculatedResult {
   denominator: number;
   sufficiencyState: SufficiencyState;
   reason: string | null;
+  composition: CalculatedResultComposition[] | null;
   createdAt: Date;
 }
 

@@ -4,6 +4,7 @@ import type {
   CalculationRunType,
   CalculationRunStatus,
   CalculatedResult,
+  CalculatedResultComposition,
   EligibilityResult,
   SubjectType,
   SufficiencyState,
@@ -115,6 +116,7 @@ interface RawResultRow {
   denominator: number;
   sufficiency_state: SufficiencyState;
   reason: string | null;
+  composition: CalculatedResultComposition[] | null;
   created_at: Date;
 }
 
@@ -131,6 +133,7 @@ function mapResult(row: RawResultRow): CalculatedResult {
     denominator: row.denominator,
     sufficiencyState: row.sufficiency_state,
     reason: row.reason,
+    composition: row.composition,
     createdAt: row.created_at,
   };
 }
@@ -148,13 +151,14 @@ export async function insertCalculatedResult(
     denominator: number;
     sufficiencyState: SufficiencyState;
     reason?: string | null;
+    composition?: CalculatedResultComposition[] | null;
   },
 ): Promise<CalculatedResult> {
   const result = await query<RawResultRow>(
     pool,
     `INSERT INTO calculated_results
-       (calculation_run_id, subject_type, subject_id, metric_code, value, band, n, denominator, sufficiency_state, reason)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+       (calculation_run_id, subject_type, subject_id, metric_code, value, band, n, denominator, sufficiency_state, reason, composition)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
      RETURNING *`,
     [
       data.calculationRunId,
@@ -167,6 +171,7 @@ export async function insertCalculatedResult(
       data.denominator,
       data.sufficiencyState,
       data.reason ?? null,
+      data.composition !== undefined ? JSON.stringify(data.composition) : null,
     ],
   );
   const row = result.rows[0];

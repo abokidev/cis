@@ -2035,3 +2035,42 @@ Verified: `@cis/domain` (29 files, 336 tests) and `@cis/db` (3 files, 25 tests, 
 green against a live Postgres; `pnpm turbo build lint typecheck` clean across all 8 packages;
 `pnpm audit` unchanged (the same 3 pre-existing devDependency advisories, no `package.json` or
 lockfile touched).
+
+## UX-INS-003 shared-response resume — confirmed correct, no code change
+
+A follow-up question asked specifically about `UX-INS-003` (the regulator survey — SEC/NGX/
+CSCS/etc.): when a regulator's survey link (one recovery token per `(edition, institution,
+family)` engagement, per Phase 12's `UX-OPS-007` issuance) is opened by a second person after a
+first person entered answers but didn't submit, does the second opener see the first opener's
+answers correctly resumed, or does reopening reset/overwrite them?
+
+**Confirmed correct — no code change needed.** `getResumeByToken` (`journey-service.ts`) is a
+plain lookup: `getRespondentByRecoveryToken` resolves the token to its one respondent row (minted
+once, at issuance, by `issueSurveyLink`), then `getResume` returns that respondent's full,
+unfiltered draft list. There is no per-open reset, no session/device fingerprint, no "second
+opener wins" branch — every open of the same link resolves to the identical respondent id and
+sees whatever is currently saved, because `upsertDraft` is keyed on
+`(respondent_id, question_id, rated_firm_id)` and only ever updates one answer at a time,
+never clearing the respondent's other drafts. This is a genuine single-shared-response design:
+the token is a durable handle onto one response record, not a per-person key. The only things
+that ever replace that respondent/token are explicit study-team actions in the admin app
+(`saveContact`'s cancel-and-restart on a re-invited role, or `reopenDeclined`) — never a resume-GET.
+
+New test: `regulator-engagement.test.ts`, "UX-INS-003 shared-response resume" — issues a real
+survey link, resumes it once and saves a partial answer, resumes the SAME token a second time
+("as if" a different person), and asserts the second resume returns the identical respondent id
+with the first answer still present, unresetted.
+
+**`UX-INS-001`/`UX-INS-002` were NOT touched and remain correctly independent per colleague.**
+Those two journeys are structurally the opposite by design: `createReferral`/
+`createColleagueInvite` (`journey-service.ts`) each insert a brand-new respondent row per
+invite, and each colleague only gets their own recovery token once they individually register
+contact — N colleagues means N respondents means N independent tokens, never a shared one. Their
+own controlled artefacts are explicit that "colleagues answer independently and their responses
+are not linked," which is what Phase 3 already built and is exactly right for individual
+institutional investors giving personal opinions (as opposed to `UX-INS-003`'s one institutional
+position). No code in either journey was changed.
+
+Verified: `@cis/domain` full suite (29 files, 337 tests) and `@cis/db` (3 files, 25 tests,
+sequential) green against a live Postgres; `pnpm turbo build lint typecheck` clean; `pnpm audit`
+unchanged (no dependency change was needed for a test-only confirmation).

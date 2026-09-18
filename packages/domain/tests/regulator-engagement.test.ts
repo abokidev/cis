@@ -32,6 +32,7 @@ import {
   reopenDeclined,
   recordHistory,
   getResumeByToken,
+  saveDraftAnswer,
   getMissionBoard,
   NATIONAL_SECTIONS,
   evaluateSection,
@@ -215,6 +216,40 @@ describe('Phase 3 integration — a real per-role survey access token', () => {
     const resume = await getResumeByToken(pool, token);
     expect(resume).not.toBeNull();
     expect(resume!.respondent.instrumentCode).toBe('I-SEC');
+  });
+});
+
+describe('UX-INS-003 shared-response resume — the single token is a durable handle onto ONE response, not a per-opener key', () => {
+  it('reopening the same regulator survey link resumes the SAME respondent record with the prior answer intact — never a reset or a fresh respondent', async () => {
+    await saveContact(pool, editionId, sec, 'A', CONTACT);
+    const view = await issueSurveyLink(pool, editionId, sec, 'A', { targetBy: '2026-09-01' });
+    const token = view.surveyLink!.split('/').pop()!;
+
+    // "First person" opens the link and enters a partial answer, but does
+    // not submit.
+    const firstOpen = await getResumeByToken(pool, token);
+    expect(firstOpen).not.toBeNull();
+    expect(firstOpen!.drafts).toHaveLength(0);
+    const item = firstOpen!.items.find((i) => i.id === 'I-SEC-Q2')!;
+    const answer = { a: item.options?.[0] ?? 'x' };
+    await saveDraftAnswer(pool, firstOpen!.respondent.id, {
+      questionId: item.id,
+      ratedFirmId: null,
+      answer,
+      step: 1,
+    });
+
+    // "Second person" opens the exact same link afterward.
+    const secondOpen = await getResumeByToken(pool, token);
+    expect(secondOpen).not.toBeNull();
+
+    // Same shared response record — this is one institutional position, not
+    // a fresh respondent for whoever clicked second.
+    expect(secondOpen!.respondent.id).toBe(firstOpen!.respondent.id);
+    // The first opener's answer resumed correctly — not reset, not overwritten.
+    expect(secondOpen!.drafts).toHaveLength(1);
+    expect(secondOpen!.drafts[0]!.questionId).toBe('I-SEC-Q2');
+    expect(secondOpen!.drafts[0]!.answer).toEqual(answer);
   });
 });
 

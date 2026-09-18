@@ -53,3 +53,15 @@ export {
   INSTRUMENT_CODES,
   REGISTER_ITEM_COUNT,
 } from './seed/register';
+export {
+  importSurveyRegister,
+  validateRegisterPayload,
+  RegisterIngestionError,
+  REGISTER_PAYLOAD_SCHEMA_VERSION,
+} from './seed/register-ingestion';
+export type {
+  RegisterPayloadSource,
+  RegisterPayloadItem,
+  RegisterImportPayload,
+  RegisterInstrumentMeta,
+} from './seed/register-ingestion';

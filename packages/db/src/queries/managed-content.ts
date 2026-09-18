@@ -352,8 +352,11 @@ export async function seedManagedContentDefaults(
       }),
     },
     {
+      // {{stop_line}} is filled in by assembleReminderText — empty on a
+      // respondent's first reminder, "Reply STOP to stop reminders." on every
+      // one after it (DEC-012). Never hardcode STOP into this body.
       subKey: 'reminder_text',
-      body: 'Your investor survey is still waiting. Answers saved.\n{{recovery_url}}\nReply STOP to stop reminders.',
+      body: 'Your investor survey is still waiting. Answers saved.\n{{recovery_url}}{{stop_line}}',
     },
     {
       subKey: 'reminders_stopped',

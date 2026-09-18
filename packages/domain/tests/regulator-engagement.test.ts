@@ -32,6 +32,7 @@ import {
   reopenDeclined,
   recordHistory,
   getResumeByToken,
+  saveDraftAnswer,
   getMissionBoard,
   NATIONAL_SECTIONS,
   evaluateSection,
@@ -218,6 +219,40 @@ describe('Phase 3 integration — a real per-role survey access token', () => {
   });
 });
 
+describe('UX-INS-003 shared-response resume — the single token is a durable handle onto ONE response, not a per-opener key', () => {
+  it('reopening the same regulator survey link resumes the SAME respondent record with the prior answer intact — never a reset or a fresh respondent', async () => {
+    await saveContact(pool, editionId, sec, 'A', CONTACT);
+    const view = await issueSurveyLink(pool, editionId, sec, 'A', { targetBy: '2026-09-01' });
+    const token = view.surveyLink!.split('/').pop()!;
+
+    // "First person" opens the link and enters a partial answer, but does
+    // not submit.
+    const firstOpen = await getResumeByToken(pool, token);
+    expect(firstOpen).not.toBeNull();
+    expect(firstOpen!.drafts).toHaveLength(0);
+    const item = firstOpen!.items.find((i) => i.id === 'I-SEC-Q2')!;
+    const answer = { a: item.options?.[0] ?? 'x' };
+    await saveDraftAnswer(pool, firstOpen!.respondent.id, {
+      questionId: item.id,
+      ratedFirmId: null,
+      answer,
+      step: 1,
+    });
+
+    // "Second person" opens the exact same link afterward.
+    const secondOpen = await getResumeByToken(pool, token);
+    expect(secondOpen).not.toBeNull();
+
+    // Same shared response record — this is one institutional position, not
+    // a fresh respondent for whoever clicked second.
+    expect(secondOpen!.respondent.id).toBe(firstOpen!.respondent.id);
+    // The first opener's answer resumed correctly — not reset, not overwritten.
+    expect(secondOpen!.drafts).toHaveLength(1);
+    expect(secondOpen!.drafts[0]!.questionId).toBe('I-SEC-Q2');
+    expect(secondOpen!.drafts[0]!.answer).toEqual(answer);
+  });
+});
+
 describe('History is free-text and append-only', () => {
   it('accumulates arbitrary free text, newest first, with no category taxonomy', async () => {
     await saveContact(pool, editionId, cscs, 'C', CONTACT);
@@ -260,12 +295,24 @@ describe('Multi-role institution — CSCS holds Family C AND Family D independen
 });
 
 describe('The institutional roster', () => {
-  it('lists one row per (institution, family) role, all starting at no_contact', async () => {
+  it('lists one row per REGISTERED (institution, family) role, all starting at no_contact', async () => {
     const list = await listRegulators(pool, editionId);
-    // 9 roles: SEC(A), 4×B, 2×C, 2×D (CSCS holds both C and D).
-    expect(list).toHaveLength(9);
+    // 4 registered roles: SEC(A), NGX(B), CSCS(C), CSCS(D). NASD, LCFE and the
+    // three FMDQ entities are seeded inactive (under CIS review, Screen
+    // Stitching Guide §8) and carry no engagement row yet.
+    expect(list).toHaveLength(4);
     expect(list.every((r) => r.state === 'no_contact')).toBe(true);
     expect(list.every((r) => r.nextStep === 'Add a contact')).toBe(true);
+  });
+
+  it('excludes institutions under CIS review — not registered, not in collection', async () => {
+    const list = await listRegulators(pool, editionId);
+    const names = list.map((r) => r.name);
+    expect(names).not.toContain('NASD OTC Securities Exchange');
+    expect(names).not.toContain('Lagos Commodities and Futures Exchange');
+    expect(names).not.toContain('FMDQ Securities Exchange Limited');
+    expect(names).not.toContain('FMDQ Clear Limited');
+    expect(names).not.toContain('FMDQ Depository Limited');
   });
 });
 

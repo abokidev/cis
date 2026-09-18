@@ -342,7 +342,8 @@ export type CalculationRunStatus = 'pending' | 'running' | 'complete' | 'failed'
 /** Whether a run's methodology is approved for official use. NULL = a legacy/
  *  normal run (pre-Phase-11, treated as usable). `TEST_UNAPPROVED` runs are
  *  barred structurally from official evidence packs / AI generation / released
- *  reports (Phase 11, CIS-SCORE-2026 v0.14 build note §2). */
+ *  reports (Phase 11, CIS-SCORE-2026 v0.14 build note §2 — reaffirmed
+ *  unchanged in v0.15, Phase 21 §2.4). */
 export type MethodologyStatus = 'TEST_UNAPPROVED' | 'APPROVED';
 
 /** Immutable run record. A correction is a new run, never an edit. */
@@ -364,10 +365,39 @@ export interface CalculationRun {
 export type SufficiencyState =
   'REPORTABLE' | 'DIRECTIONAL' | 'BANDED' | 'SUPPRESSED' | 'NOT_CALCULABLE';
 
+/**
+ * Phase 21 §2.1 (v0.15) — a segment's STANDALONE display state, derived from
+ * the same sufficiency floor as `SufficiencyState` (never a re-implemented
+ * threshold): REPORTABLE and SUPPRESSED map directly; DIRECTIONAL and BANDED
+ * both collapse to SHOWN_DIRECTIONALLY (a segment is shown, but not at full
+ * precision — the distinction between a directional point value and a banded
+ * proportion is a presentation detail, not a display-eligibility one).
+ * NOT_CALCULABLE also collapses to SUPPRESSED — a segment with no result is
+ * displayed no differently than one withheld for volume.
+ *
+ * This is deliberately a SEPARATE decision from a segment's POOLING
+ * eligibility (`PooledSegmentInput.reportabilityFloor` in
+ * `candidate-scoring-service.ts`): a segment excluded from a pooled headline
+ * is not thereby SUPPRESSED for standalone display, and vice versa.
+ */
+export type SegmentDisplayState = 'REPORTABLE' | 'SHOWN_DIRECTIONALLY' | 'SUPPRESSED';
+
 export type SubjectType = 'firm' | 'segment' | 'market';
 
+/** Phase 22 (§9) — a pooled public headline's structured composition
+ *  disclosure: which segments actually contributed and their achieved unit
+ *  count. A non-contributing segment is OMITTED from this array entirely —
+ *  never present with a zero count. */
+export interface CalculatedResultComposition {
+  segment: string;
+  label: string;
+  count: number;
+}
+
 /** Immutable calculation result. BANDED carries a band, never a point value;
- *  SUPPRESSED carries neither value nor band. */
+ *  SUPPRESSED carries neither value nor band. `composition` is populated only
+ *  for a pooled public headline result (`subjectType: 'market'`, `metricCode`
+ *  IEI/ICI) — null for every other result. */
 export interface CalculatedResult {
   id: string;
   calculationRunId: string;
@@ -380,6 +410,7 @@ export interface CalculatedResult {
   denominator: number;
   sufficiencyState: SufficiencyState;
   reason: string | null;
+  composition: CalculatedResultComposition[] | null;
   createdAt: Date;
 }
 

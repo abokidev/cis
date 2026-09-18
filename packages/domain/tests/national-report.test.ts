@@ -119,6 +119,26 @@ describe('Section-level sufficiency — different rules that look alike', () => 
     const spec = NATIONAL_SECTIONS.find((s) => s.id === 'PUB_07_LOCAL_VS_FOREIGN')!;
     expect(evaluateSection(spec, ctx).disposition).toBe('suppressed');
   });
+  it(
+    "FOLLOWUP v0.15 — §7 is the codebase's one cross-segment comparison, and it already " +
+      'implements the new privacy.standalone_segment_display.shown_directionally rule ' +
+      '("prohibit cross-segment comparison unless all compared segments clear floor"): ' +
+      'publishes only once BOTH segments clear the (REPORTABLE) floor, suppresses if either ' +
+      'is merely thin/SHOWN_DIRECTIONALLY, and suppresses if BOTH are',
+    () => {
+      const spec = NATIONAL_SECTIONS.find((s) => s.id === 'PUB_07_LOCAL_VS_FOREIGN')!;
+      expect(evaluateSection(spec, fullContext()).disposition).toBe('publishable');
+
+      const oneThin = fullContext();
+      oneThin.segments['local_institution'] = { meets: false, thin: true };
+      expect(evaluateSection(spec, oneThin).disposition).toBe('suppressed');
+
+      const bothThin = fullContext();
+      bothThin.segments['local_institution'] = { meets: false, thin: true };
+      bothThin.segments['foreign_institution'] = { meets: false, thin: true };
+      expect(evaluateSection(spec, bothThin).disposition).toBe('suppressed');
+    },
+  );
   it('§10 requires all three regulators — two is not the module', () => {
     const spec = NATIONAL_SECTIONS.find((s) => s.id === 'PUB_10_INSTITUTIONAL_PERSPECTIVES')!;
     expect(evaluateSection(spec, { ...fullContext(), regulatorsEngaged: 2 }).disposition).toBe(

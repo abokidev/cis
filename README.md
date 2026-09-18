@@ -1591,3 +1591,486 @@ last two updated for `IndustrySeiState`'s new shape — `industrySeiState` is no
 its DB-backed cases moved out of the "pure" test file). Full suite green (351/351) against a
 live Postgres; `pnpm turbo lint typecheck build` clean across all 8 packages; `pnpm audit`
 clean.
+
+## Phase 21 — Controlled Estate Reconciliation
+
+Reconciles five separate, previously-tracked gaps against six controlled documents
+(`DEC-012_ESTATE_RECONCILIATION.md`, `REOPEN_QUEUE.md`, the Engineering Handoff Readiness
+Inventory, the Engineering Screen Stitching Guide, the SharePoint route map, and the
+CIS_SCORING_ENGINEERING_BUILD_NOTE): a regression this session introduced and now reverses, a
+scoring methodology version reconciliation, a real content-ingestion boundary replacing a bare
+seed insert, a permanent regression test confirming a prior migration's completeness, and one
+genuine unresolved contradiction between two controlled documents — flagged, not silently
+resolved. The two source artefacts §2 cites by name —
+`CIS_SCORING_METHODOLOGY_SPECIFICATION_v0.15.md` and `CIS_SCORING_CONFIG_CANDIDATE_v0.15.yaml`
+— were never attached to this session; §2 says explicitly, item by item, what was implemented
+on the build note's own detail and the phase prompt's own confirmation that no numeric weight
+changed, and what was deliberately left untouched pending those two files.
+
+### §1 — STOP-on-first-reminder: reverting this session's OWN regression (DEC-012)
+
+Phase 13 shipped the correct design: a respondent's first scheduled reminder carries no STOP
+language; every reminder after that does. A later pass in this session's own prior work (Phase
+17/20) misread that design and made `carriesStop` unconditionally `true` — every reminder,
+including the first, claimed to carry STOP language. `DEC-012_ESTATE_RECONCILIATION.md`
+formally reaffirms Phase 13's original design against that misreading and records it as this
+session's own error, not a pre-existing defect — and this section owns that plainly rather than
+describing it as "a bug found."
+
+The fix touches three points that all have to agree, because the earlier defect wasn't
+contained to one of them:
+
+- `nextDueReminder` (`reminder-timing-service.ts`) — the pure `carriesStop` computation, now
+  `params.sentSteps.length > 0` (has this respondent received ANY reminder yet — robust against
+  a cadence where step 1 is disabled and step 2 fires first for some respondent — rather than
+  "is this configured step number 1").
+- The SMS body (`reminder-content-service.ts`, `managed-content.ts` seed, and the Phase 17
+  production migration) — "Reply STOP to stop reminders." was hardcoded directly into the
+  template string. It's now a `{{stop_line}}` placeholder (mirroring the existing
+  `{{progress_wording}}`/`{{recovery_url}}` convention), filled conditionally by a new
+  `assembleReminderText(..., carriesStop)`.
+- The email JSON template's `stop_link_text` field had no assembly function at all — a new
+  `assembleReminderEmail(pool, respondentId, carriesStop)` conditionally nulls it.
+
+Fixing only the pure function would have left the actual respondent-facing message content
+unchanged and still wrong. `reminder-timing.test.ts` and `reminder-content.test.ts` were
+updated to assert the corrected first-vs-subsequent behavior (previously asserting the wrong
+thing), with two new tests verifying the fully-assembled SMS/email output directly rather than
+only the `carriesStop` flag — closing the same "compiles fine but the actual output is wrong"
+gap this session's own UI bug-hunt was about.
+
+### §2 — Scoring methodology v0.14 → v0.15 reconciliation
+
+Structural reconciliation only — no numeric weight, threshold or transform changed. Both the
+build note's own changelog and the phase prompt's own §2.4 instruction agree on that point, and
+it is the basis this section proceeds on in the absence of the actual v0.15 YAML/spec files.
+
+**§2.1 — Three-state segment display (REPORTABLE / SHOWN_DIRECTIONALLY / SUPPRESSED).** A new
+`SegmentDisplayState` type (`shared-types`) and `segmentDisplayState()` (`sufficiency-service.ts`)
+collapse the existing five-state `computeSufficiency()` ladder — never a re-derived threshold —
+onto the three-state model: REPORTABLE and SUPPRESSED map directly; DIRECTIONAL and BANDED both
+collapse to SHOWN_DIRECTIONALLY (shown, not at full precision); NOT_CALCULABLE collapses to
+SUPPRESSED.
+
+_Strict non-reconstructability._ `evidence-pack-service.ts`'s `buildEvidencePack` gained a new
+construction-time rejection, `SUPPRESSED_SEGMENT_RECONSTRUCTABLE`: a `FactInput` may now carry a
+`segmentGroupId` (and one member per group an `isSegmentTotal` flag), and a group is rejected
+the moment its lone SUPPRESSED member is back-out-able — every other sibling plus the total all
+carry an exact point value (REPORTABLE or DIRECTIONAL; BANDED and SUPPRESSED never do), so
+`total − Σ(other siblings) = the suppressed value` uniquely. Two or more SUPPRESSED siblings are
+safe (one equation, multiple unknowns); a BANDED sibling is safe (no exact subtrahend). This is
+a genuinely new rule — no prior version of this codebase checked for cross-segment
+reconstruction — not a threshold retune. Covered in `evidence-pack.test.ts` (rejects the
+reconstructable case, accepts it once the total is withheld, accepts two SUPPRESSED siblings)
+and as a pure function, `isSegmentGroupReconstructable`, in `candidate-scoring-pure.test.ts`.
+
+_Separated pooled-vs-standalone display._ `pooledHeadline()` (`candidate-scoring-service.ts`,
+Phase 11) is unchanged in its pooling arithmetic — a segment still contributes to the headline
+only once it clears its own `reportabilityFloor`, exactly as before. It now ALSO returns
+`standaloneState: Record<string, SegmentDisplayState>`, each segment's own `segmentDisplayState`
+computed independently of pooling eligibility. A segment can pool (clear its own, often lower,
+pooling floor) while being SUPPRESSED standalone, and vice versa — the two were previously
+conflated into a single floor read twice; they are now two genuinely separate fields on the same
+return value. Test: `candidate-scoring-pure.test.ts`'s existing three-segment fixture, where
+segment A pools at n=3 but is SUPPRESSED standalone (n=3 < the shared floor of 10).
+
+_Not touched, on purpose._ The README's own previously-flagged `§8 threshold conflict` (the
+retail-cut 10/30 thresholds in `firm-report-service.ts`'s `FirmReportCutState` vs. the dormant,
+richer `governed_config` key `reporting.firm_investor_thresholds`) is NOT resolved here — §2.1
+was scoped by the phase prompt to Phase 6 evidence-pack and Phase 11 pooling logic only,
+`firm-report-service.ts` (Phase 6/14) is a separate surface, and reconciling it without the
+actual v0.15 YAML would mean guessing which of the two documented floors the new model actually
+intends. Left as the same open item it already was.
+
+**§2.2 — Six-institution exclusion.** Confirmed already correct, not a code change. Exclusion
+was never a hardcoded name list: `instrument_definitions.instrument_type IN ('institutional',
+'regulator')` (four rows — `I-SEC`/`I-NGX`/`I-CSCS`/`I-DEP`) is a real, structurally-enforced
+gate (`scored: false`; `getInstitutionalQuestionCodes`/`getInstitutionalInstrumentCodes`,
+consumed by `evidence-pack-service.ts`'s `INSTITUTIONAL_AS_INDEX`/`FIRM_INSTITUTIONAL_CUT`
+checks, and by every metric's own `config.questionIds` in `calculation-service.ts`'s
+`runScoring`). Because NASD OTC, LCFE and FMDQ Securities Exchange share Family B's single
+`I-NGX` instrument, and FMDQ Clear/FMDQ Depository share Family C/D's `I-CSCS`/`I-DEP` (Phase
+19), all eight seeded institutions — the six named in this item plus CSCS's two roles — are
+already covered by four instrument codes, with zero code change needed if a ninth institution of
+an existing family registers later (the same rule Phase 19's Item 1 already established). New
+regression coverage added to `institution-families.test.ts`: every non-survey instrument is
+`scored: false`; the institutional/regulator instrument set is exactly
+`I-CSCS, I-DEP, I-NGX, I-SEC`; and no active `metric_definitions` row's `config.questionIds`
+ever names an institutional question code.
+
+**§2.3 — Firm-level SEI independence.** Confirmed already correct, not a code change.
+Firm-level `SEI` is computed by the ordinary, generic `runScoring()` pass
+(`calculation-service.ts`) for every firm × every active metric — including `SEI`, one of the
+five seeded `INDEX_CODES` — with zero dependency on `industrySeiState`. `industrySeiState()`
+(`candidate-scoring-service.ts`) is a pure downstream reader: it loads already-computed
+firm-level `SEI` rows via `listCalculatedResults` and aggregates; it never computes a firm's own
+value. New test in `institution-families.test.ts` makes this explicit rather than implicit in
+the existing aggregate-behavior tests: it reads a firm's own SEI result directly — including a
+below-floor firm's SUPPRESSED row — BEFORE `industrySeiState` is ever called in the same test,
+then confirms the aggregate reads the same rows back afterward.
+
+**§2.4 — v0.14 → v0.15 citations.** Re-pointed where the cited substance is confirmed
+unchanged: the `MethodologyStatus` doc comment (`shared-types`) citing the Phase 11 build
+note's official-use hard gate now notes it was "reaffirmed unchanged in v0.15 (Phase 21 §2.4)".
+`candidate-scoring-service.ts`'s module doc was reworded to state plainly that its numeric core
+— every weight, transform and threshold — is still read from the v0.14 YAML
+(`CIS_SCORING_CONFIG_CANDIDATE_v0.14.yaml`, `scoring-config.ts`), and that the v0.15
+reconciliation changed structure, not numbers. **Deliberately NOT touched at the time**: the
+YAML filename itself, and the seeded `metric_definitions`/candidate-config version number.
+Renaming the file or bumping its version without the actual
+`CIS_SCORING_CONFIG_CANDIDATE_v0.15.yaml` in hand would have misrepresented numeric behavior as
+having moved to a new version when it had not. **This is now done — see the follow-up
+immediately below**, where that exact file was supplied and the swap completed.
+
+### Follow-up — v0.15 YAML supplied directly; §11 completeness; the new cross-segment rule
+
+A follow-up round, after the actual `CIS_SCORING_CONFIG_CANDIDATE_v0.15.yaml` was supplied
+directly (read from disk, not paraphrased) and the person running this session independently
+read the prose `CIS_SCORING_METHODOLOGY_SPECIFICATION_v0.15.md` from SharePoint and confirmed
+two things ahead of this work: no numeric weight changed (`Firm_DMI` and `Retail_ICI`'s weighted
+components verified identical), and the prose spec's own §2.2 exclusion list text still names
+only three institutions — validating, not undermining, this session's decision to key exclusion
+off instrument type rather than off any literal name list (§2.2, above).
+
+**The YAML swap, done.** `CIS_SCORING_CONFIG_CANDIDATE_v0.15.yaml` now sits alongside the v0.14
+file in `packages/db/src/seed/` (the v0.14 file is kept, never deleted — it's the prior
+authoritative version a signed-off v0.14 run's provenance still points to).
+`scoring-config.ts`'s `CONFIG_FILENAME` now points to it; `seedCandidateScoringConfig` now seeds
+`metric_definitions` as version 15. Diffing the two files directly (not from memory) confirms
+the changes are exactly the ones this session's §2.1 work already anticipated structurally, and
+nothing else: every transform, weight and threshold is byte-identical; only `decision_status.D1`
+(now `PRODUCT_DECISION_APPLIED_PENDING_METHODOLOGY_VALIDATION`, with a candidate name that
+explicitly says `_with_directional_standalone_display`), the `IEI`/`ICI` `headline.disclosure`
+blocks (new `standalone_below_floor_display`), and the `privacy` block (restructured into
+`standalone_segment_display.{shown_directionally,suppressed}`) changed. `methodologyVersionString()`
+now reports `CIS-SCORE-2026@0.15`; the two DB-backed tests asserting the stamped
+`methodologyVersion` literal were updated to match — this is a real, expected version bump, not
+a fixed bug.
+
+**§11 investor-side item-level completeness — built, not fixed.** The follow-up asked whether
+Retail ICI, Local IEI, Foreign IEI and Foreign ICI's completeness logic already implements
+§11's partial-allowance rules ("at least 2 of Q5–Q7", "at least 3 of 4 Q1 attributes") or was
+silently too strict. The actual finding is a level below either: **no production code computes
+per-investor-relationship eligibility for ANY of these six index-completeness rules at all** —
+`pooledHeadline()` and `computeLikeForLike()` have always been pure aggregators taking
+already-filtered `unitScores`/`unitScoresBySegment` as their input, and a repo-wide search
+(including `apps/api`, `apps/admin`) turns up no caller of either function outside tests. So
+this isn't a bug silently undercounting real evidence — the pipeline that would do the
+undercounting doesn't exist yet. Rather than leave the gap open until that larger pipeline is
+built, six pure, tested predicates were added now (`candidate-scoring-service.ts`, "§11
+investor-side item-level completeness"), matching the spec's table exactly:
+
+| Index                | Rule                                                 | Partial allowance? |
+| -------------------- | ---------------------------------------------------- | ------------------ |
+| `retailIeiEligible`  | S4-Q1, Q2, Q3 all required                           | No                 |
+| `retailIciEligible`  | S4-Q4 required, **+ at least 2 of** Q5/Q6/Q7         | **Yes**            |
+| `localIeiEligible`   | **at least 3 of 4** S5a-Q1 attributes, + S5a-Q2      | **Yes**            |
+| `localIciEligible`   | S5a-Q5 and S5a-Q6 both required                      | No                 |
+| `foreignIeiEligible` | S5b-Q1 + aggregated Q2 + aggregated Q3, all required | No                 |
+| `foreignIciEligible` | aggregated Q4 + S5b-Q8, both required                | No                 |
+
+Each reuses `isSubstantive` (never a re-derived missing-data check) and takes already-fetched
+answer values — none reads the database or knows how a grid answer (S5a-Q1's four rows) is
+actually stored; that remains the future pipeline's job. Tested exhaustively in
+`candidate-scoring-pure.test.ts`, including the exact partial-allowance boundary cases (2-of-3
+passes, 1-of-3 fails; 3-of-4 passes, 2-of-4 fails) and confirming the four full-completeness
+rules tolerate no missing item. **Still open, and named as such rather than implied done**:
+wiring these predicates to real per-respondent database reads and actually producing the
+`unitScores`/aggregated-Q2-Q3-Q4 values `pooledHeadline` needs is a separate, larger, not-yet-built
+pipeline — this follow-up closed the completeness-_rule_ gap, not the full investor-scoring
+pipeline.
+
+**The new `prohibit_cross_segment_comparison_unless_all_compared_segments_clear_floor` rule —
+confirmed already implemented, not a gap.** v0.15's restructured `privacy.
+standalone_segment_display.shown_directionally` block adds this rule for the first time in the
+document. The codebase's one production cross-segment comparison
+(`national-report-service.ts`'s `PUB_07_LOCAL_VS_FOREIGN`, `suppress_below_floor` rule) already
+enforces exactly this: it publishes only once BOTH the local and foreign institutional segments
+clear the REPORTABLE floor, and suppresses the comparison outright — not merely caveats it — the
+moment either segment is only DIRECTIONAL/thin. A new test in `national-report.test.ts` makes
+the v0.15 citation explicit and adds the "both segments thin" case the prior tests didn't cover.
+No code change needed.
+
+Verified: `@cis/domain` (29 files, 326 tests) and `@cis/db` (3 files, 25 tests, sequential) both
+green against a live Postgres seeded from the real v0.15 config; `pnpm turbo build lint
+typecheck` clean across all 8 packages.
+
+### §3 — Survey content ingestion boundary (`SURVEY-REGISTER-EXPORT`)
+
+`REOPEN_QUEUE.md` and the Engineering Handoff Readiness Inventory both record the same gap: no
+machine-readable, controlled Survey Instruments Register export exists yet, and the seed content
+reaches the database through a bare migration-style insert rather than a validated import path.
+A new module, `packages/db/src/seed/register-ingestion.ts`, is that path: a versioned
+`bindData(payload)`-shaped schema (`RegisterImportPayload` — `schemaVersion`, `source:
+'interim_seed' | 'approved_export'`, a human-readable `sourceLabel`, and per-instrument question
+items), a structural validator (`validateRegisterPayload` — non-empty schema version, a
+recognized source, non-empty `sourceLabel`, per-item `question_id` uniqueness and non-empty
+text, `kind`/`scope` enum membership, all failing loudly and specifically rather than on a bare
+Postgres constraint), and the real loader (`importSurveyRegister`) that performs the same writes
+the old direct-insert path did, but only after validation, tagging each instrument version's
+`schema_snapshot` with the payload's `source`/`schemaVersion`/`sourceLabel` for provenance.
+
+`register.ts`'s `seedSurveyRegister` is now a thin caller: it wraps today's known-good
+`survey-register-seed.json` content as the INTERIM payload (`source: 'interim_seed'`) and feeds
+it through this exact loader — the same content, never discarded, now flowing through a real
+boundary instead of a direct insert. When the actual controlled Register export lands, binding
+it is a data swap through the same `importSurveyRegister` call, never a code change. SV-010
+(`survey-register.test.ts`) passes unchanged against content now loaded through the boundary —
+proof the swap didn't alter what gets seeded. A new `register-ingestion.test.ts` (15 tests)
+exercises the boundary directly: every validation rejection (bad `kind`, bad `scope`, duplicate
+`question_id`, empty `text`/`schemaVersion`/`sourceLabel`, an unrecognized `source`, a
+non-array/non-object shape), confirmation that a rejected payload touches the database not at
+all, and that both `interim_seed` and `approved_export` provenance round-trip correctly onto the
+stored `schema_snapshot`.
+
+### §4 — Channel vocabulary sweep (DEC-010)
+
+Confirmed already clean — no production change needed. `DEC-012_ESTATE_RECONCILIATION.md`
+records a prior near-miss where a WhatsApp reference was found only by searching markup, missing
+one still present in a code/copy string — the "search every layer, not just markup" lesson. A
+new permanent regression test, `channel-vocabulary.test.ts`, recursively scans five source trees
+(`apps/admin/src`, `apps/api/src`, `packages/domain/src`, `packages/db/src`, `packages/survey/src`)
+across every `.ts`/`.tsx`/`.js`/`.json`/`.md`/`.yaml`/`.yml` file for case-insensitive
+"whatsapp" outside a DEC-010-citing comment (including JSX `{/* */}` comments). The codebase was
+already clean at every layer; this closes the gap by making that fact permanently checked rather
+than re-verified by hand each time. UX-INS-001/002 (`FirmPortal.tsx`) were confirmed to
+implement Text as their channel, per the same DEC-010 comment this test allowlists.
+
+### §5 — ⚠️ Escalation, flagged and NOT resolved: six bespoke institutional instruments vs. one shared Family B instrument
+
+A genuine contradiction between two controlled documents, left unresolved in code per this
+phase's own explicit instruction not to pick a side:
+
+- `CIS_Engineering_Screen_Stitching_Guide.md` describes "six bespoke instruments: SEC, NGX,
+  CSCS, LCFE, NASD, FMDQ" — one instrument per named institution.
+- Phase 19's own source document
+  (`CIS_Institutional_Instrument_Families_Register_Extension`, v1.1) — which this codebase was
+  actually built from — specifies Family B as ONE shared instrument (`I-NGX`) used by Nigerian
+  Exchange Limited, NASD OTC Securities Exchange, Lagos Commodities and Futures Exchange AND
+  FMDQ Securities Exchange Limited together, not four separate instruments. `institution-family-
+service.ts`'s `FAMILY_META` maps family `'B'` to the single `instrumentCode: 'I-NGX'`, exactly
+  as Phase 19 built it and as this session's own Phase 21 §2.2 work above continues to rely on
+  structurally.
+
+Phase 19's schema is left exactly as-is here — this section flags the tension for a product/
+compliance decision, it does not adjudicate which controlled document is correct. Resolving it
+either direction (splitting `I-NGX` into three/four bespoke instruments, or correcting the
+Stitching Guide's prose) is out of scope for this phase and would itself need controlled-document
+sign-off before any schema change.
+
+**Separate, related, but distinct item — already fixed (§2.2/Item 5's `is_active`
+enforcement).** LCFE, NASD OTC Securities Exchange, FMDQ Securities Exchange Limited, FMDQ Clear
+and FMDQ Depository were seeded with `is_active` set but the column was never enforced anywhere
+— `seedInstitutionEngagement` was reading `listInstitutionRoles` (every institution) rather than
+an active-only view, so all eight institutions received engagement rows regardless of
+registration status. Fixed: a new `listActiveInstitutionRoles(pool)` (`institutions.ts`, joins
+`institution_roles` to `institutions` filtering `is_active = TRUE`) is now what
+`seedInstitutionEngagement` reads, so the five institutions under CIS review — "not registered
+and not in collection" per the Stitching Guide §8 — get no engagement row until CIS registers
+them and someone flips the flag, a data change, never a code change. Verified in
+`regulator-engagement.test.ts` (roster length 9 → 4 active; a new test asserts the five inactive
+institutions are excluded by name). Per this phase's explicit instruction, the not-yet-controlled
+scope-gate question for LCFE/NASD/FMDQ was deliberately NOT built.
+
+### Verification
+
+`pnpm --filter @cis/domain exec vitest run` (29 files, 319 tests) and
+`pnpm --filter @cis/db exec vitest run --no-file-parallelism` (3 files, 25 tests — the db
+package's test files race on Postgres's migration advisory lock when vitest parallelizes across
+files, a pre-existing infra quirk unrelated to this phase; sequential run is fully green) both
+pass against a live Postgres. `pnpm turbo build lint typecheck` clean across all 8 packages
+(no new lint errors; the pre-existing `no-non-null-assertion` warnings are unchanged and
+untouched by this phase). `pnpm audit` reports 3 pre-existing devDependency advisories
+(`js-yaml` via `eslint`, `vitest`/`@vitest/mocker`) — none introduced by this phase (no
+`package.json` or lockfile changed), all toolchain-only with no runtime/production exposure.
+
+## Phase 22 — Investor-Unit Scoring Pipeline (Wiring, Not Inventing)
+
+Closes the last piece of open scope from the v0.15 reconciliation: the previous session's
+finding was that `pooledHeadline` and `computeLikeForLike` were correct, tested, PURE
+functions with no production caller anywhere in the codebase, and that the six §11 eligibility
+predicates were built and correct in isolation but never actually invoked against real answers.
+This phase is assembly, not invention — every formula was already in the methodology spec
+(§7/§8/§9/§10/§11/§13), every component piece already existed; the job was wiring them into
+one real, database-backed pipeline and proving it with a test that exercises real seeded
+`responses` rows through the real production entry point, `runCandidateScoring`.
+
+### §2.1 — Relationship-level scores: one implementation, shared
+
+`candidate-scoring-service.ts` gained the real relationship-level score functions
+(`retailIeiRelationshipScore`, `retailIciRelationshipScore`, `localIeiRelationshipScore`,
+`localIciRelationshipScore`, `foreignIeiUnitScore`, `foreignIciUnitScore`) plus the
+firm-attribution-only foreign variants (`foreignIeiFirmSpecificObservation`,
+`foreignIciFirmSpecificObservation`). None of these existed before this phase — the firm-side
+combined-score logic Phase 11 built (`Firm_Investor_IEI_f`/`Firm_ICI_f`, §7.4/§8.4) had never
+actually been implemented either; `firmSpecificInvestorAnswers` was a raw fetch with no
+aggregation. So there was nothing to extract — instead, each relationship score was built ONCE
+and is read by BOTH consumers from the same underlying grouped data: `retailInvestorObservations`
+/`localInvestorObservations`/`foreignInvestorFirmObservations` return one array of
+`{respondentId, firmId, iei, ici}` per instrument, re-aggregated two ways — by respondent for
+the national unit score (`investorSegmentUnitScores`), by firm for the combined score
+(`firmInvestorScores`) — never two separate computations. Each applies its §11 eligibility
+predicate first (built in the prior follow-up); an ineligible relationship contributes to
+neither aggregation, never imputed to neutral.
+
+Foreign is deliberately NOT forced into the same relationship-then-collapse shape as
+retail/local, per §7.3/§8.3's own explicit wording — it's computed directly per institution
+(`foreignIeiUnitScore`/`foreignIciUnitScore`), aggregating firm-specific `Q2_i`/`Q3_i`/`Q4_i`
+across every firm that institution rated BEFORE combining with the shared `Q1`/`Q8`. S5a-Q1 is
+stored as one grid response (`{row: {Rating: value}}`) under a single question code, not four
+separately-coded rows — `parseS5aQ1Attributes` extracts the four named attributes the "at least
+3 of 4" rule needs directly from that JSON, rather than pretending each attribute has its own
+DB-queryable code (it doesn't).
+
+**Flagged framework interpretation, not invented silently**: the methodology names a national
+`Foreign_IEI_unit_i`/`Foreign_ICI_unit_i` but never a "Foreign_IEI_relationship" for FIRM
+attribution — only "firm-specific experience observations attributable to f, using only the
+firm-specific components." `foreignIeiFirmSpecificObservation`/`foreignIciFirmSpecificObservation`
+apply the same "mean of valid firm-specific components" shape every other relationship score
+uses, for consistency. This is documented in code and here rather than silently assumed.
+
+### §2.2 — Investor-unit collapse + §11 wiring; §2.3 — segment display state
+
+`investorSegmentUnitScores(pool, editionId)` is principle 7's actual implementation
+("multi-firm respondents receive one national respondent/institution weight after their firm
+relationships are collapsed") — retail/local collapse to one unit per respondent (the mean of
+that respondent's valid relationship scores across every firm they rated); foreign is already
+one score per institution. Segment eligibility for pooling reuses Phase 21's existing
+`segmentDisplayState`/`REPORTABLE_AT` — the methodology never defines a separate
+pooling-specific floor number (§7.5: "only if it clears its reportability floor," then "let `E`
+be the set of REPORTABLE segments" — the same word, the same threshold), so none was invented.
+
+### §2.4/§2.5 — `pooledHeadline`'s real caller, with real persistence
+
+`runInvestorPooling(pool, editionId, calculationRunId)` is the real caller `pooledHeadline` has
+never had: pulls real unit scores, calls `pooledHeadline` for IEI and ICI, and persists each as
+a genuine `calculated_results` row (`subject_type: 'market'`, `metric_code: 'IEI'`/`'ICI'`,
+under whatever run it's given — always `TEST_UNAPPROVED` via that run). It is now a real stage
+of `runCandidateScoring` itself, not a separate parallel entry point.
+
+The §9 structured composition disclosure needed somewhere to live that a hand-built `reason`
+string couldn't honestly provide — a new migration
+(`20260918000000_phase22-investor-pooling.js`) adds a single nullable `composition JSONB`
+column to `calculated_results`, populated ONLY for a pooled market IEI/ICI row, NULL for every
+other result. A non-contributing segment (below-floor) is OMITTED from the array entirely —
+`pooledHeadline`'s own `composition` field already only lists reportable segments; this only
+persists that unchanged, never zeroing a segment that didn't contribute.
+
+A below-floor segment is excluded from the headline and denominator regardless of whether its
+OWN standalone state is `SHOWN_DIRECTIONALLY` or `SUPPRESSED` — that distinction only ever
+governs standalone display (`pooledHeadline`'s independent `standaloneState` field, from Phase
+21 §2.1), never pooling eligibility. Verified explicitly: a local segment at n=3 (`SUPPRESSED`)
+and a foreign segment at n=15 (`SHOWN_DIRECTIONALLY`) are BOTH excluded from the pooled headline
+identically, while their own standalone states remain genuinely different facts.
+
+### §2.6 — `Firm_SEI_f`, now from a real `Firm_Investor_IEI_f`
+
+`runCandidateScoring` gained a real per-firm SEI stage: for every firm with a valid `S1-Q11`
+(`Firm_Expectation_f`) and a valid `Firm_Investor_IEI_f` (now real, from `firmInvestorScores` —
+never a stub), it computes `Firm_SEI_f = 100 - abs(Firm_Expectation_f - Firm_Investor_IEI_f)`
+and persists it as a firm-level `calculated_results` row, `REPORTABLE` unconditionally per §10
+("private-report calculable... regardless of volume"). This is NOT the public Industry SEI
+eligibility gate — `industrySeiState()` still reads from a DIFFERENT, separately-signed-off run
+and its `industry_sei_min_firm_investor_observations` floor is still `PENDING_VALIDATOR`,
+completely untouched, exactly as instructed.
+
+### §2.7 — `computeLikeForLike`, wired the same way
+
+`recordInvestorLikeForLike(pool, {metricCode, editionAId, editionBId, runAId, runBId})` builds
+each edition's real `EditionSegmentEvidence` from data `runInvestorPooling` already persisted
+for that edition's run (real unit scores, real reportable set, the real published headline read
+back from `calculated_results`) — never a hand-built fixture — then calls the existing
+`recordLikeForLikeComparison` exactly as before. The same "give the pure function a real
+caller" fix applied to `pooledHeadline` above, applied to the second stranded function.
+
+### No orphan pure functions remain from this phase's work
+
+Every function Phase 22 touched has a real, database-backed caller reachable from
+`runCandidateScoring`: the relationship scores are called by `retailInvestorObservations`/
+`localInvestorObservations`/`foreignInvestorUnitScores`/`foreignInvestorFirmObservations`,
+which are called by `investorSegmentUnitScores`/`firmInvestorScores`, which are called by
+`runInvestorPooling` and the new firm-SEI stage, which are both called by `runCandidateScoring`
+itself. `recordInvestorLikeForLike` calls `investorEditionSegmentEvidence` (which calls
+`investorSegmentUnitScores`) then the existing `recordLikeForLikeComparison`. Nothing new added
+here is a pure function awaiting a caller that doesn't exist.
+
+### Explicit constraints respected, not re-litigated
+
+- No shared market-level item (`S5b-Q1`/`S5b-Q8`) enters a firm-specific record —
+  `foreignInvestorFirmObservations` reads only `S5b-Q2`/`Q3`/`Q4`, structurally, the same rule
+  Phase 11 already enforced for `firmSpecificInvestorAnswers`.
+- Institutional responses (SEC/NGX/CSCS/LCFE/NASD/FMDQ) never enter this pipeline — not via a
+  runtime check, but by construction: `getInvestorInstrumentAnswers` is only ever called with
+  `'S4'`/`'S5a'`/`'S5b'`, never an institutional instrument code.
+- Every new `calculated_results` row this phase produces is still barred from official use —
+  verified directly: `buildEvidencePack` against a `runCandidateScoring` run still throws
+  `TEST_UNAPPROVED_RUN`, IEI/ICI/firm-SEI rows included, no exception introduced.
+- No official imputation: every aggregation in this phase uses "mean of valid," excluding a
+  missing/ineligible item rather than substituting a neutral value.
+
+### The production entry point
+
+`runCandidateScoring(pool, editionId)` (`candidate-scoring-service.ts`) — unchanged as the
+single entry point, now with two additional real stages (firm-side SEI, investor-side IEI/ICI
+pooling) alongside its existing DMI and Industry-SEI-NOT_CALCULABLE stages.
+`recordInvestorLikeForLike` is the equivalent real entry point for the like-for-like
+comparison, called separately (per the existing `recordLikeForLikeComparison` pattern) once two
+signed runs exist to compare.
+
+### Verification
+
+A new `Phase 22` describe block in `candidate-scoring.test.ts` seeds 50 real respondents (32
+retail — 30 fully eligible, one exactly at §11's 2-of-3 partial-allowance boundary, one
+deliberately 1-of-3 and excluded from ICI only; 3 local, deliberately below `SUPPRESS_BELOW`;
+15 foreign, deliberately between `SUPPRESS_BELOW` and `REPORTABLE_AT`) and calls the real
+`runCandidateScoring` — not `pooledHeadline` in isolation — asserting the real, persisted
+`calculated_results` row for IEI/ICI at `subject_type: 'market'`, its composition (retail only,
+local/foreign omitted, never zeroed), the real firm-level SEI, and the `TEST_UNAPPROVED` gate.
+A second test exercises `investorSegmentUnitScores`/`firmInvestorScores` directly to confirm
+they expose the same real data. A third seeds two real editions with genuinely differing
+reportable segment sets and calls `recordInvestorLikeForLike`, asserting the correct common
+segment set, both recalculated values, and both original headlines preserved. Pure-function
+coverage for the new relationship scores was added to `candidate-scoring-pure.test.ts`.
+Verified: `@cis/domain` (29 files, 336 tests) and `@cis/db` (3 files, 25 tests, sequential)
+green against a live Postgres; `pnpm turbo build lint typecheck` clean across all 8 packages;
+`pnpm audit` unchanged (the same 3 pre-existing devDependency advisories, no `package.json` or
+lockfile touched).
+
+## UX-INS-003 shared-response resume — confirmed correct, no code change
+
+A follow-up question asked specifically about `UX-INS-003` (the regulator survey — SEC/NGX/
+CSCS/etc.): when a regulator's survey link (one recovery token per `(edition, institution,
+family)` engagement, per Phase 12's `UX-OPS-007` issuance) is opened by a second person after a
+first person entered answers but didn't submit, does the second opener see the first opener's
+answers correctly resumed, or does reopening reset/overwrite them?
+
+**Confirmed correct — no code change needed.** `getResumeByToken` (`journey-service.ts`) is a
+plain lookup: `getRespondentByRecoveryToken` resolves the token to its one respondent row (minted
+once, at issuance, by `issueSurveyLink`), then `getResume` returns that respondent's full,
+unfiltered draft list. There is no per-open reset, no session/device fingerprint, no "second
+opener wins" branch — every open of the same link resolves to the identical respondent id and
+sees whatever is currently saved, because `upsertDraft` is keyed on
+`(respondent_id, question_id, rated_firm_id)` and only ever updates one answer at a time,
+never clearing the respondent's other drafts. This is a genuine single-shared-response design:
+the token is a durable handle onto one response record, not a per-person key. The only things
+that ever replace that respondent/token are explicit study-team actions in the admin app
+(`saveContact`'s cancel-and-restart on a re-invited role, or `reopenDeclined`) — never a resume-GET.
+
+New test: `regulator-engagement.test.ts`, "UX-INS-003 shared-response resume" — issues a real
+survey link, resumes it once and saves a partial answer, resumes the SAME token a second time
+("as if" a different person), and asserts the second resume returns the identical respondent id
+with the first answer still present, unresetted.
+
+**`UX-INS-001`/`UX-INS-002` were NOT touched and remain correctly independent per colleague.**
+Those two journeys are structurally the opposite by design: `createReferral`/
+`createColleagueInvite` (`journey-service.ts`) each insert a brand-new respondent row per
+invite, and each colleague only gets their own recovery token once they individually register
+contact — N colleagues means N respondents means N independent tokens, never a shared one. Their
+own controlled artefacts are explicit that "colleagues answer independently and their responses
+are not linked," which is what Phase 3 already built and is exactly right for individual
+institutional investors giving personal opinions (as opposed to `UX-INS-003`'s one institutional
+position). No code in either journey was changed.
+
+Verified: `@cis/domain` full suite (29 files, 337 tests) and `@cis/db` (3 files, 25 tests,
+sequential) green against a live Postgres; `pnpm turbo build lint typecheck` clean; `pnpm audit`
+unchanged (no dependency change was needed for a test-only confirmation).

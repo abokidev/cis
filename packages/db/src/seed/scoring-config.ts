@@ -6,10 +6,24 @@ import { query } from '../client';
 
 /**
  * The sole authoritative scoring configuration is
- * `CIS_SCORING_CONFIG_CANDIDATE_v0.14.yaml` (methodology spec §18: "No embedded
+ * `CIS_SCORING_CONFIG_CANDIDATE_v0.15.yaml` (methodology spec §18: "No embedded
  * duplicate config"). It is read from that YAML here and never hardcoded a
  * second time in application code. If the file cannot be read, this throws — we
  * do not proceed on reconstructed values.
+ *
+ * v0.14 → v0.15 (Phase 21 §2 follow-up, actual YAML supplied and diffed
+ * directly against the prior file — no numeric weight, transform or threshold
+ * changed): D1's decision_status moved from CANDIDATE_PENDING_APPROVAL to
+ * PRODUCT_DECISION_APPLIED_PENDING_METHODOLOGY_VALIDATION, its candidate now
+ * named `..._with_directional_standalone_display`; the IEI/ICI `headline.
+ * disclosure` blocks gained `standalone_below_floor_display`; and `privacy`
+ * was restructured into `standalone_segment_display.{shown_directionally,
+ * suppressed}` — all confirming, in the actual authoritative document, the
+ * exact separation this session's Phase 21 §2.1 work already built
+ * (`SegmentDisplayState`, `pooledHeadline`'s `standaloneState`, the
+ * `SUPPRESSED_SEGMENT_RECONSTRUCTABLE` check). The v0.14 file is kept
+ * alongside this one — never deleted — as the prior authoritative version a
+ * signed-off v0.14 run's provenance still points to.
  */
 
 export interface ScoringConfig {
@@ -40,7 +54,7 @@ export interface RawTransform {
   score_formula?: string;
 }
 
-const CONFIG_FILENAME = 'CIS_SCORING_CONFIG_CANDIDATE_v0.14.yaml';
+const CONFIG_FILENAME = 'CIS_SCORING_CONFIG_CANDIDATE_v0.15.yaml';
 let cached: ScoringConfig | null = null;
 
 /** Parse and cache the authoritative candidate config from its YAML. */
@@ -133,13 +147,13 @@ export function getIndustrySeiFloor(): number | null {
 
 /**
  * Persist the candidate methodology into `metric_definitions` (Phase 5's
- * config-as-data pattern) as version 14, is_active = FALSE (it is not the active
+ * config-as-data pattern) as version 15, is_active = FALSE (it is not the active
  * official config — it is TEST_UNAPPROVED), is_provisional = TRUE. Provenance
  * only; live computation reads the YAML via the accessors above. Idempotent.
  */
 export async function seedCandidateScoringConfig(pool: Pool): Promise<void> {
   const cfg = loadScoringConfig();
-  const version = 14;
+  const version = 15;
   for (const code of ['OMI', 'DMI', 'IEI', 'ICI', 'SEI']) {
     await query(
       pool,
@@ -157,7 +171,7 @@ export async function seedCandidateScoringConfig(pool: Pool): Promise<void> {
           source: CONFIG_FILENAME,
           candidate_test_unapproved: true,
         }),
-        `CIS-SCORE-2026 v0.14 candidate config for ${code} (TEST_UNAPPROVED; read from ${CONFIG_FILENAME}).`,
+        `CIS-SCORE-2026 v0.15 candidate config for ${code} (TEST_UNAPPROVED; read from ${CONFIG_FILENAME}).`,
       ],
     );
   }

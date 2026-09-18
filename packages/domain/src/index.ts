@@ -86,7 +86,10 @@ export {
   bandForProportion,
   SUPPRESS_BELOW,
   REPORTABLE_AT,
+  segmentDisplayState,
+  isSegmentGroupReconstructable,
 } from './sufficiency-service';
+export type { ReconstructabilityMember } from './sufficiency-service';
 export {
   isFirmEligible,
   eligibleFirmIds,
@@ -219,7 +222,7 @@ export {
 } from './mission-board-service';
 export type { BoardContext, RemediationCohort } from './mission-board-service';
 
-// ── Phase 11: Candidate scoring methodology (CIS-SCORE-2026 v0.14) ────────────
+// ── Phase 11: Candidate scoring methodology (CIS-SCORE-2026 v0.15) ────────────
 export { isSubstantive, applyTransform, scoreItem, transformFor } from './scoring-transforms';
 export {
   assertRunOfficialUsable,
@@ -227,12 +230,34 @@ export {
   omiCompleteFirmIds,
   missingOmiRoleCounts,
   firmDmiScores,
+  retailIeiEligible,
+  retailIciEligible,
+  localIeiEligible,
+  localIciEligible,
+  foreignIeiEligible,
+  foreignIciEligible,
+  retailIeiRelationshipScore,
+  retailIciRelationshipScore,
+  localIeiRelationshipScore,
+  localIciRelationshipScore,
+  foreignIeiUnitScore,
+  foreignIciUnitScore,
+  foreignIeiFirmSpecificObservation,
+  foreignIciFirmSpecificObservation,
+  retailInvestorObservations,
+  localInvestorObservations,
+  foreignInvestorUnitScores,
+  foreignInvestorFirmObservations,
+  investorSegmentUnitScores,
+  firmInvestorScores,
+  runInvestorPooling,
   firmSpecificInvestorAnswers,
   pooledHeadline,
   industrySeiState,
   canCompareHeadlinesDirectly,
   computeLikeForLike,
   recordLikeForLikeComparison,
+  recordInvestorLikeForLike,
   runCandidateScoring,
   CandidateScoringError,
 } from './candidate-scoring-service';
@@ -243,6 +268,18 @@ export type {
   EditionSegmentEvidence,
   LikeForLike,
   CandidateRunResult,
+  RetailIeiAnswers,
+  RetailIciAnswers,
+  LocalIeiAnswers,
+  LocalIciAnswers,
+  ForeignIeiAnswers,
+  ForeignIciAnswers,
+  ForeignInstitutionRaw,
+  InvestorRelationshipObservation,
+  ForeignInvestorUnit,
+  InvestorSegmentUnitScores,
+  FirmInvestorScore,
+  InvestorPoolingResult,
 } from './candidate-scoring-service';
 
 // ── Phase 14: Firm private results (UX-FRM-RES-001) ──────────────────────────
@@ -344,6 +381,7 @@ export {
   getReminderContent,
   stopReminders,
   assembleReminderText,
+  assembleReminderEmail,
   assembleFirstMessageText,
   ReminderContentError,
 } from './reminder-content-service';

@@ -1,13 +1,19 @@
 import { Pool } from 'pg';
-import type { InstrumentType, QuestionKind, QuestionScope } from '@cis/shared-types';
+import type { InstrumentType } from '@cis/shared-types';
 import {
-  createInstrumentDefinition,
-  createInstrumentDefinitionVersion,
-} from '../queries/instrument-definitions';
-import { createInstrumentQuestion } from '../queries/instrument-questions';
+  importSurveyRegister,
+  REGISTER_PAYLOAD_SCHEMA_VERSION,
+  type RegisterImportPayload,
+} from './register-ingestion';
 // Controlled Survey Register content, loaded as DATA (not a hardcoded literal in
 // application/renderer code — SV-010 §5 / Phase 2 §6). This is the seed source;
 // the content authority is the table it populates.
+//
+// Phase 21 §3: this content now flows through the `bindData(payload)`-shaped
+// ingestion boundary (`register-ingestion.ts`) as the INTERIM payload
+// (`source: 'interim_seed'`), rather than being inserted directly. Binding the
+// real controlled Register export later is a data swap through the same
+// `importSurveyRegister` call, never a code change — see that module's header.
 //
 // ⚠️ COMPLIANCE FOLLOW-UP BEFORE PRODUCTION EDITION FREEZE ⚠️
 // FUNCTIONAL_FREEZE_SURVEY_ESTATE.md records that the three institutional Q5
@@ -158,67 +164,25 @@ export const INSTRUMENT_CODES: readonly string[] = INSTRUMENT_META.map((m) => m.
 export const REGISTER_ITEM_COUNT = 95;
 
 /**
- * Seed the controlled Survey Register: nine instrument definitions, a v1 version
- * each, and all 90 question rows. Uses parameterized inserts throughout. Assumes
- * a clean/truncated schema. Returns a map of instrument code → definition id.
+ * Seed the controlled Survey Register through the Phase 21 §3 ingestion
+ * boundary: wraps `survey-register-seed.json` as an `interim_seed`-sourced
+ * `RegisterImportPayload` and hands it to `importSurveyRegister`, which
+ * validates it and performs the same writes (ten instrument definitions, a v1
+ * version each, all 95 question rows) that this function used to do directly.
+ * Assumes a clean/truncated schema. Returns a map of instrument code →
+ * definition id.
  */
 export async function seedSurveyRegister(
   pool: Pool,
   createdBy?: string | null,
 ): Promise<Record<string, string>> {
-  const ids: Record<string, string> = {};
-  for (const meta of INSTRUMENT_META) {
-    const items = REGISTER.instruments[meta.code] ?? [];
-    const def = await createInstrumentDefinition(pool, {
-      code: meta.code,
-      name: meta.name,
-      instrumentType: meta.instrumentType,
-      scored: meta.scored,
-    });
-    ids[meta.code] = def.id;
-    await createInstrumentDefinitionVersion(pool, {
-      instrumentDefinitionId: def.id,
-      versionNumber: 1,
-      schemaSnapshot: {
-        respondent: meta.respondent,
-        feeds: meta.feeds,
-        questionCount: items.length,
-        placeholder: false,
-        source: 'Survey Register (survey_register_seed.json, 2026-08-20)',
-      },
-      ...(createdBy ? { createdBy } : {}),
-    });
-
-    let order = 0;
-    for (const raw of items) {
-      order += 1;
-      await createInstrumentQuestion(pool, {
-        instrumentDefinitionId: def.id,
-        questionCode: raw.question_id,
-        promptText: raw.text,
-        kind: raw.kind as QuestionKind,
-        scope: raw.scope as QuestionScope,
-        displayOrder: order,
-        scored: raw.scored ?? true,
-        isDrgOps: raw.is_drg_ops ?? false,
-        isPlaceholder: false,
-        options: raw.options ?? null,
-        scaleMin: raw.scale_min ?? null,
-        scaleMax: raw.scale_max ?? null,
-        scaleAnchors: raw.scale_anchors ?? null,
-        rankExactlyN: raw.rank_exactly_n ?? null,
-        selectUpToN: raw.select_up_to_n ?? null,
-        hasOptionalComment: raw.has_optional_comment === 1,
-        answerOptional: raw.answer_optional === 1,
-        conditionalDetailOn: raw.conditional_detail_on ?? null,
-        selectThenGreatest: raw.select_then_greatest === 1,
-        gridRows: raw.grid_rows ?? null,
-        gridDimensions: raw.grid_dimensions ?? null,
-        gridScale: raw.grid_scale ?? null,
-      });
-    }
-  }
-  return ids;
+  const payload: RegisterImportPayload = {
+    schemaVersion: REGISTER_PAYLOAD_SCHEMA_VERSION,
+    source: 'interim_seed',
+    sourceLabel: 'Survey Register (survey_register_seed.json, 2026-08-20)',
+    instruments: REGISTER.instruments as RegisterImportPayload['instruments'],
+  };
+  return importSurveyRegister(pool, payload, INSTRUMENT_META, createdBy);
 }
 
 /** The raw Register content, exposed for the SV-010 comparison gate test. */

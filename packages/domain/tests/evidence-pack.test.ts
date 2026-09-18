@@ -182,6 +182,59 @@ describe('Rejections', () => {
   });
 });
 
+describe('Phase 21 §2.1 — segment non-reconstructability', () => {
+  it('rejects a segment group whose lone SUPPRESSED member is reconstructable from an exact total', async () => {
+    await expect(
+      buildEvidencePack(
+        pool,
+        firmPack([
+          { sectionId: 'FRM_04', sufficiencyState: 'REPORTABLE', value: 50, segmentGroupId: 'cut' },
+          { sectionId: 'FRM_04', sufficiencyState: 'REPORTABLE', value: 30, segmentGroupId: 'cut' },
+          { sectionId: 'FRM_04', sufficiencyState: 'SUPPRESSED', segmentGroupId: 'cut' },
+          {
+            sectionId: 'FRM_04',
+            sufficiencyState: 'REPORTABLE',
+            value: 90,
+            segmentGroupId: 'cut',
+            isSegmentTotal: true,
+          },
+        ]),
+      ),
+    ).rejects.toMatchObject({ code: 'SUPPRESSED_SEGMENT_RECONSTRUCTABLE' });
+  });
+
+  it('accepts the same segments once the group total is withheld', async () => {
+    const { facts } = await buildEvidencePack(
+      pool,
+      firmPack([
+        { sectionId: 'FRM_04', sufficiencyState: 'REPORTABLE', value: 50, segmentGroupId: 'cut' },
+        { sectionId: 'FRM_04', sufficiencyState: 'REPORTABLE', value: 30, segmentGroupId: 'cut' },
+        { sectionId: 'FRM_04', sufficiencyState: 'SUPPRESSED', segmentGroupId: 'cut' },
+      ]),
+    );
+    expect(facts).toHaveLength(3);
+  });
+
+  it('accepts a group with two SUPPRESSED segments alongside an exact total', async () => {
+    const { facts } = await buildEvidencePack(
+      pool,
+      firmPack([
+        { sectionId: 'FRM_04', sufficiencyState: 'REPORTABLE', value: 50, segmentGroupId: 'cut' },
+        { sectionId: 'FRM_04', sufficiencyState: 'SUPPRESSED', segmentGroupId: 'cut' },
+        { sectionId: 'FRM_04', sufficiencyState: 'SUPPRESSED', segmentGroupId: 'cut' },
+        {
+          sectionId: 'FRM_04',
+          sufficiencyState: 'REPORTABLE',
+          value: 90,
+          segmentGroupId: 'cut',
+          isSegmentTotal: true,
+        },
+      ]),
+    );
+    expect(facts).toHaveLength(4);
+  });
+});
+
 describe('EvidencePackError type', () => {
   it('is a domain error carrying a code', async () => {
     try {

@@ -23,6 +23,12 @@ import {
   insertCalculatedResult,
   listInstitutionRoles,
   seedInstitutionEngagement,
+  listInstitutions,
+  getInstitutionalInstrumentCodes,
+  getInstitutionalQuestionCodes,
+  listInstrumentDefinitions,
+  getActiveMetricDefinitions,
+  listCalculatedResults,
   query,
 } from '@cis/db';
 import {
@@ -85,6 +91,59 @@ describe('Item 1 — a 9th institution of an existing role needs no code change'
     const list = await listRegulators(pool, editionId);
     expect(list.some((r) => r.institutionId === ninthId && r.familyCode === 'B')).toBe(true);
     expect(list.some((r) => r.name === 'Test Ninth Exchange')).toBe(true);
+  });
+});
+
+describe('Phase 21 §2.2 — six-institution exclusion is structural, not a name list', () => {
+  it('every non-survey instrument is scored:false, keyed by instrument_type alone', async () => {
+    const defs = await listInstrumentDefinitions(pool);
+    expect(defs.length).toBeGreaterThan(0);
+    for (const def of defs) {
+      if (def.instrumentType !== 'survey') {
+        expect(def.scored).toBe(false);
+      }
+    }
+  });
+
+  it('the institutional/regulator instrument set structurally covers every named institution, including the three under CIS review', async () => {
+    const institutions = await listInstitutions(pool);
+    const names = institutions.map((i) => i.name);
+    // SEC, NGX, CSCS (active) and LCFE, NASD OTC, FMDQ Securities Exchange,
+    // FMDQ Clear, FMDQ Depository (is_active: false — under CIS review, per
+    // Item 5's fix below). All eight roster the same way; the six-institution
+    // exclusion this test covers is unaffected by which are currently active.
+    expect(names).toEqual(
+      expect.arrayContaining([
+        'Securities and Exchange Commission',
+        'Nigerian Exchange Limited',
+        'NASD OTC Securities Exchange',
+        'Lagos Commodities and Futures Exchange',
+        'FMDQ Securities Exchange Limited',
+        'Central Securities Clearing System',
+        'FMDQ Clear Limited',
+        'FMDQ Depository Limited',
+      ]),
+    );
+    // NASD/LCFE/FMDQ Securities Exchange share Family B's single I-NGX
+    // instrument; FMDQ Clear shares Family C's I-CSCS; FMDQ Depository shares
+    // Family D's I-DEP (Phase 19). So the exclusion below already covers all
+    // eight institutions via four instrument codes — never a per-institution
+    // allowlist, and no code change is needed if a 9th or 10th institution of
+    // an existing family is registered later (Item 1, above).
+    const institutionalCodes = await getInstitutionalInstrumentCodes(pool);
+    expect([...institutionalCodes].sort()).toEqual(['I-CSCS', 'I-DEP', 'I-NGX', 'I-SEC']);
+  });
+
+  it('no active metric definition ever reads an institutional/regulator question code', async () => {
+    const institutionalQuestions = new Set(await getInstitutionalQuestionCodes(pool));
+    expect(institutionalQuestions.size).toBeGreaterThan(0);
+    const metrics = await getActiveMetricDefinitions(pool);
+    expect(metrics.length).toBeGreaterThan(0);
+    for (const metric of metrics) {
+      for (const questionId of metric.config.questionIds) {
+        expect(institutionalQuestions.has(questionId)).toBe(false);
+      }
+    }
   });
 });
 
@@ -238,5 +297,35 @@ describe('Item 5 — Industry SEI real derivation', () => {
     expect(state.status).toBe('CALCULABLE');
     expect(state.contributingFirms).toBe(30);
     expect(state.sufficiency).toBe('REPORTABLE');
+  });
+
+  it('Phase 21 §2.3 — a firm’s own SEI is a real, individually-readable result, never a byproduct of industrySeiState', async () => {
+    const contributing = Array.from({ length: 10 }, () => ({ n: 12, value: 20 }));
+    await signedOffRunWithFirmSei([{ n: 5, value: 1000 }, ...contributing]);
+
+    // Every firm's SEI is readable on its own via the generic run results —
+    // BEFORE industrySeiState is ever called — confirming firm-level SEI is
+    // computed and persisted by the ordinary scoring pass (runScoring /
+    // insertCalculatedResult), not derived from or gated by the industry
+    // aggregate.
+    const run = (await query<{ id: string }>(pool, 'SELECT id FROM calculation_runs LIMIT 1'))
+      .rows[0]!;
+    const results = await listCalculatedResults(pool, run.id);
+    const firmSeiRows = results.filter((r) => r.subjectType === 'firm' && r.metricCode === 'SEI');
+    expect(firmSeiRows).toHaveLength(11);
+    // A below-floor firm's OWN SEI is still readable (as SUPPRESSED, n=5) —
+    // its presence/absence has nothing to do with the industry aggregate,
+    // which industrySeiState computes separately, afterward.
+    const suppressedFirm = firmSeiRows.find((r) => r.n === 5)!;
+    expect(suppressedFirm.sufficiencyState).toBe('SUPPRESSED');
+    expect(suppressedFirm.value).toBeNull();
+    const reportableFirm = firmSeiRows.find((r) => r.n === 12)!;
+    expect(reportableFirm.value).toBe(20);
+
+    // Only now does the aggregate read those same rows back — firm-level
+    // computation strictly precedes and does not depend on it.
+    const state = await industrySeiState(pool, editionId);
+    expect(state.status).toBe('CALCULABLE');
+    expect(state.contributingFirms).toBe(10);
   });
 });

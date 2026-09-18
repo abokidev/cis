@@ -1,7 +1,11 @@
 /**
- * UX-OPS-004 Reminder timing — Phase 13 DoD (corrected in Phase 17).
+ * UX-OPS-004 Reminder timing — Phase 13 DoD, STOP-flag rule reverted to
+ * original per Phase 21 / DEC-012.
  *  - Relative timing: fires at last_activity_at + N days, independent of calendar.
- *  - STOP flag on every scheduled reminder without exception (§2 Phase 17 verified).
+ *  - STOP flag: the respondent's FIRST scheduled reminder carries no STOP; every
+ *    one after it does (DEC-012, reaffirmed 2026-08-20 estate reconciliation).
+ *    Phase 17 previously "corrected" this to STOP-on-every-reminder based on a
+ *    misreading of the artefact — that was the defect, not this rule.
  *  - Configurable cap bounds total reminders.
  *  - Closing-week reminder is a LIVE reference to the edition close date.
  *  - Unreachable participants excluded and counted; firm-side seat responses
@@ -70,13 +74,13 @@ describe('Relative timing, STOP flag, cap (pure)', () => {
     expect(nextDueReminder({ ...base, asOf: new Date(last.getTime() + 1 * DAY) })).toBeNull();
     const due = nextDueReminder({ ...base, asOf: new Date(last.getTime() + 2 * DAY) });
     expect(due?.step).toBe(1);
-    // Phase 17 §2 verified: every scheduled reminder carries STOP. The only
-    // STOP-free message is the one-time initial link delivery (Phase 3/9), which
-    // is not part of this engine's cadence at all.
-    expect(due?.carriesStop).toBe(true);
+    // DEC-012: a respondent's first-ever reminder from this cadence carries no
+    // STOP. STOP on a first message asks someone to decide about future
+    // messages before they know whether any will come.
+    expect(due?.carriesStop).toBe(false);
   });
 
-  it('carries STOP on every reminder, including the second', () => {
+  it('carries STOP on the second reminder onward, not the first', () => {
     const due = nextDueReminder({
       schedule: SCHEDULE,
       cap: 3,
@@ -86,6 +90,9 @@ describe('Relative timing, STOP flag, cap (pure)', () => {
       asOf: new Date(last.getTime() + 8 * DAY),
     });
     expect(due?.step).toBe(2);
+    // DEC-012: the asymmetry is deliberate — a second message carrying STOP is
+    // a small annoyance; a first message carrying STOP permanently removes
+    // people who would have completed.
     expect(due?.carriesStop).toBe(true);
   });
 
@@ -170,12 +177,13 @@ describe('Eligibility — investor-side, reachable, not completed', () => {
     expect(sent).toHaveLength(1);
     expect(sent[0]!.responseId).toBe(reachable);
     expect(sent[0]!.step).toBe(1);
-    expect(sent[0]!.carriesStop).toBe(true); // all scheduled reminders carry STOP
+    // DEC-012: this respondent's first reminder — no STOP.
+    expect(sent[0]!.carriesStop).toBe(false);
   });
 });
 
-describe('Sequence — STOP on all, cap enforced across runs', () => {
-  it('all sends carry STOP and the cap holds', async () => {
+describe('Sequence — STOP from the second reminder onward, cap enforced across runs', () => {
+  it('the first send carries no STOP, the second does, and the cap holds', async () => {
     // Two relative steps, cap 2.
     await setReminderSchedule(pool, {
       steps: [
@@ -194,8 +202,8 @@ describe('Sequence — STOP on all, cap enforced across runs', () => {
     expect(all).toHaveLength(2); // cap 2 — no third send
     const s1 = all.find((s) => s.step === 1)!;
     const s2 = all.find((s) => s.step === 2)!;
-    // Phase 17 §2: every scheduled reminder carries STOP
-    expect(s1.carriesStop).toBe(true);
+    // DEC-012: first reminder no STOP, every one after it does.
+    expect(s1.carriesStop).toBe(false);
     expect(s2.carriesStop).toBe(true);
   });
 });

@@ -255,7 +255,7 @@ export function App(): JSX.Element {
           )}
         </main>
       ) : tab === 'board' ? (
-        <MissionBoardPage />
+        <MissionBoardPage client={client} editionId={editionId} />
       ) : tab === 'responses' ? (
         <ResponsesPage />
       ) : tab === 'unfinished' ? (

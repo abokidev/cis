@@ -1,13 +1,17 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import type { AdminClient } from '../api/client';
+import { ApiError, type MissionCard, type MissionSeverity } from '../api/types';
+import type { EditionPhase } from '../editionPhase';
 
 /**
- * UX-OPS-001 — Study Operations Home & Mission Board. Ported faithfully from the
- * approved v4.4 artefact. One board, one audience: what needs a person today,
- * ranked by consequence. Self-contained functional surface (local state); the
- * real forecast/condition/dedup logic lives and is tested in @cis/domain
- * (mission-board-service + mission-forecast).
+ * UX-OPS-001 — Study Operations Home & Mission Board. One board, one audience:
+ * what needs a person today, ranked by consequence. Live-wired to the real
+ * evaluator (`getMissionBoard`, @cis/domain's `evaluateBoard`) — every card,
+ * evidence line, consequence and recommended action shown here is a real,
+ * currently-computed value, never an illustrative example.
  *
- * Load-bearing behaviours preserved:
+ * Load-bearing behaviours (enforced in @cis/domain, mirrored here in display
+ * only):
  *   - Forecast-based, never raw-count: a card exists because trajectory threatens
  *     an agreed outcome AND a concrete bulk action is available.
  *   - One root cause, one card: dependent outputs fold into a card's Consequence.
@@ -16,87 +20,24 @@ import { useState } from 'react';
  *   - Rail is phase-aware: not-yet-relevant sections are disabled, not hidden.
  */
 
-type Phase = 'before_launch' | 'collection_open' | 'closing_week' | 'closed';
-
-interface Card {
-  conditionId: number;
-  severity: number;
-  what: string;
-  evidence: string[];
-  consequence: string[];
-  why: string | null;
-  action: string;
-  expectedImpact?: string;
-}
-
-// Example board state (the shapes the domain evaluator produces). Retail shortfall
-// is ONE card with every dependent output folded into Consequence (§4A).
-export const CARDS: Card[] = [
-  {
-    conditionId: 2,
-    severity: 2,
-    what: 'Retail participation likely to miss target',
-    evidence: [
-      'Current 778 of 1,111',
-      '11 days left',
-      'Pace 30.3/day',
-      'Required 30.3/day',
-      'Forecast at close 1,111',
-    ],
-    consequence: [
-      'National retail floor missed by 333',
-      'IEI / ICI headline at risk as a consequence of the same shortfall',
-      'IEI / ICI by segment at risk as a consequence of the same shortfall',
-      'Top investor frustrations at risk as a consequence of the same shortfall',
-    ],
-    why: 'Distribution problem — the funnel is healthy, not enough invitations sent.',
-    action: 'Bulk nudge — knowable without a client list (generated list → UX-OPS-002 upload)',
-    expectedImpact: '~180 additional responses at the current median per-firm conversion',
-  },
-  {
-    conditionId: 4,
-    severity: 2,
-    what: 'Foreign institutions likely to miss target',
-    evidence: [
-      'Current 9 of 15 (distinct)',
-      '11 days left',
-      'Pace 0.4/day',
-      'Required 0.5/day',
-      'Forecast at close 13',
-    ],
-    consequence: [
-      'Foreign institution floor missed by 2',
-      'Local vs foreign comparison at risk as a consequence of the same shortfall',
-    ],
-    why: null,
-    action: 'Message all participating firms — the relevant cohort cannot be identified',
-  },
-  {
-    conditionId: 23,
-    severity: 6,
-    what: 'Firms invited five days ago with no activity of any kind',
-    evidence: ['12 firms invited ≥5 days ago, no funnel activity'],
-    consequence: ['These firms have demonstrably not acted'],
-    why: null,
-    action: 'Bulk nudge — knowable without a client list (generated list → UX-OPS-002 upload)',
-  },
-];
-
-export const SEVERITY_LABEL: Record<number, string> = {
-  1: 'Cannot deliver the promised study',
-  2: 'Statistical target threatened',
-  3: 'Report dependency threatened',
-  4: 'Severe funnel failure',
-  5: 'Representation risk',
-  6: 'Routine operational follow-up',
-};
-
 interface RailSection {
   key: string;
   label: string;
   built: boolean;
-  phases: Phase[]; // phases in which this section is relevant/enabled
+  phases: EditionPhase[];
 }
+
+// Written fresh for this screen — not the brief's own severity-classification
+// vocabulary, and not a paraphrase of it. Same six ranks, same order (1 most
+// consequential), independently worded for the person reading a card.
+export const SEVERITY_LABEL: Record<MissionSeverity, string> = {
+  1: 'Puts the whole study at risk',
+  2: 'A sample target will be missed',
+  3: 'A planned report is at risk',
+  4: 'Many firms are stuck in the funnel',
+  5: 'A required voice may go missing',
+  6: 'Needs a routine follow-up',
+};
 
 export const RAIL: RailSection[] = [
   {
@@ -132,13 +73,41 @@ export const RAIL: RailSection[] = [
   },
 ];
 
-export function MissionBoardPage(): JSX.Element {
-  const [phase, setPhase] = useState<Phase>('closing_week');
-  const cards = [...CARDS].sort((a, b) => a.severity - b.severity);
+export function MissionBoardPage({
+  client,
+  editionId,
+}: {
+  client: AdminClient;
+  editionId: string;
+}): JSX.Element {
+  const [cards, setCards] = useState<MissionCard[] | null>(null);
+  const [phase, setPhase] = useState<EditionPhase>('before_launch');
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setError(null);
+    try {
+      const board = await client.getMissionBoard(editionId);
+      setCards(board.cards);
+      setPhase(board.phase);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not load the mission board');
+    }
+  }, [client, editionId]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  if (!cards) {
+    return <main>{error ? <div className="err">{error}</div> : <p>Loading…</p>}</main>;
+  }
+
+  const ranked = [...cards].sort((a, b) => a.severity - b.severity);
 
   return (
     <main>
-      <p className="eyebrow">Study operations · 2026 edition</p>
+      <p className="eyebrow">Study operations · current edition</p>
       <h1 tabIndex={-1}>What needs a person today</h1>
       <p className="lede">
         Ranked by consequence. A card is here because the current trajectory threatens an agreed
@@ -146,39 +115,23 @@ export function MissionBoardPage(): JSX.Element {
         There is no dismiss control: a card leaves the moment its condition stops being true.
       </p>
 
-      <div className="actions" style={{ marginBottom: 12, flexWrap: 'wrap' }}>
-        <span className="tag soft" style={{ alignSelf: 'center' }}>
-          Edition phase:
-        </span>
-        {(['before_launch', 'collection_open', 'closing_week', 'closed'] as Phase[]).map((p) => (
-          <button
-            key={p}
-            type="button"
-            className="btn-2"
-            aria-pressed={p === phase}
-            style={p === phase ? { borderColor: 'var(--dragnet-black)' } : undefined}
-            onClick={() => setPhase(p)}
-          >
-            {p.replace('_', ' ')}
-          </button>
-        ))}
-      </div>
+      {error && <div className="err">{error}</div>}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 220px', gap: 18 }}>
         <div>
-          {cards.length === 0 ? (
+          {ranked.length === 0 ? (
             <div className="note">
               <p>Nothing needs a person right now.</p>
             </div>
           ) : (
-            cards.map((c) => (
+            ranked.map((c) => (
               <section
                 key={c.conditionId}
                 className={`stage ${c.severity <= 2 ? 'now' : ''}`}
                 style={{ marginBottom: 14 }}
               >
                 <div className="stagehead">
-                  <h2 style={{ margin: 0 }}>{c.what}</h2>
+                  <h2 style={{ margin: 0 }}>{c.whatIsAtRisk}</h2>
                   <span
                     className={`pill ${c.severity <= 2 ? 'stop' : c.severity <= 4 ? 'wait' : 'todo'}`}
                   >
@@ -202,9 +155,11 @@ export function MissionBoardPage(): JSX.Element {
                       <b>Why.</b> {c.why}
                     </p>
                   )}
-                  <p>
-                    <b>Recommended action.</b> {c.action}
-                  </p>
+                  {c.recommendedAction && (
+                    <p>
+                      <b>Recommended action.</b> {c.recommendedAction.label}
+                    </p>
+                  )}
                   {c.expectedImpact ? (
                     <p>
                       <b>Expected impact.</b> {c.expectedImpact}

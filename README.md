@@ -2228,3 +2228,154 @@ the new `MissionBoardPage.test.ts` and `apps/api/tests/edition-instrument-save-f
 against a live Postgres. `pnpm lint`, `pnpm typecheck`, and `pnpm turbo build` all clean.
 `pnpm audit` unchanged — the same pre-existing devDependency advisories as every prior phase, no
 `package.json` or lockfile touched.
+
+## Phase 23 correction — Brief-Derived Copy Is a Systemic Pattern, Not Five Phrases
+
+Phase 23 §1a/§1b fixed the exact phrases a bug report named. That was too narrow: the underlying
+defect is that `OPS_MISSION_BOARD_BUILD_BRIEF.md`'s worked examples, severity-table vocabulary,
+and remediation-table reasoning had leaked into user-facing copy wholesale — fixing five named
+phrases left the same class of defect sitting in plain sight elsewhere on the same screen. This
+correction fixes those remaining instances and, more importantly, replaces the phrase-list method
+with a durable one: **search by source, not by phrase.** A build brief exists to make engineering's
+reasoning legible to engineers — its worked examples, severity taxonomy, and audience-selection
+rationale are for a build team, never for the person reading a finished screen. Anything in a brief
+that reads like a sentence a user would see is an illustration, not a string; any number in a brief
+is a worked example, not a value to hardcode. The correct standing rule, confirmed directly against
+the current live `UX-OPS-001` v4.9 artefact (whose functional JavaScript is `var WORK = {}` /
+`var RULES = []` — genuinely empty, with every card field supplied by `bindData(payload)` at
+runtime): **the artefact and the brief both carry no literal product copy. Production copy is
+always written fresh, describing a real computed value in plain language — never adapted from
+either.**
+
+### What was still wrong, and why the previous fix missed it
+
+`317254c` fixed the phrases the report quoted, but two of the brief's own worked examples were
+still present verbatim, unrelated to those five phrases:
+
+- `'National retail floor missed by 333'` — §4A's illustrative shortfall number — was hardcoded in
+  `MissionBoardPage.tsx`'s `CARDS` array as though it were a real value.
+- `2: 'Statistical target threatened'` — §5's own severity-table label for rank 2 — was sitting
+  unchanged in `SEVERITY_LABEL`, because the previous audit judged it "stylistically consistent"
+  without checking where the wording actually came from.
+
+And the §1a fix itself, while an improvement, was incomplete in kind: rewriting
+`` `${e2.what} (folded in — not a separate card)` `` to
+`` `${e2.what} as a consequence of the same shortfall` `` changed the words but kept the same
+shape — engineering still explaining, via an appended clause, _why the system organized this
+information the way it did_, rather than simply stating the consequence. Under a "Consequence"
+heading, the fact alone (`e2.what`) already reads correctly; no wrapper clause was ever needed.
+
+### The actual defect: `MissionBoardPage.tsx` was never connected to the real evaluator
+
+The deepest issue, and the reason the phrase-by-phrase fix couldn't fully succeed: `evaluateBoard`
+(`mission-board-service.ts`) is a real, tested, live evaluator, reachable over a real route
+(`GET /editions/:id/mission-board`, `apps/api/src/routes/mission-board.ts`) — but nothing in
+`apps/admin` ever called it. `App.tsx` rendered `<MissionBoardPage />` with **no props at all**,
+and the page held its own permanently-static `CARDS` array. Every real, logged-in user who opened
+"Mission board" — in production, today, regardless of the edition's actual state — saw the same
+fabricated example forever. This is not a dev-only fixture (`CARDS`'s own comment called it
+"Example board state," which invited exactly that wrong assumption without ever being checked):
+it was the literal, unconditional, production render path for a core screen. As long as this was
+true, no amount of phrase-editing inside `CARDS` could produce "genuine computed values" — a
+static array cannot compute anything. The fix had to be structural, not lexical.
+
+`MissionBoardPage.tsx` now takes `{client, editionId}` (the same pattern every other wired admin
+page already uses — `EditionPage`, `SurveysPage`), fetches the real board via a new
+`client.getMissionBoard(id)` (added to `AdminClient`, mirroring the existing method pattern; new
+`MissionCard`/`MissionBoardResponse` types in `api/types.ts` mirror `@cis/shared-types`'s real
+`MissionCard`), and renders exactly what `evaluateBoard` returns — real evidence, real consequence
+text, real recommended actions, real (or genuinely omitted) expected impact. The fake local
+"Edition phase" toggle buttons — which let anyone click through four fabricated phases regardless
+of the edition's actual state — are gone; the rail's phase-awareness now reads the real `phase` the
+API returns alongside the cards. `RAIL` (navigation metadata — which admin sections exist and
+when they're relevant) stays static, same as before, because it's genuinely UI structure, not
+brief-illustrative content, and isn't materially different from Phase 23's already-correct fix to
+it.
+
+Verified live, not just by test: with the API and admin dev servers running against a freshly
+seeded `cis_dev`, the Mission Board screen now shows real computed evidence (`"Forecast
+firm-attributable 0 of 80 required"` — the seed's actual firm floor, actual zero responses) and a
+freshly-worded severity label (`"A planned report is at risk"`), with the rail correctly greying
+out Monitoring/Results/Dragnet analysis because the seeded edition is genuinely in `before_launch`
+phase — not because they're unbuilt.
+
+### Severity labels, rewritten fresh — not paraphrased
+
+All six `SEVERITY_LABEL` entries were rewritten, not just rank 2 — the whole table traces to the
+same brief section (§5), so the whole table was suspect, not only the one instance a report
+happened to quote. Same six ranks, same order (1 most consequential), independently composed:
+
+| Rank | Before (brief §5's own wording)   | After (written fresh for this screen) |
+| ---- | --------------------------------- | ------------------------------------- |
+| 1    | Cannot deliver the promised study | Puts the whole study at risk          |
+| 2    | Statistical target threatened     | A sample target will be missed        |
+| 3    | Report dependency threatened      | A planned report is at risk           |
+| 4    | Severe funnel failure             | Many firms are stuck in the funnel    |
+| 5    | Representation risk               | A required voice may go missing       |
+| 6    | Routine operational follow-up     | Needs a routine follow-up             |
+
+### Remediation-cohort labels: the same "why we chose this route" leak, in §8B's table
+
+Applying the same test (does this explain real-world state a user needs, or the system's own
+internal reasoning?) to `remediationForCohort` — the source of every card's "Recommended action"
+text — found three more instances of the identical em-dash-appended-rationale pattern already
+confirmed in §1a, this time from §8B's remediation table:
+
+- `'Bulk nudge — knowable without a client list'` → `'Bulk nudge'`
+- `'Message all participating firms — the relevant cohort cannot be identified'` →
+  `'Message all participating firms'`
+- `'Export the bounced addresses for CIS — nowhere to bulk-send'` →
+  `'Export the bounced addresses for CIS'`
+
+Each dropped clause explained an internal audience-targeting/data-modeling limitation ("knowable,"
+"cannot be identified," "nowhere to bulk-send" are all properties of Phase 9's targeting system,
+not of the real world) — the exact same shape as `'(folded in — not a separate card)'`, just in a
+different table. By contrast, `mission-forecast.ts`'s four funnel-diagnosis labels (`'Invited but
+not claimed — wrong person, dead address, or nobody acted.'` and its three siblings, §17's
+funnel-diagnosis example) were deliberately left untouched: they explain plausible _real-world_
+reasons a firm might be stuck, which is exactly what an operator needs to act — not how the
+software is built. Not every string that traces to a brief section is a defect; the test is what
+kind of thing it explains, not where it originated.
+
+### Dragnet rail label — confirmed, not just Regulators/Monitoring
+
+Re-verified directly against the current file: `RAIL`'s `dragnet` entry reads `built: true`,
+`label: 'Dragnet analysis'` — no "not built" qualifier. This was already corrected in `317254c`
+alongside Regulators and Monitoring; nothing further was needed here.
+
+### A durable test, not a bigger phrase list
+
+`packages/domain/tests/mission-board.test.ts` gained a new describe block asserting, by pattern
+rather than by exact string: no `CONDITIONS[].what`, no `remediationForCohort(...).label` for any
+of the eight cohorts, and no field of a real, live-evaluated board's cards matches the confirmed
+jargon-shape patterns (`folded in`, `not a separate card`, `dedup`, `engine [12]`, `knowable
+without`, `cannot be identified`, `nowhere to (bulk-)send`, an em-dash followed by a
+system/audience/cohort/targeting-reasoning clause, and — a direct regression guard — the exact
+brief-table phrase `'Statistical target threatened'`). This runs against the real evaluator, not a
+fixture, so it catches a reintroduction regardless of which card produces it.
+`apps/admin/src/pages/MissionBoardPage.test.ts` was updated to match: the old `CARDS`-specific
+test is gone (there's no longer a static `CARDS` export to test — the page fetches real data), and
+it now guards the two exports that remain genuinely static: `SEVERITY_LABEL` and `RAIL`. The
+"illustrative number hardcoded as if real" failure mode (`333`) has no equivalent test, deliberately:
+it doesn't need a numeric blocklist, because the structural fix (the page can no longer render
+anything but a real computed value) eliminates the failure mode by construction, not by pattern-
+matching a number that could legitimately recur as a real, coincidental shortfall in a different
+scenario.
+
+### Verification
+
+Full suite: `pnpm test` — **39 files, 412 tests, all green** against a live Postgres (up from 410:
++3 new domain jargon-regression tests, +4/−5 in the rewritten admin page test). `pnpm lint`,
+`pnpm typecheck`, and `pnpm turbo build` all clean. `pnpm audit` unchanged. Live-verified in a real
+browser (Playwright/Chromium) against a freshly seeded `cis_dev`: the Mission Board screen renders
+real evidence, real consequence text, and the correct phase-aware rail state — screenshotted for
+the record, not just asserted in a test.
+
+**The standing rule for any future screen built from a brief:** a build brief explains reasoning
+and gives worked examples so engineering understands the rules. It never supplies copy. Anything
+in a brief that reads like a sentence a user would see is an illustration, not a string; any number
+in a brief is a worked example, not a value to hardcode. When an artefact exists, check it
+directly before assuming it's a copy source — this artefact carries no literal text at all, every
+field arrives via `bindData` at runtime, which means the standing rule is not "copy text from the
+artefact" either. Production copy is written fresh, in plain language, describing a real computed
+value.

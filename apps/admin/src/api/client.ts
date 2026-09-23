@@ -7,6 +7,7 @@ import {
   type FirmSummary,
   type InstrumentsResponse,
   type LoginResponse,
+  type MissionBoardResponse,
   type SampleFloor,
 } from './types';
 
@@ -62,6 +63,7 @@ export interface AdminClient {
     rejectionReason?: string,
   ): Promise<{ status: 'approved' | 'rejected'; editionStatus: string }>;
   getInstruments(id: string): Promise<InstrumentsResponse>;
+  getMissionBoard(id: string): Promise<MissionBoardResponse>;
   getInstrumentItems(code: string): Promise<SurveyItem[]>;
   requestFreeze(id: string, reason: string): Promise<{ criticalActionId: string }>;
   decideFreeze(
@@ -128,6 +130,7 @@ export function createClient(token: string | null): AdminClient {
         token,
       }),
     getInstruments: (id) => request(`/editions/${id}/instruments`, { token }),
+    getMissionBoard: (id) => request(`/editions/${id}/mission-board`, { token }),
     getInstrumentItems: (code) =>
       request<{ items: SurveyItem[] }>(`/instruments/${encodeURIComponent(code)}/items`, {
         token,

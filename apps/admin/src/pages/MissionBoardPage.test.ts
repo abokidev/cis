@@ -1,24 +1,33 @@
 /**
- * Post-demo findings (§1a/§1b) — regression tests, no DOM required.
+ * Post-demo findings (§1a/§1b, and the follow-up correction) — regression
+ * tests for the parts of the Mission Board page that remain static exports:
+ * the severity-rank label map and the navigation rail. Card content itself
+ * is no longer static (the page fetches the real, live-evaluated board —
+ * see MissionBoardPage.tsx's header comment and App.tsx's wiring), so its
+ * copy is guarded where it's actually produced:
+ * packages/domain/tests/mission-board.test.ts, "No brief-derived
+ * illustration or system-mechanism leakage in card/action copy".
  *
  *  §1a: internal engineering rationale ("folded in — not a separate card",
- *       "(correct, not a bug)", "honest stub") leaked into user-facing card
- *       and rail copy. Fixed by rewriting to plain consequence language; this
- *       test asserts no card/rail string reintroduces implementation-mechanics
- *       phrasing, by pattern rather than by the exact quoted strings, so a
- *       future re-leak of the SAME CLASS of bug is caught too.
+ *       "(correct, not a bug)", "honest stub") must never leak into rail
+ *       copy or the severity labels this page still owns.
  *  §1b: three rail labels claimed "not built" for surfaces that ship real,
  *       routed pages (Regulators — Phase 12, Monitoring — Phase 13, Dragnet
  *       analysis — Phase 16). This test asserts every RAIL entry marked
- *       `built: true` (all six, now) carries no stale "not built" qualifier,
- *       and that the label text names only the surface, not a build claim.
+ *       `built: true` (all six, now) carries no stale "not built" qualifier.
+ *  Correction: the severity labels were previously the brief's own §5
+ *  severity-table wording verbatim (e.g. rank 2's 'Statistical target
+ *  threatened'). They are now freshly written for this screen — this test
+ *  guards against that exact phrase, and the same class of phrase,
+ *  reappearing.
  */
 import { describe, it, expect } from 'vitest';
-import { CARDS, SEVERITY_LABEL, RAIL } from './MissionBoardPage';
+import { SEVERITY_LABEL, RAIL } from './MissionBoardPage';
 
-// Implementation-mechanics/internal-rationale phrasing that must never appear
-// in text a study-team user reads — matched broadly, not just the exact
-// strings originally found, so a differently-worded re-leak is still caught.
+// Implementation-mechanics/internal-rationale phrasing, and the specific
+// brief-table wording previously found, matched broadly rather than as an
+// exact phrase list, so a differently-worded re-leak of the same class is
+// still caught.
 const MECHANICS_JARGON = [
   /folded in/i,
   /not a separate card/i,
@@ -26,6 +35,7 @@ const MECHANICS_JARGON = [
   /honest stub/i,
   /\bdedup(e|lication)?\b/i,
   /\bengine\s*[12]\b/i,
+  /^statistical target threatened$/i,
 ];
 
 function assertNoMechanicsJargon(label: string, text: string): void {
@@ -35,21 +45,7 @@ function assertNoMechanicsJargon(label: string, text: string): void {
 }
 
 describe('Mission Board — no leaked internal-mechanics jargon in user-facing copy (§1a)', () => {
-  it('no card field (what/consequence/why/action/expectedImpact) leaks implementation mechanics', () => {
-    for (const card of CARDS) {
-      assertNoMechanicsJargon(`card ${card.conditionId} "what"`, card.what);
-      for (const line of card.consequence) {
-        assertNoMechanicsJargon(`card ${card.conditionId} consequence line`, line);
-      }
-      if (card.why) assertNoMechanicsJargon(`card ${card.conditionId} "why"`, card.why);
-      assertNoMechanicsJargon(`card ${card.conditionId} "action"`, card.action);
-      if (card.expectedImpact) {
-        assertNoMechanicsJargon(`card ${card.conditionId} "expectedImpact"`, card.expectedImpact);
-      }
-    }
-  });
-
-  it('no severity-rank label leaks implementation mechanics', () => {
+  it("no severity-rank label leaks implementation mechanics or the brief's own table wording", () => {
     for (const [rank, label] of Object.entries(SEVERITY_LABEL)) {
       assertNoMechanicsJargon(`severity rank ${rank}`, label);
     }

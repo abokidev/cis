@@ -605,9 +605,11 @@ export interface FirmReportReleaseHistory {
  * The sign-off record's lifecycle. `requested` = a maker submitted the
  * structured account; `signed_off` = a different person approved (this run is
  * authoritative); `superseded` = a LATER run was signed off, so this one is no
- * longer authoritative but stays visible in the history.
+ * longer authoritative but stays visible in the history; `rejected` = a
+ * different person declined the request, with a reason — the run remains
+ * un-authoritative and a fresh request may be submitted for it.
  */
-export type ScoringSignoffState = 'requested' | 'signed_off' | 'superseded';
+export type ScoringSignoffState = 'requested' | 'signed_off' | 'superseded' | 'rejected';
 
 /**
  * The STRUCTURED account of what the signer verified — "the record is the
@@ -640,6 +642,9 @@ export interface ScoringSignoff {
   approvedAt: Date | null;
   supersededBy: string | null;
   supersededAt: Date | null;
+  rejectedBy: string | null;
+  rejectedAt: Date | null;
+  rejectionReason: string | null;
   createdAt: Date;
   updatedAt: Date;
 }

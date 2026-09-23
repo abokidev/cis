@@ -10,6 +10,7 @@ import {
   getSections,
   generateFirmReports,
   approveFirmReport,
+  regenerateFirmReport,
   releaseFirmReports,
   getFirmReports,
   type SufficiencyContext,
@@ -153,6 +154,17 @@ export const reportingRoutes: FastifyPluginAsyncZod = async (app) => {
     async (request, reply) => {
       const report = await approveFirmReport(getPool(), request.params.id);
       return reply.send({ approvalState: report.approvalState });
+    },
+  );
+
+  // Retry a failed/held report's generation. Never a released report — the DB
+  // itself refuses any edit to one; a correction there is a new version.
+  app.post(
+    '/firm-reports/:id/regenerate',
+    { preHandler: [app.authenticate], schema: { params: z.object({ id: z.string().uuid() }) } },
+    async (request, reply) => {
+      const report = await regenerateFirmReport(getPool(), request.params.id);
+      return reply.send({ report });
     },
   );
 

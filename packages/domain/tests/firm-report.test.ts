@@ -26,6 +26,7 @@ import {
   cutStateFor,
   generateFirmReports,
   approveFirmReport,
+  regenerateFirmReport,
   releaseFirmReports,
   correctFirmReport,
   buildEvidencePack,
@@ -204,6 +205,36 @@ describe('Immutability of a released report', () => {
       scoringRunId,
     });
     expect(corrected.version).toBe(releasedReport.version + 1);
+    expect((await getFirmReport(pool, releasedReport.id))?.releaseState).toBe('released');
+  });
+});
+
+describe('Regeneration — retrying a failed report, never a released one', () => {
+  it('retries a failed report back to generated, recording it in the release history', async () => {
+    const a = await participatingFirm('firm-retry');
+    const gen = await generateFirmReports(pool, { editionId, scoringRunId, failFor: [a.id] });
+    const report = gen.reports.find((r) => r.organizationId === a.id)!;
+    expect(report.generationState).toBe('failed');
+
+    const regenerated = await regenerateFirmReport(pool, report.id);
+    expect(regenerated.generationState).toBe('generated');
+    const history = await listReleaseHistory(pool, editionId);
+    expect(history.some((h) => h.organizationId === a.id && h.action === 'regenerated')).toBe(true);
+  });
+
+  it('refuses to regenerate an already-released report, with a clean domain error', async () => {
+    const a = await participatingFirm('firm-released-retry');
+    const gen = await generateFirmReports(pool, { editionId, scoringRunId });
+    const report = gen.reports.find((r) => r.organizationId === a.id)!;
+    await approveFirmReport(pool, report.id);
+    await approveNationalFor();
+    const { released } = await releaseFirmReports(pool, editionId);
+    const releasedReport = released[0]!;
+
+    await expect(regenerateFirmReport(pool, releasedReport.id)).rejects.toMatchObject({
+      code: 'ALREADY_RELEASED',
+    });
+    // Never even reached the DB's own trigger — the release state is unchanged.
     expect((await getFirmReport(pool, releasedReport.id))?.releaseState).toBe('released');
   });
 });

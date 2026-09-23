@@ -2625,3 +2625,247 @@ unreachable end-to-end (needs Phase 20's AI report exemplars before draft-senten
 be built); scoring sign-off still has no reject capability at any layer; firm-report regeneration
 still has no route. This pass closes the fourth and largest confirmed instance of the "mockup
 never wired to its real backend" defect class; no fifth instance is currently known.
+
+## Whole-Directory Mockup Sweep + Two Domain Gaps Closed
+
+The previous four passes each ended with a version of "no further instance is currently known" —
+a claim built by grepping for one specific header phrase (`"Self-contained functional surface
+(local state)"`) plus a manual demo-toggle pattern. That is a weaker claim than it sounds: a page
+using different, non-misleading header language would never match the grep, whether or not it has
+the same underlying defect. This pass replaces it with a deliberate, page-by-page pass over every
+file in `apps/admin/src/pages` (17 files), checked directly against three technical criteria
+regardless of how each page's own comments describe itself: (a) local state standing in for live
+API data, (b) a manual demo/state-toggle UI, (c) no real `client.*` call backing what the page
+shows. Independently, it closes two small, previously-flagged domain gaps (§2 above: scoring
+sign-off's missing reject path, firm-report regeneration's missing route).
+
+### §1 — The definitive sweep: all 17 pages, no exceptions
+
+| Page                     | Props                         | `client.` calls                    | Verdict                                                                                                                                                               |
+| ------------------------ | ----------------------------- | ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DragnetPage.tsx`        | `{client, editionId}`         | 2                                  | **Confirmed real**                                                                                                                                                    |
+| `EditionPage.tsx`        | `{client, editionId, viewer}` | 6                                  | **Confirmed real**                                                                                                                                                    |
+| `FirmReportsPage.tsx`    | `{client, editionId}`         | 8                                  | **Confirmed real** (fixed in the Batch-1 pass, §2 above)                                                                                                              |
+| `FirmResultsPage.tsx`    | none                          | 0                                  | **Confirmed mockup** — see below                                                                                                                                      |
+| `FirmTeamPage.tsx`       | `{client, editionId}`         | 6                                  | **Confirmed real**                                                                                                                                                    |
+| `InvitationsPage.tsx`    | `{client, editionId}`         | 11                                 | **Confirmed real** (fixed above, largest instance)                                                                                                                    |
+| `LoginPage.tsx`          | `{onSignIn}`                  | 0 (calls the standalone `login()`) | **Confirmed real** — different call shape, genuinely live                                                                                                             |
+| `MissionBoardPage.tsx`   | `{client, editionId}`         | 1                                  | **Confirmed real** (fixed, first instance)                                                                                                                            |
+| `NationalReportPage.tsx` | `{client, editionId, viewer}` | 7                                  | **Confirmed real** — the page itself is wired; its _approval flow_ is separately blocked by the missing draft-sentence generator (already flagged, out of scope here) |
+| `PeopleAccessPage.tsx`   | none                          | 0                                  | **Confirmed mockup** — see below                                                                                                                                      |
+| `RegulatorsPage.tsx`     | none                          | 0                                  | **Confirmed mockup, previously disclosed** — see below                                                                                                                |
+| `RendererPage.tsx`       | `{client}`                    | 1                                  | **Confirmed real**                                                                                                                                                    |
+| `ResponsesPage.tsx`      | none                          | 0                                  | **Confirmed mockup** — see below                                                                                                                                      |
+| `ScoresSignoffPage.tsx`  | `{client, editionId, viewer}` | 6 (now incl. `rejectSignoff`)      | **Confirmed real** (fixed; extended in §2a below)                                                                                                                     |
+| `SurveysPage.tsx`        | `{client, editionId, viewer}` | 3                                  | **Confirmed real**                                                                                                                                                    |
+| `UnfinishedPage.tsx`     | none                          | 0                                  | **Confirmed mockup** — see below                                                                                                                                      |
+| `WordingPage.tsx`        | `{client}`                    | 4                                  | **Confirmed real**                                                                                                                                                    |
+
+**Totals: 12 confirmed real, 5 confirmed mockup, 0 ambiguous.** Every page was read in full, not
+just grepped; the zero-prop/zero-`client.`-call signature is a triage heuristic, not the verdict —
+`LoginPage.tsx` is the proof it can false-positive (it calls a standalone `login()` export, not the
+`client` object, and is genuinely live).
+
+### §2 — The five confirmed mockups, individually
+
+Four of the five are **not new discoveries**. They were already checked in the Design
+Reconciliation Audit (Batch 1, above) and deliberately excluded from that fix — but excluded on a
+narrower test ("does the header say 'self-contained,' the misleading phrasing") than this pass's
+literal technical criteria ("does it match the shape, regardless of what the header calls it").
+Re-applying the literal criteria here means they now appear on this list; it does not mean they
+were hidden before. None of the five is fixed in this pass — none is "a handful of lines," each
+is comparable in size to `InvitationsPage.tsx` (the largest prior fix) or raises a genuine
+architecture question first. Per this task's own instruction, each is reported and stopped, for a
+future dedicated pass.
+
+1. **`RegulatorsPage.tsx`** — its own header comment already says outright: "Local state stands in
+   for the live edition here, exactly as the other Study Operations surfaces do — a DELIBERATE
+   scope decision (documented in the README), not yet wired to the live per-role API." This is the
+   one honestly self-disclosed case, not a hidden gap — carried forward unchanged.
+
+2. **`FirmResultsPage.tsx`** — a real, tested backend already exists
+   (`packages/domain/src/firm-results-service.ts`'s `getFirmResults`, exposed at
+   `GET /editions/:editionId/firms/:firmId/results` in `apps/api/src/routes/firm-results.ts`), so
+   the gap is not "build the backend." The blocker is an auth-model mismatch: that route
+   authenticates via a **coordinator access code** header (`x-coordinator-access-code`), matching
+   its own comment — "not operator-authenticated... coordinator-only (§9)" — while the page is
+   rendered inside the **operator-authenticated** admin app, behind a normal login session. Wiring
+   this needs a product decision first (does an operator enter a coordinator's access code? pick a
+   firm from a list? does a separate operator-scoped variant of the route need to exist?) — not
+   just a `client` method and a fetch call.
+
+3. **`PeopleAccessPage.tsx`** — a real, tested, fully-routed backend already exists
+   (`packages/domain/src/people-access-service.ts`, `GET/POST/PATCH/DELETE /people` in
+   `apps/api/src/routes/people.ts`, including server-side enforcement of the two-approver floor,
+   the Dragnet-only right, and self-removal). The page's local `SEED` array and `ME_EMAIL` constant
+   stand in for all of it. Genuinely wiring this — three views (list/add/detail), real
+   add/edit/remove calls, replacing the hardcoded "signed-in operator" with the real `viewer`
+   prop — is a multi-call-site rewiring effort the same size class as the Batch-1 fixes, not a
+   trivial one.
+
+4. **`ResponsesPage.tsx`** — a real, tested, routed backend exists
+   (`packages/domain/src/responses-monitoring-service.ts`'s `getResponsesMonitor`, at
+   `GET /editions/:id/responses-monitor` in `apps/api/src/routes/monitoring.ts`, which the
+   already-fixed Mission Board's own conditions 7/8 read from the same computation). The page's
+   `CARDS`/`DEPS` arrays are fully hardcoded. No demo-toggle buttons here (it's a pure read-only
+   dashboard), but criteria (a) and (c) are both met, and the segment-card/dependency-table shape
+   is non-trivial to replace correctly.
+
+5. **`UnfinishedPage.tsx`** — a real, tested, routed backend exists
+   (`packages/domain/src/reminder-timing-service.ts`, at `GET /editions/:id/unfinished`,
+   `PUT /reminders/schedule`, `PUT /reminders/cap`, `POST /editions/:id/reminders/run` in
+   `monitoring.ts`). The page's `DATA`/`STOPS`/`INITIAL_SCHEDULE` arrays are hardcoded, and its
+   reminder-schedule "On/Off" toggles edit only local state — never persisted, never read back.
+
+### §3 — 2a: scoring sign-off can now be rejected
+
+`packages/domain/src/scoring-signoff-service.ts` gains `rejectSignoff(pool, {signoffId,
+rejectedBy, reason})`, mirroring `approveSignoff`'s exact shape: only a `requested` sign-off can be
+rejected, the rejecter can never be the requester (`ScoringSignoffError`/`SELF_REJECTION` — the
+same class and pattern as the existing `SELF_APPROVAL`), and a reason is required
+(`SignoffPayloadError` if blank, the same error class the checked-account validation already
+uses). `ScoringSignoffState` gains `'rejected'` (`packages/shared-types`); a rejected sign-off is
+treated the same as `superseded` for "liveness" — `getLiveSignoffForRun` already excludes both, so
+a maker can submit a fresh request for the same run immediately after a rejection, with no schema
+change needed there.
+
+New migration `20260919000000_phase24-scoring-signoff-reject.js` adds `rejected_by`/`rejected_at`/
+`rejection_reason` to `scoring_signoffs`, widens the `state` CHECK to include `'rejected'`, and adds
+two new CHECK constraints mirroring the table's existing ones: `rejected_by <> requested_by` (the
+same maker-checker shape as the existing `approved_by` CHECK) and a rejected row must carry all
+three rejection fields (mirroring the existing signed-off-fields CHECK). New
+`rejectSignoffRow` in `packages/db/src/queries/scoring-signoffs.ts` mirrors `approveSignoffRow`'s
+guarded single-UPDATE shape exactly.
+
+New route `POST /scoring-signoffs/:signoffId/reject` (`apps/api/src/routes/scoring.ts`), taking
+`{rejectedBy, reason}` — the same body-carries-actor shape `approve` already uses, not the
+JWT-`sub` shape `people.ts` uses (kept consistent with this route file's own existing convention,
+not changed). New `client.rejectSignoff(signoffId, rejectedBy, reason)` in
+`apps/admin/src/api/client.ts`.
+
+`ScoresSignoffPage.tsx`'s review section — which previously offered only "Approve and sign off,"
+with a header comment explicitly noting the old mockup's Reject button was never backed by a real
+capability — now offers a real "Reject" action: clicking it reveals a required reason field, and
+submission calls the real route. The requester sees the rejection (who, when, why) the next time
+they view the run, with a fresh "Request approval" control immediately available again. The
+self-check is enforced at three independent layers, each verified: the UI hides both decision
+controls entirely for the requester's own request (not merely disables them — same convention as
+the platform's other maker-checker reviews); a direct HTTP call as the requester is refused with a
+clean `409 SELF_REJECTION`; and the DB's own CHECK constraint is the structural backstop under both.
+
+**A pre-existing bug found and fixed while adding this**: `apps/api/src/server.ts` registered its
+custom `setErrorHandler` **after** every route plugin (`app.register(scoringRoutes)`, etc.).
+Fastify resolves a route's error handler from its plugin-encapsulation context at _registration_
+time, not dynamically per request — a handler set on the root instance after a child plugin has
+already registered its routes never applies to that plugin's routes. The practical effect: **every
+domain error thrown from inside any route handler in this entire API, always, returned Fastify's
+generic default 500 response instead of the intended classified 4xx** — the whole
+`resolveStatusCode` name-to-status mapping (self-approval → 409, validation → 400, permission → 403,
+etc.) had never actually been reachable, for any route, at any point. This was never caught before
+because no existing HTTP-level test in the repo asserted a 4xx domain-error response over real
+`app.inject()` — every prior HTTP test asserted only the happy path. Fixed by moving
+`app.setErrorHandler(...)` to before the route registrations, and hardening `resolveStatusCode`
+itself to check the name-based switch before falling back to `error.statusCode` (Fastify assigns
+every thrown error a default `statusCode` of 500 before the handler ever sees it, so checking that
+field first would have silently defeated the switch even with correct registration order). Proven
+by the two new HTTP-level test files below, both of which assert real 409/400 responses that would
+have failed loudly against the old code (confirmed directly: they did fail, with the generic
+Fastify shape, before this fix).
+
+### §4 — 2b: firm-report regeneration now has a route
+
+`regenerateFirmReport(pool, id)` already existed in `packages/domain/src/firm-report-service.ts`
+and was already exported from the package — confirmed directly before doing anything else, per
+this task's own instruction to check first. It was not, in fact, already tested anywhere (the
+prior write-up's "exists and is tested" was half right); no test file referenced it. It also had
+one real gap of its own: it would call `setGenerationState` unconditionally, with no check for an
+already-`released` report — the DB's own `prevent_released_firm_report_change` trigger would
+eventually refuse it, but as a raw, unclassified Postgres exception (a 500), not a clean domain
+error. Fixed by adding the same released-state check the rest of this module already performs
+elsewhere, throwing `FirmReportError`/`ALREADY_RELEASED` (409) before ever reaching the DB.
+
+New route `POST /firm-reports/:id/regenerate` (`apps/api/src/routes/reporting.ts`). New
+`client.regenerateFirmReport(reportId)` in `apps/admin/src/api/client.ts`.
+`FirmReportsPage.tsx`'s existing "N of M failed to generate and are HELD" warning box — which
+previously said outright "Retrying generation from this page is not yet available" — now lists
+each held firm with a real "Retry generation" button, calling the real route.
+
+### §5 — Live verification, real seeded data
+
+Both flows were driven end to end in a real browser (Playwright/Chromium) against the dev API and
+admin servers, freshly migrated and seeded, with the edition advanced to `locked` (via the same
+domain functions the tests use, not a UI shortcut — a fresh seed starts in `draft`, and this admin
+UI currently has no "trigger a second run" control beyond the very first one, so a second run was
+created directly over HTTP as the seeded maker user, the same way the verification methodology has
+done throughout this programme when a screen doesn't yet expose every setup step it depends on):
+
+- **Reject, two different seeded users**: requested sign-off as the maker; reviewed and rejected
+  as the checker with a real reason ("Population counts look stale — please re-check before
+  resubmitting."); the run's row in the Runs table updated to a red "Rejected" pill immediately for
+  the checker. Reloading as the maker showed the same reason, attributed to the checker, by name
+  and timestamp, with the "Request approval" control available again on the same run — matching the
+  domain rule directly, not just a page refresh coincidence.
+- **Self-rejection, both layers**: as the maker viewing their own pending request, neither
+  "Approve and sign off" nor "Reject" render at all (checked by element count, not just visual
+  inspection). A direct HTTP call attempting the same self-rejection was refused with a real
+  `409 SELF_REJECTION` and the exact domain message.
+- **Firm-report retry, real held state**: seeded one firm (via the same out-of-repo
+  verification-script pattern used for `InvitationsPage`, since the canonical seed creates zero
+  firms) with a genuine generation failure (`generateFirmReports(..., failFor: [firmId])`, the same
+  mechanism `packages/domain/tests/firm-report.test.ts` uses). The page correctly showed "1 of 4
+  failed to generate and are HELD" with a "Retry generation" button; clicking it made the warning
+  box disappear entirely and the firm's row gain a real "Approve" control, meaning generation had
+  genuinely succeeded, not just re-rendered.
+- The already-released-report refusal (`ALREADY_RELEASED`) was **not** driven through the full live
+  UI: reaching a genuinely `released` report requires the national report to be approved first,
+  which is the already-flagged, out-of-scope blocker (§ above) — pushing a report to `released`
+  live would mean routing around that blocker, not verifying this one. It is proven instead at both
+  the domain layer (`packages/domain/tests/firm-report.test.ts`) and the HTTP layer
+  (`apps/api/tests/firm-report-regenerate.test.ts`), each against a report genuinely taken through
+  `releaseFirmReports` first.
+
+### §6 — Tests
+
+New domain-level tests: four in `packages/domain/tests/scoring-signoff.test.ts` (self-rejection
+blocked, reason required, a rejected run is free for a fresh request, cannot reject a non-requested
+sign-off) and two in `packages/domain/tests/firm-report.test.ts` (a failed report regenerates and
+is recorded in the release history; an already-released report refuses with `ALREADY_RELEASED` and
+is left genuinely unchanged). New HTTP-level test files:
+`apps/api/tests/scoring-signoff-reject.test.ts` (success, self-rejection 409, empty-reason 400) and
+`apps/api/tests/firm-report-regenerate.test.ts` (success, already-released 409) — both of which
+also exercise (and would have caught) the error-handler ordering bug above.
+
+Full suite: `pnpm test` — **44 files, 437 tests, all green** (up from 42/426: +6 domain tests,
++5 HTTP-level tests across the two new files) against a live Postgres. `pnpm lint`, `pnpm
+typecheck`, `pnpm turbo build` all clean. `pnpm audit` unchanged — the same three pre-existing
+devDependency advisories as every prior phase (`js-yaml` via `eslint`), no `package.json` or
+lockfile touched.
+
+### §7 — Running list of open items needing a decision (not resolved here)
+
+1. **National report approval is currently unreachable end-to-end** — needs a product decision on
+   how draft sentences get produced before the adversarial-checker gate can ever pass. Unchanged by
+   this pass; explicitly out of scope.
+2. **`FirmResultsPage.tsx` (UX-FRM-RES-001)** — real backend and route already exist, but the route
+   is coordinator-access-code-authenticated while the page sits behind the operator-authenticated
+   admin session. Needs a product decision on the auth model before it can be wired, then a
+   dedicated pass.
+3. **`PeopleAccessPage.tsx` (UX-OPS-006)** — confirmed same "local-state mockup, never calls its own
+   real routes" defect as the four already fixed. Real, fully-routed backend already exists. Needs
+   a dedicated pass — three views, real CRUD, replacing the hardcoded "signed-in operator" with the
+   real session identity.
+4. **`ResponsesPage.tsx` (UX-OPS-003)** — same defect; real, routed backend already exists
+   (`getResponsesMonitor`, the same computation Mission Board already reads). Needs a dedicated
+   pass.
+5. **`UnfinishedPage.tsx` (UX-OPS-004)** — same defect; real, routed backend already exists
+   (`reminder-timing-service.ts`), including the schedule/cap the page's own UI edits only locally
+   today. Needs a dedicated pass.
+6. **`RegulatorsPage.tsx` (UX-OPS-007)** — unchanged: an honestly, previously self-disclosed
+   deliberate scope decision, not a hidden gap. No action needed beyond what's already documented.
+
+Removed from this list, now resolved: scoring sign-off's missing reject capability (§3 above) and
+firm-report regeneration's missing route (§4 above). This pass also closes the earlier "no fifth
+instance is currently known" claim with a verified one: the whole-directory sweep found four
+further pages matching the technical mockup shape (items 2–5 above), none of them new or hidden —
+each already reviewed once and excluded from an earlier pass on a narrower test than this one used
+— and confirms no other page in the directory is unaccounted for.

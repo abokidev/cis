@@ -101,7 +101,7 @@ export interface CalculationRun {
   createdAt: string;
 }
 
-export type ScoringSignoffState = 'requested' | 'signed_off' | 'superseded';
+export type ScoringSignoffState = 'requested' | 'signed_off' | 'superseded' | 'rejected';
 
 export interface ScoringCheckedAccount {
   populationCountsReviewed: boolean;
@@ -120,6 +120,9 @@ export interface ScoringSignoff {
   requestedAt: string;
   approvedBy: string | null;
   approvedAt: string | null;
+  rejectedBy: string | null;
+  rejectedAt: string | null;
+  rejectionReason: string | null;
 }
 
 export interface IndexScoreView {

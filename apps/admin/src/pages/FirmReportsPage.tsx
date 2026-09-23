@@ -11,10 +11,9 @@ import { ApiError, type FirmReport, type FirmSummary } from '../api/types';
  * not excluded, and holds no other firm back; release is blocked until the
  * national report is approved.
  *
- * One real, found gap this wiring surfaced: `regenerateFirmReport` exists and
- * is tested in firm-report-service.ts, but has no route in reporting.ts — so
- * a held/failed report cannot actually be retried from this page yet. The
- * held state is shown honestly; the retry action is not fabricated.
+ * A held/failed report can be retried from here — never a released one; a
+ * correction to a released report is a new version, not an edit to it (the DB
+ * itself refuses any edit to a released row).
  */
 
 const CUT_LABEL: Record<string, string> = {
@@ -250,13 +249,22 @@ export function FirmReportsPage({
               <b>
                 {failed.length} of {reports.length} failed to generate and are HELD.
               </b>
-              <p style={{ margin: '6px 0 0' }}>
-                {failed.map((r) => firmName(r.organizationId)).join(' · ')}
-              </p>
-              <p style={{ margin: '6px 0 0' }}>
-                A held report is held, not excluded. Retrying generation from this page is not yet
-                available — see the file header comment.
-              </p>
+              <p style={{ margin: '6px 0 0' }}>A held report is held, not excluded.</p>
+              <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
+                {failed.map((r) => (
+                  <li key={r.id} style={{ margin: '4px 0' }}>
+                    {firmName(r.organizationId)}{' '}
+                    <button
+                      type="button"
+                      className="btn-2"
+                      disabled={busy}
+                      onClick={() => doRun(() => client.regenerateFirmReport(r.id))}
+                    >
+                      Retry generation
+                    </button>
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
 

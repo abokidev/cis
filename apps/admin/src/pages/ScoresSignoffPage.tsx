@@ -22,11 +22,9 @@ import {
  *   - Sign-off needs a STRUCTURED account of what was checked; a maker can
  *     never approve their own request.
  *
- * Two real gaps found while wiring this (documented in the README, not
- * invented here): the API has no reject-a-sign-off-request endpoint, and
- * `ScoringSignoffState` itself has no "rejected" value — the mockup's
- * "Reject" button was never backed by a real capability. The review view
- * below offers only what the real API supports: approve, or leave pending.
+ *   - A reviewer may also reject a request, with a reason — a different
+ *     person than the requester, same as approval — after which the run is
+ *     free for a fresh sign-off request.
  */
 
 const CHECKLIST = [
@@ -53,6 +51,8 @@ export function ScoresSignoffPage({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [checked, setChecked] = useState<Record<string, boolean>>({});
+  const [rejecting, setRejecting] = useState(false);
+  const [rejectReason, setRejectReason] = useState('');
 
   const load = useCallback(async () => {
     setError(null);
@@ -85,6 +85,8 @@ export function ScoresSignoffPage({
         await load();
         setView('main');
         setChecked({});
+        setRejecting(false);
+        setRejectReason('');
       } catch (err) {
         setError(err instanceof ApiError ? err.message : 'Something went wrong');
       } finally {
@@ -99,10 +101,18 @@ export function ScoresSignoffPage({
   }
 
   const currentRun = runs[0] ?? null;
+  // A rejected sign-off is not "live" — same as superseded — so the run is
+  // free for a fresh request once one is rejected.
   const liveSignoff = currentRun
-    ? (signoffs.find((s) => s.calculationRunId === currentRun.id && s.state !== 'superseded') ??
+    ? (signoffs.find((s) => s.calculationRunId === currentRun.id && s.state === 'requested') ??
+      signoffs.find((s) => s.calculationRunId === currentRun.id && s.state === 'signed_off') ??
       null)
     : null;
+  const lastRejected =
+    !liveSignoff && currentRun
+      ? (signoffs.find((s) => s.calculationRunId === currentRun.id && s.state === 'rejected') ??
+        null)
+      : null;
   const allChecked = CHECKLIST.every((c) => checked[c.key]);
   const flagged = (scores ?? []).filter((s) => s.subFloor);
   const isOwnRequest =
@@ -235,7 +245,9 @@ export function ScoresSignoffPage({
                           ? 'Signed off'
                           : s.state === 'superseded'
                             ? 'Superseded'
-                            : 'Awaiting sign-off';
+                            : s.state === 'rejected'
+                              ? 'Rejected'
+                              : 'Awaiting sign-off';
                       return (
                         <tr key={r.id}>
                           <td>{r.id.slice(0, 8)}</td>
@@ -247,7 +259,9 @@ export function ScoresSignoffPage({
                                   ? 'ok'
                                   : label === 'Superseded'
                                     ? 'soft'
-                                    : 'wait'
+                                    : label === 'Rejected'
+                                      ? 'risk'
+                                      : 'wait'
                               }`}
                             >
                               {label}
@@ -270,6 +284,18 @@ export function ScoresSignoffPage({
                 <span className="pill started">Needs a second person</span>
               </div>
               <div className="stagebody">
+                {lastRejected && (
+                  <div className="warnbox" style={{ marginBottom: 12 }}>
+                    <b>The last request was rejected.</b>
+                    <p style={{ margin: '6px 0 0' }}>
+                      By {lastRejected.rejectedBy} on{' '}
+                      {lastRejected.rejectedAt
+                        ? new Date(lastRejected.rejectedAt).toLocaleString()
+                        : '—'}
+                      : {lastRejected.rejectionReason}
+                    </p>
+                  </div>
+                )}
                 <p>
                   The signed run is the one the report uses. A later run can supersede it, but
                   nothing already released is recalled.
@@ -369,19 +395,73 @@ export function ScoresSignoffPage({
                     ))}
                   </ul>
                 </div>
-                <div className="actions">
-                  <button
-                    type="button"
-                    className="btn"
-                    disabled={busy}
-                    onClick={() =>
-                      doRun(() => client.approveSignoff(liveSignoff!.id, viewer.email))
-                    }
-                  >
-                    Approve and sign off
-                  </button>
-                </div>
-                <p className="muted">A maker can never approve their own request.</p>
+                {!rejecting ? (
+                  <div className="actions">
+                    <button
+                      type="button"
+                      className="btn"
+                      disabled={busy}
+                      onClick={() =>
+                        doRun(() => client.approveSignoff(liveSignoff!.id, viewer.email))
+                      }
+                    >
+                      Approve and sign off
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-2"
+                      disabled={busy}
+                      onClick={() => setRejecting(true)}
+                    >
+                      Reject
+                    </button>
+                  </div>
+                ) : (
+                  <div>
+                    <div className="field">
+                      <label htmlFor="rejectReason">Why</label>
+                      <p className="hint">
+                        Kept with the run permanently. Required — a bare rejection is not accepted.
+                      </p>
+                      <input
+                        id="rejectReason"
+                        type="text"
+                        value={rejectReason}
+                        onChange={(e) => setRejectReason(e.target.value)}
+                      />
+                    </div>
+                    <div className="actions">
+                      <button
+                        type="button"
+                        className="btn"
+                        disabled={busy || !rejectReason.trim()}
+                        onClick={() =>
+                          doRun(() =>
+                            client.rejectSignoff(
+                              liveSignoff!.id,
+                              viewer.email,
+                              rejectReason.trim(),
+                            ),
+                          )
+                        }
+                      >
+                        Confirm rejection
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-2"
+                        disabled={busy}
+                        onClick={() => {
+                          setRejecting(false);
+                          setRejectReason('');
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+                <p className="muted">A maker can never approve or reject their own request.</p>
               </div>
             </section>
           )}

@@ -153,6 +153,7 @@ export {
   validateCheckedAccount,
   requestSignoff,
   approveSignoff,
+  rejectSignoff,
   getScoreView,
   hasSignedOffRun,
   getAuthoritativeSignoff,

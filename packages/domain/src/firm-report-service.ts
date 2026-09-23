@@ -142,10 +142,22 @@ export async function approveFirmReport(pool: Pool, id: string): Promise<FirmRep
   return setApprovalState(pool, id, 'approved');
 }
 
-/** Retry a failed report's generation (a recoverable fault). */
+/**
+ * Retry a failed (or held) report's generation (a recoverable fault) — never a
+ * released one. A released report is immutable structurally (the DB itself
+ * refuses any UPDATE to a released row); this checks it first so the refusal
+ * is a clean domain error, not a raw trigger exception. A correction to a
+ * released report is a new version, never an edit to the released one.
+ */
 export async function regenerateFirmReport(pool: Pool, id: string): Promise<FirmReport> {
   const report = await getFirmReport(pool, id);
   if (!report) throw new FirmReportError('Firm report not found', 'NOT_FOUND');
+  if (report.releaseState === 'released') {
+    throw new FirmReportError(
+      'A released firm report is immutable and cannot be regenerated',
+      'ALREADY_RELEASED',
+    );
+  }
   const updated = await setGenerationState(pool, id, 'generated');
   await insertReleaseHistory(pool, {
     firmReportId: id,

@@ -92,6 +92,11 @@ export interface AdminClient {
     checkedAccount: ScoringCheckedAccount,
   ): Promise<{ signoff: ScoringSignoff }>;
   approveSignoff(signoffId: string, approvedBy: string): Promise<{ signoff: ScoringSignoff }>;
+  rejectSignoff(
+    signoffId: string,
+    rejectedBy: string,
+    reason: string,
+  ): Promise<{ signoff: ScoringSignoff }>;
   // National report (UX-ADM-005)
   generateNationalReport(
     id: string,
@@ -115,6 +120,7 @@ export interface AdminClient {
   getFirmReports(id: string): Promise<{ reports: FirmReport[] }>;
   generateFirmReports(id: string, scoringRunId: string): Promise<unknown>;
   approveFirmReport(reportId: string): Promise<{ approvalState: string }>;
+  regenerateFirmReport(reportId: string): Promise<{ report: FirmReport }>;
   releaseFirmReports(id: string): Promise<ReleaseFirmReportsResult>;
   // Invitations (UX-OPS-002)
   listAudiences(id: string): Promise<{ audiences: AudienceCategory[] }>;
@@ -240,6 +246,12 @@ export function createClient(token: string | null): AdminClient {
         body: { approvedBy },
         token,
       }),
+    rejectSignoff: (signoffId, rejectedBy, reason) =>
+      request(`/scoring-signoffs/${signoffId}/reject`, {
+        method: 'POST',
+        body: { rejectedBy, reason },
+        token,
+      }),
     generateNationalReport: (id, scoringRunId, context) =>
       request(`/editions/${id}/national-report`, {
         method: 'POST',
@@ -272,6 +284,8 @@ export function createClient(token: string | null): AdminClient {
       }),
     approveFirmReport: (reportId) =>
       request(`/firm-reports/${reportId}/approve`, { method: 'POST', token }),
+    regenerateFirmReport: (reportId) =>
+      request(`/firm-reports/${reportId}/regenerate`, { method: 'POST', token }),
     releaseFirmReports: (id) =>
       request(`/editions/${id}/firm-reports/release`, { method: 'POST', token }),
     listAudiences: (id) => request(`/editions/${id}/invitations/audiences`, { token }),

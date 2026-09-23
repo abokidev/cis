@@ -44,6 +44,25 @@ export async function buildServer() {
   app.setValidatorCompiler(validatorCompiler);
   app.setSerializerCompiler(serializerCompiler);
 
+  // Fastify resolves each route's error handler from its own plugin
+  // encapsulation context at REGISTRATION time, not dynamically per request —
+  // a handler set on the root instance after a child plugin has already
+  // registered its routes never applies to those routes. This must be set
+  // before any `app.register(...routes)` call below, or every route falls
+  // back to Fastify's built-in default error response instead of this one.
+  app.setErrorHandler<Error>((error, request, reply) => {
+    const statusCode = resolveStatusCode(error);
+    const message = statusCode < 500 ? error.message : 'Internal server error';
+    if (statusCode >= 500) {
+      request.log.error(error);
+    }
+    void reply.status(statusCode).send({
+      error: error.name ?? 'Error',
+      message,
+      statusCode,
+    });
+  });
+
   await registerSecurity(app);
   await registerAuth(app);
 
@@ -68,29 +87,21 @@ export async function buildServer() {
   await app.register(firmDigestRoutes);
   await app.register(publicContentRoutes);
 
-  app.setErrorHandler<Error>((error, request, reply) => {
-    const statusCode = resolveStatusCode(error);
-    const message = statusCode < 500 ? error.message : 'Internal server error';
-    if (statusCode >= 500) {
-      request.log.error(error);
-    }
-    void reply.status(statusCode).send({
-      error: error.name ?? 'Error',
-      message,
-      statusCode,
-    });
-  });
-
   return app;
 }
 
 /**
  * Map known error types to HTTP status codes. Domain rule violations and
- * auth/maker-checker errors become 4xx; everything unrecognized is 500.
- * Matched by error name so this stays decoupled from the domain package.
+ * auth/maker-checker errors become 4xx; everything unrecognized is 500. The
+ * name switch runs FIRST: Fastify assigns every thrown error a default
+ * `statusCode` of 500 before this handler ever sees it, so checking
+ * `error.statusCode` first would always short-circuit to 500 for a thrown
+ * domain error and never reach the switch below. `error.statusCode` is
+ * checked only as a fallback, for errors Fastify itself classifies with a
+ * genuine non-default code (e.g. a schema validation failure, 400) that
+ * carry no name this switch recognizes.
  */
 function resolveStatusCode(error: Error & { statusCode?: number }): number {
-  if (typeof error.statusCode === 'number') return error.statusCode;
   switch (error.name) {
     case 'PermissionDeniedError':
     case 'MakerCheckerViolationError':
@@ -130,6 +141,6 @@ function resolveStatusCode(error: Error & { statusCode?: number }): number {
     case 'DomainError':
       return 409;
     default:
-      return 500;
+      return typeof error.statusCode === 'number' ? error.statusCode : 500;
   }
 }

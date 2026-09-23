@@ -275,9 +275,9 @@ export function App(): JSX.Element {
       ) : tab === 'regulators' ? (
         <RegulatorsPage />
       ) : tab === 'scoring' ? (
-        <ScoresSignoffPage />
+        <ScoresSignoffPage client={client} editionId={editionId} viewer={session.user} />
       ) : tab === 'national' ? (
-        <NationalReportPage />
+        <NationalReportPage client={client} editionId={editionId} viewer={session.user} />
       ) : tab === 'firmresults' ? (
         <FirmResultsPage />
       ) : tab === 'wording' ? (
@@ -285,7 +285,7 @@ export function App(): JSX.Element {
       ) : tab === 'dragnet' && editionId && session.user.hasDragnetRight ? (
         <DragnetPage client={client} editionId={editionId} />
       ) : (
-        <FirmReportsPage />
+        <FirmReportsPage client={client} editionId={editionId} />
       )}
     </div>
   );

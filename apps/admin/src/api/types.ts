@@ -87,10 +87,143 @@ export interface MissionBoardResponse {
   phase: EditionPhase;
 }
 
+// ─── Scoring & sign-off (UX-ADM-004) ────────────────────────────────────────
+
+export type CalculationRunStatus = 'pending' | 'running' | 'complete' | 'failed';
+
+export interface CalculationRun {
+  id: string;
+  editionId: string;
+  runType: 'eligibility' | 'scoring' | 'comparison';
+  status: CalculationRunStatus;
+  startedAt: string;
+  finishedAt: string | null;
+  createdAt: string;
+}
+
+export type ScoringSignoffState = 'requested' | 'signed_off' | 'superseded';
+
+export interface ScoringCheckedAccount {
+  populationCountsReviewed: boolean;
+  floorStatusReviewed: boolean;
+  dataQualityFlagsReviewed: boolean;
+  notes?: string;
+}
+
+export interface ScoringSignoff {
+  id: string;
+  editionId: string;
+  calculationRunId: string;
+  state: ScoringSignoffState;
+  checkedAccount: ScoringCheckedAccount;
+  requestedBy: string;
+  requestedAt: string;
+  approvedBy: string | null;
+  approvedAt: string | null;
+}
+
+export interface IndexScoreView {
+  metricCode: string;
+  score: number | null;
+  populationLabel: string;
+  effectivePopulation: number | null;
+  floor: number | null;
+  clearsFloor: boolean | null;
+  subFloor: boolean;
+  provisional: boolean;
+  populationGap: boolean;
+}
+
+export interface ScoringRunsResponse {
+  runs: CalculationRun[];
+  signoffs: ScoringSignoff[];
+  authoritative: ScoringSignoff | null;
+}
+
 export interface FirmSummary {
   id: string;
   displayName: string;
   slug: string;
+}
+
+// ─── National report (UX-ADM-005) ───────────────────────────────────────────
+
+export type NationalReportSectionId =
+  | 'PUB_01_HEADLINE_INDICES'
+  | 'PUB_02_SEGMENT_IEI_ICI'
+  | 'PUB_03_OPERATIONAL_FRICTIONS'
+  | 'PUB_04_INVESTOR_FRUSTRATIONS'
+  | 'PUB_05_MATURITY_HEATMAP'
+  | 'PUB_06_CONFIDENCE_AND_PARTICIPATION'
+  | 'PUB_07_LOCAL_VS_FOREIGN'
+  | 'PUB_08_CROSS_INDUSTRY_BENCHMARK'
+  | 'PUB_09_SERVICE_EXCELLENCE_GAP'
+  | 'PUB_10_INSTITUTIONAL_PERSPECTIVES';
+
+export type SectionSufficiencyDisposition = 'publishable' | 'caveated' | 'suppressed';
+export type ReviewDisposition = 'ACCEPT_AND_EDIT' | 'REJECT_WITH_REASON' | 'SUPPRESS_CLAIM';
+export type NationalReportStatus = 'draft' | 'approved';
+
+export interface NationalReport {
+  id: string;
+  editionId: string;
+  scoringRunId: string;
+  status: NationalReportStatus;
+  draftOpened: boolean;
+  requestedBy: string | null;
+  requestedReason: string | null;
+  requestedAt: string | null;
+  approvedBy: string | null;
+  approvedAt: string | null;
+}
+
+export interface NationalReportSection {
+  id: string;
+  nationalReportId: string;
+  sectionId: NationalReportSectionId;
+  disposition: SectionSufficiencyDisposition;
+  reason: string | null;
+}
+
+export interface NationalApprovalPreconditions {
+  signedScoringRun: boolean;
+  draftOpened: boolean;
+  allFindingsDisposed: boolean;
+  checkerHealthy: boolean;
+  ok: boolean;
+  reasons: string[];
+}
+
+export interface NationalReportDetailResponse {
+  report: NationalReport;
+  sections: NationalReportSection[];
+  preconditions: NationalApprovalPreconditions;
+}
+
+// ─── Firm reports (UX-ADM-006) ──────────────────────────────────────────────
+
+export type FirmReportCutState = 'none' | 'directional' | 'unlocked';
+export type FirmReportGenerationState = 'pending' | 'generating' | 'generated' | 'failed';
+export type FirmReportApprovalState = 'pending' | 'approved';
+export type FirmReportReleaseState = 'unreleased' | 'held' | 'released';
+
+export interface FirmReport {
+  id: string;
+  editionId: string;
+  organizationId: string;
+  scoringRunId: string;
+  version: number;
+  retailN: number;
+  cutState: FirmReportCutState;
+  generationState: FirmReportGenerationState;
+  approvalState: FirmReportApprovalState;
+  releaseState: FirmReportReleaseState;
+  heldReason: string | null;
+}
+
+export interface ReleaseFirmReportsResult {
+  released: string[];
+  held: { organizationId: string; reason: string }[];
 }
 
 export interface Coordinator {

@@ -1,6 +1,6 @@
 import { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
-import { getPool, getNationalReport } from '@cis/db';
+import { getPool, getNationalReport, getLatestNationalReportForEdition } from '@cis/db';
 import {
   generateNationalReport,
   openDraft,
@@ -47,6 +47,17 @@ export const reportingRoutes: FastifyPluginAsyncZod = async (app) => {
         context: request.body.context as SufficiencyContext,
       });
       return reply.status(201).send({ reportId: report.id, sections });
+    },
+  );
+
+  // The current (most recently created) report for an edition, if any — lets a
+  // fresh page load discover the report without the frontend remembering an id.
+  app.get(
+    '/editions/:id/national-report',
+    { preHandler: [app.authenticate], schema: { params: z.object({ id: z.string().uuid() }) } },
+    async (request, reply) => {
+      const report = await getLatestNationalReportForEdition(getPool(), request.params.id);
+      return reply.send({ report });
     },
   );
 

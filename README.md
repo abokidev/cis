@@ -2379,3 +2379,141 @@ directly before assuming it's a copy source — this artefact carries no literal
 field arrives via `bindData` at runtime, which means the standing rule is not "copy text from the
 artefact" either. Production copy is written fresh, in plain language, describing a real computed
 value.
+
+## Design Reconciliation Audit — Batch 1 of 7
+
+Every surface was originally built against a specific artefact version; the controlled design
+estate has since moved on via source-hygiene ("Clean Artefact Gate") passes. This audit works
+through the estate five surfaces at a time, verifying each artefact's own `product_behaviour_changed`
+claim against its itemized changelog rather than trusting the summary field, and cross-checking for
+defect classes already found on this programme. Batch 1: `UX-ADM-001` (Edition, v4.7), `UX-ADM-002`
+(Surveys, v1.6), `UX-ADM-004` (Scoring, v1.8), `UX-ADM-005` (National report, v1.9), `UX-ADM-006`
+(Firm reports, v1.9).
+
+### UX-ADM-001 (Edition) — outcome (a), confirmed no functional change
+
+`functional_baseline_version: "v4.1"`; `source_purity_delta.product_behaviour_changed: false` from
+v4.2 through v4.7. Read every itemized `changes_from_v4_0`/`changes_from_v4_2` entry directly: the
+real functional history (single-date model, opening-is-observed-not-declared, sample floors
+locked at open) all predates v4.1 and is already built (`EditionPage.tsx`, verified against this
+session's own live fresh-environment reproduction of the save flow). v4.2→v4.7 is exclusively
+review-harness removal and `bindData(payload)` externalization. No code change.
+
+### UX-ADM-002 (Surveys) — outcome (a), confirmed no functional change
+
+`functional_baseline_version: "v1.2"`. The one real, itemized functional correction in this
+artefact's history — `changes_from_v1_1`: "the prose said firm instruments while the list beneath
+it named S4-A1, S5a-A1 and S5b-A1 — they span the firm and investor instruments both" — is already
+correctly implemented: `SurveysPage.tsx`'s copy reads "folded into the natural flow of the scored
+**firm and investor** instruments," not "firm instruments" alone. `changes_from_clean_artefact_migration`
+confirms no further behaviour change through v1.6. One minor, non-functional cosmetic difference
+noted, not fixed (out of this audit's functional scope): the artefact's pill reads "Dragnet
+product-internal," the built page reads "Dragnet internal" — same meaning, different wording, no
+behavioural consequence.
+
+### UX-ADM-004/005/006 (Scoring, National report, Firm reports) — outcome (a) on version delta, but a much bigger issue found underneath
+
+All three artefacts confirm `product_behaviour_changed: false` from their stated functional
+baselines (v1.2, v1.5, v1.3 respectively) through their current versions, and the itemized
+changelogs agree — the real functional history (scores shown before sign-off, the ten-sections
+rebuild, atomic-per-report release) all predates each baseline and was already correctly built.
+**On the version-reconciliation question alone, all three are outcome (a).**
+
+But item 4 of this audit's own method — cross-check for a hardcoded fixture where the artefact
+expects live data — caught something version-reconciliation doesn't test for: **all three pages
+were built the exact same way Mission Board was before the post-demo-findings fix** (`1432282`,
+above): a "Self-contained functional surface (local state)" mockup with a manual demo
+state-toggle button row, `<Page />` rendered with zero props from `App.tsx`, never calling the
+real, tested, already-routed backend. Every artefact here also declares
+`product_persists_declared: true` — the real product was always expected to persist, not simulate.
+A targeted grep across every file in `apps/admin/src/pages` for the same shape (the exact phrase
+"Self-contained functional surface (local state)", plus a manual `STATES`/`DRAGNET_STATES` toggle
+row, plus zero props in `App.tsx`) found **one further, not-yet-fixed instance beyond these
+three: `InvitationsPage.tsx` (UX-OPS-002)** — same header phrasing, same zero-prop call site, and
+`apps/api/src/routes/invitations.ts` already exposes a full set of real GET endpoints it never
+calls. `InvitationsPage` is not part of this batch's five artefacts and is a substantially larger
+surface (messages/templates/requests, batches, file-upload validation, an audience wizard) — it is
+flagged here for a dedicated pass, not fixed in this one. Two OTHER zero-prop pages
+(`RegulatorsPage.tsx`, `PeopleAccessPage.tsx`/`ResponsesPage.tsx`/`UnfinishedPage.tsx`/`FirmResultsPage.tsx`)
+were checked and are a different case: `RegulatorsPage.tsx` explicitly and honestly documents
+itself as "a DELIBERATE scope decision (documented in the README), not yet wired to the live
+per-role API" — an acknowledged, previously-reviewed gap, not a hidden one — and the other four use
+different, non-misleading header language ("mirrors that," never "self-contained"). Only the four
+using the exact misleading phrasing were in scope for this fix.
+
+**Fixed, live-wired exactly like Mission Board — `ScoresSignoffPage.tsx`, `NationalReportPage.tsx`,
+`FirmReportsPage.tsx`:**
+
+- All three now take `{client, editionId}` (`ScoresSignoffPage`/`NationalReportPage` also take
+  `viewer`, for maker-checker identity) instead of zero props, calling real endpoints in
+  `scoring.ts`/`reporting.ts` through new `AdminClient` methods and matching types in `api/types.ts`.
+- **Scoring**: real run history, real per-index scores/populations/floor status
+  (`getScoreView`), real structured sign-off request/approve. Live-verified: triggered a real
+  scoring run, requested sign-off as one seeded user, approved as a different seeded user — the DB
+  row shows `state: 'signed_off'`, `requested_by ≠ approved_by`.
+- **National report**: real ten-section sufficiency evaluation (`evaluateSection`), draft-opened
+  tracking, the four real approval preconditions, request/approve. Live-verified against the
+  fresh seed (no institutional data): correctly evaluated 9 publishable / 1 suppressed
+  (`PUB_10_INSTITUTIONAL_PERSPECTIVES`, 0 of 3 regulators engaged) — real business logic, not
+  fabricated numbers.
+- **Firm reports**: real generation, per-firm approval, atomic-per-report release, and the
+  "zero participating firms is an outcome, not an empty list" state the artefact explicitly
+  requires — live-verified against the fresh seed (genuinely zero participating firms): the page
+  now says so honestly ("There are no reports to release... this is not a suppression and nothing
+  is being withheld") instead of looking identical to "generation never attempted."
+- One small, necessary backend addition, not a new feature: `national_reports` had no
+  lookup-by-edition, only by-report-id — a fresh page load had no way to discover the current
+  report. Added `getLatestNationalReportForEdition` (`packages/db`) and
+  `GET /editions/:id/national-report` (thin plumbing over the already-tested domain layer,
+  mirroring `getFirmReports`' existing by-edition pattern), with a new HTTP-level test
+  (`apps/api/tests/national-report-lookup.test.ts`) and two new domain-level tests
+  (`packages/domain/tests/national-report.test.ts`).
+
+**Real gaps found while wiring, documented honestly rather than fabricated or silently worked
+around:**
+
+- `ScoringSignoffState` has no `'rejected'` value, and there is no
+  `POST /scoring-signoffs/:id/reject` route — the old mockup's "Reject" button was never backed by
+  a real capability at any layer, not even the domain model. The live-wired review view offers
+  only what's real: approve, or leave pending.
+- `regenerateFirmReport` exists and is tested in `firm-report-service.ts`, but has no route — a
+  held/failed firm report cannot actually be retried from the admin app yet. Shown honestly (the
+  held state and its reason are real and visible); no fake retry button was added.
+- **The significant one**: `national-report-service.ts`'s sentence-level adversarial review
+  (`saveNationalDraft`, `runChecker`, `runAdversaryHealth`, `disposeFinding`) is real, tested
+  domain logic — but nothing anywhere in this codebase generates draft report sentences from real
+  scores (no LLM call, no template engine, no generator of any kind). The old mockup's `DRAFT`
+  array was entirely invented example prose standing in for a capability that doesn't exist. Since
+  `nationalApprovalPreconditions` requires `checkerHealthy` (which requires a persisted
+  `adversary_health` row, which requires `runAdversaryHealth` to have run at all), **no national
+  report can be approved through the real system today** until this is resolved. This is flagged
+  here, not resolved unilaterally, per this programme's standing escalation discipline — it needs a
+  product decision (build a real AI-generation pipeline for the ten sections; or define a
+  human-drafts-the-text-directly workflow, which the domain layer's own neutral design already
+  supports — `saveNationalDraft` "persists a generated draft; it computes nothing," and doesn't
+  care whether the sentences came from a model or a person), not a UI-only fix.
+
+### Running list of open items needing a decision (not resolved here)
+
+1. **National report approval is currently unreachable end-to-end** (above) — needs a product
+   decision on how draft sentences get produced before the adversarial-checker gate can ever pass.
+2. **`InvitationsPage.tsx` (UX-OPS-002)** — confirmed same "local-state mockup, never calls its own
+   real routes" defect as Mission Board/ADM-004/005/006, not yet fixed. Real routes already exist
+   (`apps/api/src/routes/invitations.ts`). Needs a dedicated pass — this surface is large
+   (messages/templates/requests, batches, file-upload validation, an audience wizard).
+3. **Scoring sign-off has no reject path** — `ScoringSignoffState` and the API both lack one. Worth
+   a product decision on whether a reject capability should exist here (the national-report and
+   edition-lock flows both have one; scoring sign-off doesn't).
+4. **Firm-report regeneration has no route** — `regenerateFirmReport` is real and tested but
+   unreachable from the admin app. Small, mechanical fix once prioritized.
+
+### Verification
+
+Full suite: `pnpm test` — **40 files, 415 tests, all green** (up from 39/412: +2 domain tests for
+`getLatestNationalReportForEdition`, +1 new HTTP-level test file) against a live Postgres.
+`pnpm lint`, `pnpm typecheck`, `pnpm turbo build` all clean. `pnpm audit` unchanged — the same
+pre-existing devDependency advisories as every prior phase. Live-verified in a real browser
+(Playwright/Chromium) against a freshly seeded and locked edition: triggered a real scoring run,
+completed a real two-user sign-off, generated a real national report with correct sufficiency
+evaluation, and confirmed the honest "zero participating firms" firm-reports state — screenshotted
+for the record at every step, not just asserted in a test.

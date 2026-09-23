@@ -4,11 +4,19 @@ import {
   type Coordinator,
   type EditionDetail,
   type EditionSummary,
+  type FirmReport,
   type FirmSummary,
+  type IndexScoreView,
   type InstrumentsResponse,
   type LoginResponse,
   type MissionBoardResponse,
+  type NationalReportDetailResponse,
+  type NationalReportSection,
+  type ReleaseFirmReportsResult,
   type SampleFloor,
+  type ScoringCheckedAccount,
+  type ScoringRunsResponse,
+  type ScoringSignoff,
 } from './types';
 
 // All API calls go through this single typed layer so later admin surfaces
@@ -64,6 +72,41 @@ export interface AdminClient {
   ): Promise<{ status: 'approved' | 'rejected'; editionStatus: string }>;
   getInstruments(id: string): Promise<InstrumentsResponse>;
   getMissionBoard(id: string): Promise<MissionBoardResponse>;
+  // Scoring & sign-off (UX-ADM-004)
+  triggerScoringRun(id: string): Promise<{ run: unknown }>;
+  getScoringRuns(id: string): Promise<ScoringRunsResponse>;
+  getScoreView(id: string, runId: string): Promise<{ scores: IndexScoreView[] }>;
+  requestSignoff(
+    id: string,
+    runId: string,
+    requestedBy: string,
+    checkedAccount: ScoringCheckedAccount,
+  ): Promise<{ signoff: ScoringSignoff }>;
+  approveSignoff(signoffId: string, approvedBy: string): Promise<{ signoff: ScoringSignoff }>;
+  // National report (UX-ADM-005)
+  generateNationalReport(
+    id: string,
+    scoringRunId: string,
+    context: {
+      segments: Record<string, { meets: boolean; thin: boolean }>;
+      regulatorsEngaged: number;
+    },
+  ): Promise<{ reportId: string; sections: NationalReportSection[] }>;
+  getLatestNationalReport(id: string): Promise<{ report: { id: string } | null }>;
+  getNationalReport(reportId: string): Promise<NationalReportDetailResponse>;
+  openNationalDraft(reportId: string): Promise<{ opened: boolean }>;
+  requestNationalApproval(
+    reportId: string,
+    requestedBy: string,
+    reason: string,
+  ): Promise<{ requested: boolean }>;
+  approveNationalReport(reportId: string, approvedBy: string): Promise<{ status: string }>;
+  // Firm reports (UX-ADM-006)
+  getRegulators(id: string): Promise<{ regulators: { institutionId: string; status: string }[] }>;
+  getFirmReports(id: string): Promise<{ reports: FirmReport[] }>;
+  generateFirmReports(id: string, scoringRunId: string): Promise<unknown>;
+  approveFirmReport(reportId: string): Promise<{ approvalState: string }>;
+  releaseFirmReports(id: string): Promise<ReleaseFirmReportsResult>;
   getInstrumentItems(code: string): Promise<SurveyItem[]>;
   requestFreeze(id: string, reason: string): Promise<{ criticalActionId: string }>;
   decideFreeze(
@@ -131,6 +174,55 @@ export function createClient(token: string | null): AdminClient {
       }),
     getInstruments: (id) => request(`/editions/${id}/instruments`, { token }),
     getMissionBoard: (id) => request(`/editions/${id}/mission-board`, { token }),
+    triggerScoringRun: (id) => request(`/editions/${id}/scoring-runs`, { method: 'POST', token }),
+    getScoringRuns: (id) => request(`/editions/${id}/scoring-runs`, { token }),
+    getScoreView: (id, runId) => request(`/editions/${id}/scoring-runs/${runId}/scores`, { token }),
+    requestSignoff: (id, runId, requestedBy, checkedAccount) =>
+      request(`/editions/${id}/scoring-runs/${runId}/signoff/request`, {
+        method: 'POST',
+        body: { requestedBy, checkedAccount },
+        token,
+      }),
+    approveSignoff: (signoffId, approvedBy) =>
+      request(`/scoring-signoffs/${signoffId}/approve`, {
+        method: 'POST',
+        body: { approvedBy },
+        token,
+      }),
+    generateNationalReport: (id, scoringRunId, context) =>
+      request(`/editions/${id}/national-report`, {
+        method: 'POST',
+        body: { scoringRunId, context },
+        token,
+      }),
+    getLatestNationalReport: (id) => request(`/editions/${id}/national-report`, { token }),
+    getNationalReport: (reportId) => request(`/national-reports/${reportId}`, { token }),
+    openNationalDraft: (reportId) =>
+      request(`/national-reports/${reportId}/open`, { method: 'POST', token }),
+    requestNationalApproval: (reportId, requestedBy, reason) =>
+      request(`/national-reports/${reportId}/request-approval`, {
+        method: 'POST',
+        body: { requestedBy, reason },
+        token,
+      }),
+    approveNationalReport: (reportId, approvedBy) =>
+      request(`/national-reports/${reportId}/approve`, {
+        method: 'POST',
+        body: { approvedBy },
+        token,
+      }),
+    getRegulators: (id) => request(`/editions/${id}/regulators`, { token }),
+    getFirmReports: (id) => request(`/editions/${id}/firm-reports`, { token }),
+    generateFirmReports: (id, scoringRunId) =>
+      request(`/editions/${id}/firm-reports/generate`, {
+        method: 'POST',
+        body: { scoringRunId },
+        token,
+      }),
+    approveFirmReport: (reportId) =>
+      request(`/firm-reports/${reportId}/approve`, { method: 'POST', token }),
+    releaseFirmReports: (id) =>
+      request(`/editions/${id}/firm-reports/release`, { method: 'POST', token }),
     getInstrumentItems: (code) =>
       request<{ items: SurveyItem[] }>(`/instruments/${encodeURIComponent(code)}/items`, {
         token,

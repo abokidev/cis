@@ -65,6 +65,23 @@ export async function getNationalReport(pool: Pool, id: string): Promise<Nationa
   return row ? mapReport(row) : null;
 }
 
+/** The most recently created report for an edition, or null if none exists yet.
+ *  A caller that already has a report id should use `getNationalReport` instead
+ *  — this exists so a fresh page load can discover the current report without
+ *  the frontend having to remember an id across sessions. */
+export async function getLatestNationalReportForEdition(
+  pool: Pool,
+  editionId: string,
+): Promise<NationalReport | null> {
+  const res = await query<RawReportRow>(
+    pool,
+    'SELECT * FROM national_reports WHERE edition_id = $1 ORDER BY created_at DESC LIMIT 1',
+    [editionId],
+  );
+  const row = res.rows[0];
+  return row ? mapReport(row) : null;
+}
+
 export async function markDraftOpened(pool: Pool, id: string): Promise<void> {
   await query(pool, 'UPDATE national_reports SET draft_opened = TRUE WHERE id = $1', [id]);
 }

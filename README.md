@@ -2646,76 +2646,188 @@ sign-off's missing reject path, firm-report regeneration's missing route).
 | `DragnetPage.tsx`        | `{client, editionId}`         | 2                                  | **Confirmed real**                                                                                                                                                    |
 | `EditionPage.tsx`        | `{client, editionId, viewer}` | 6                                  | **Confirmed real**                                                                                                                                                    |
 | `FirmReportsPage.tsx`    | `{client, editionId}`         | 8                                  | **Confirmed real** (fixed in the Batch-1 pass, §2 above)                                                                                                              |
-| `FirmResultsPage.tsx`    | none                          | 0                                  | **Confirmed mockup** — see below                                                                                                                                      |
+| `FirmResultsPage.tsx`    | none                          | 0                                  | **Genuine mockup + a distinct auth-mismatch defect** — see §2                                                                                                         |
 | `FirmTeamPage.tsx`       | `{client, editionId}`         | 6                                  | **Confirmed real**                                                                                                                                                    |
 | `InvitationsPage.tsx`    | `{client, editionId}`         | 11                                 | **Confirmed real** (fixed above, largest instance)                                                                                                                    |
 | `LoginPage.tsx`          | `{onSignIn}`                  | 0 (calls the standalone `login()`) | **Confirmed real** — different call shape, genuinely live                                                                                                             |
 | `MissionBoardPage.tsx`   | `{client, editionId}`         | 1                                  | **Confirmed real** (fixed, first instance)                                                                                                                            |
 | `NationalReportPage.tsx` | `{client, editionId, viewer}` | 7                                  | **Confirmed real** — the page itself is wired; its _approval flow_ is separately blocked by the missing draft-sentence generator (already flagged, out of scope here) |
-| `PeopleAccessPage.tsx`   | none                          | 0                                  | **Confirmed mockup** — see below                                                                                                                                      |
-| `RegulatorsPage.tsx`     | none                          | 0                                  | **Confirmed mockup, previously disclosed** — see below                                                                                                                |
+| `PeopleAccessPage.tsx`   | none                          | 0                                  | **Genuine mockup** — see §2                                                                                                                                           |
+| `RegulatorsPage.tsx`     | none                          | 0                                  | **Not a defect** — documented, deliberate scope boundary — see §2                                                                                                     |
 | `RendererPage.tsx`       | `{client}`                    | 1                                  | **Confirmed real**                                                                                                                                                    |
-| `ResponsesPage.tsx`      | none                          | 0                                  | **Confirmed mockup** — see below                                                                                                                                      |
+| `ResponsesPage.tsx`      | none                          | 0                                  | **Genuine mockup** — see §2                                                                                                                                           |
 | `ScoresSignoffPage.tsx`  | `{client, editionId, viewer}` | 6 (now incl. `rejectSignoff`)      | **Confirmed real** (fixed; extended in §2a below)                                                                                                                     |
 | `SurveysPage.tsx`        | `{client, editionId, viewer}` | 3                                  | **Confirmed real**                                                                                                                                                    |
-| `UnfinishedPage.tsx`     | none                          | 0                                  | **Confirmed mockup** — see below                                                                                                                                      |
+| `UnfinishedPage.tsx`     | none                          | 0                                  | **Genuine mockup** — see §2                                                                                                                                           |
 | `WordingPage.tsx`        | `{client}`                    | 4                                  | **Confirmed real**                                                                                                                                                    |
 
-**Totals: 12 confirmed real, 5 confirmed mockup, 0 ambiguous.** Every page was read in full, not
-just grepped; the zero-prop/zero-`client.`-call signature is a triage heuristic, not the verdict —
-`LoginPage.tsx` is the proof it can false-positive (it calls a standalone `login()` export, not the
-`client` object, and is genuinely live).
+**Totals: 12 confirmed real, 4 genuine mockups, 1 (of the 4) additionally carries a second, distinct
+defect, 1 documented non-defect, 0 ambiguous.** Every page was read in full, not just grepped; the
+zero-prop/zero-`client.`-call signature is a triage heuristic, not the verdict — `LoginPage.tsx` is
+the proof it can false-positive (it calls a standalone `login()` export, not the `client` object,
+and is genuinely live).
 
-### §2 — The five confirmed mockups, individually
+### §2 — The five flagged pages, corrected: three categories, not one "mockup" bucket
 
-Four of the five are **not new discoveries**. They were already checked in the Design
-Reconciliation Audit (Batch 1, above) and deliberately excluded from that fix — but excluded on a
+An earlier version of this section put all five pages in one "confirmed mockup" bucket. That
+conflated three genuinely different things: a page whose own local state stands in for a real,
+unused backend (the actual mockup defect this whole programme has been fixing); a page with a real
+but _differently-shaped_ defect; and a page that is not a defect at all. Restated precisely, with
+the exact state variable and exact missing/mismatched call for each:
+
+**Category 1 — Genuine mockup (same shape as the five already fixed: local state/demo toggle
+standing in for a real, callable backend that exists and is never called).**
+
+- **`PeopleAccessPage.tsx`** — `const [people, setPeople] = useState<Person[]>(() => clone(SEED))`,
+  where `SEED` is a hardcoded four-person literal array. `save()`, `removePerson()`, and every
+  other mutation call only `setPeople(...)`, held in React state and discarded on reload; there is
+  no `client.*` call anywhere in the file (zero props — `PeopleAccessPage(): JSX.Element`). Real,
+  tested, fully-routed backend already exists and enforces the same rules server-side
+  (`GET/POST/PATCH/DELETE /people` in `apps/api/src/routes/people.ts` →
+  `packages/domain/src/people-access-service.ts`, including the two-approver floor and
+  self-removal — both independently re-verified live over HTTP below, §2b) — never called.
+
+- **`ResponsesPage.tsx`** — `const CARDS: Card[] = [...]` and `const DEPS: DepRow[] = [...]` are
+  hardcoded literal arrays (four segment cards, six dependency rows, e.g.
+  `{current: 61, target: 80, forecast: 74, ...}`) rendered directly with no state and no props
+  (`ResponsesPage(): JSX.Element`); no `client.*` call anywhere in the file. There is no demo-toggle
+  UI here specifically (it is a pure read-only render of the two constants — criterion (b) does not
+  apply to this one), but criteria (a) and (c) are both fully met. Real, tested, routed backend
+  already exists (`GET /editions/:id/responses-monitor` in `apps/api/src/routes/monitoring.ts` →
+  `getResponsesMonitor` in `responses-monitoring-service.ts` — the exact computation Mission
+  Board's own conditions 7/8 already read from, post-fix) — never called.
+
+- **`UnfinishedPage.tsx`** — `const DATA = {started: 1874, done: 1406, ...}`, `const STOPS = [...]`,
+  and `const [schedule, setSchedule] = useState<ScheduleStep[]>(INITIAL_SCHEDULE)` where
+  `INITIAL_SCHEDULE` is a hardcoded three-step literal. The page's own "On/Off" toggle buttons and
+  day-count inputs (`toggleStep`, `setStepValue`) mutate only this local `schedule` state; no
+  `client.*` call anywhere persists it. Zero props, zero `client.*` calls. Of the three pages in
+  this category, this one's editable schedule is the closest analogue to a genuine demo-toggle: it
+  visually behaves like a working settings screen while doing nothing. Real, tested, routed backend
+  already exists (`GET /editions/:id/unfinished`, `PUT /reminders/schedule`, `PUT /reminders/cap`,
+  `POST /editions/:id/reminders/run` in `monitoring.ts` → `reminder-timing-service.ts`) — never
+  called.
+
+- **`FirmResultsPage.tsx`** — `const IDX: Idx[] = [...]` (five hardcoded index rows with fixed
+  `you`/`ind` numbers) plus an explicit, literal demo-toggle button row:
+  `<button onClick={() => setRetail(47)}>Retail unlocked</button>`,
+  `onClick={() => setRetail(19)}` "Directional only", `onClick={() => setRetail(6)}` "Below the
+  floor" — three buttons that switch one `useState<number>(47)` between three canned values to fake
+  three different retail-cut states. Zero props, zero `client.*` calls. Of all five pages, this is
+  the single most literal match to the original criterion (b) — structurally identical in shape to
+  Mission Board's now-removed fake "Edition phase" toggle. **On its own technical merits this is a
+  genuine Category-1 instance**, independent of the auth question below.
+
+**Category 2 — A real defect, but a different shape (not the mockup pattern).**
+
+- **`FirmResultsPage.tsx` additionally** — a real, tested backend already exists
+  (`getFirmResults` in `packages/domain/src/firm-results-service.ts`, exposed at
+  `GET /editions/:editionId/firms/:firmId/results` in `apps/api/src/routes/firm-results.ts`), so
+  the reason this page cannot simply be wired the way the other three above can is not "the backend
+  doesn't exist" — it's an **auth-model mismatch**. That route authenticates via a coordinator
+  access code header (`x-coordinator-access-code`, checked against `getCoordinatorByAccessCode`) —
+  its own file comment says outright "it is not operator-authenticated... coordinator-only (§9)."
+  But the page is rendered at `tab === 'firmresults'` **inside `App.tsx`'s operator-session-gated
+  tree**, reached only after a normal `/auth/login` as an operator. Even after the `IDX` array and
+  the toggle are replaced with a real fetch, there is today no operator-session-authenticated path
+  to call this specific route: does the operator hold or enter a coordinator's own access code?
+  does a firm-picker get added? does a second, operator-scoped variant of the route need to be
+  built? This is not a working backend that simply went uncalled (the mockup pattern) — it's two
+  correctly-built pieces (the route, for a coordinator caller; the page, inside an operator
+  session) that were never meant to call each other as-is, and need a decision before either can
+  change.
+
+**Category 3 — Not a defect.**
+
+- **`RegulatorsPage.tsx`** — its own file header states, verbatim: "Local state stands in for the
+  live edition here, exactly as the other Study Operations surfaces do — a DELIBERATE scope
+  decision (documented in the README), not yet wired to the live per-role API." That same decision
+  is independently documented at this README's own "Deliberate scope decision —
+  `RegulatorsPage.tsx` stays a local-state mockup" note, written before this sweep ever ran. It
+  technically matches the same (a)/(c) criteria as the four pages above — zero props, zero
+  `client.*` calls, a local `SEED`-shaped state — but it is the one page on this list that honestly
+  discloses this in its own code, and was already a known, reviewed, intentional boundary. Not a
+  hidden gap; not fixed here because there is nothing to fix — carried forward unchanged.
+
+None of the four Category-1 pages is fixed in this pass — none is "a handful of lines"; each is
+comparable in size to `InvitationsPage.tsx` (the largest prior fix), and `FirmResultsPage.tsx`
+additionally cannot be fixed at all until its Category-2 auth question is decided. Three of the
+four Category-1 pages, and the Category-2 finding, are **not new discoveries**: they were already
+checked in the Design Reconciliation Audit (Batch 1, above) and excluded from that fix on a
 narrower test ("does the header say 'self-contained,' the misleading phrasing") than this pass's
 literal technical criteria ("does it match the shape, regardless of what the header calls it").
 Re-applying the literal criteria here means they now appear on this list; it does not mean they
-were hidden before. None of the five is fixed in this pass — none is "a handful of lines," each
-is comparable in size to `InvitationsPage.tsx` (the largest prior fix) or raises a genuine
-architecture question first. Per this task's own instruction, each is reported and stopped, for a
-future dedicated pass.
+were hidden before. Per this task's own instruction, each is reported and stopped, for a future
+dedicated pass.
 
-1. **`RegulatorsPage.tsx`** — its own header comment already says outright: "Local state stands in
-   for the live edition here, exactly as the other Study Operations surfaces do — a DELIBERATE
-   scope decision (documented in the README), not yet wired to the live per-role API." This is the
-   one honestly self-disclosed case, not a hidden gap — carried forward unchanged.
+### §2b — Error-handler bug: blast-radius assessment against every prior live-verification claim
 
-2. **`FirmResultsPage.tsx`** — a real, tested backend already exists
-   (`packages/domain/src/firm-results-service.ts`'s `getFirmResults`, exposed at
-   `GET /editions/:editionId/firms/:firmId/results` in `apps/api/src/routes/firm-results.ts`), so
-   the gap is not "build the backend." The blocker is an auth-model mismatch: that route
-   authenticates via a **coordinator access code** header (`x-coordinator-access-code`), matching
-   its own comment — "not operator-authenticated... coordinator-only (§9)" — while the page is
-   rendered inside the **operator-authenticated** admin app, behind a normal login session. Wiring
-   this needs a product decision first (does an operator enter a coordinator's access code? pick a
-   firm from a list? does a separate operator-scoped variant of the route need to exist?) — not
-   just a `client` method and a fetch call.
+The error-handler ordering bug (full description in §3 below) means every domain error thrown from
+inside any route handler, on any route, always returned Fastify's generic 500 instead of the
+intended classified 4xx — for the entire lifetime of this repository, not just the two new
+endpoints this pass added. Before treating that as closed, every check in this programme's history
+that was specifically claimed as **live-verified in a real browser or over real HTTP, checking an
+error/rejection outcome**, was re-examined against the actual source and the actual prior wording,
+to determine whether any of those claims was unknowingly resting on the bug (a masked 500 that
+happened to still look like "it failed" to whoever was watching).
 
-3. **`PeopleAccessPage.tsx`** — a real, tested, fully-routed backend already exists
-   (`packages/domain/src/people-access-service.ts`, `GET/POST/PATCH/DELETE /people` in
-   `apps/api/src/routes/people.ts`, including server-side enforcement of the two-approver floor,
-   the Dragnet-only right, and self-removal). The page's local `SEED` array and `ME_EMAIL` constant
-   stand in for all of it. Genuinely wiring this — three views (list/add/detail), real
-   add/edit/remove calls, replacing the hardcoded "signed-in operator" with the real `viewer`
-   prop — is a multi-call-site rewiring effort the same size class as the Batch-1 fixes, not a
-   trivial one.
+**Finding: none of them were.** Every prior "live-verified"/"real browser" claim in this README, on
+inspection, exercised a **success** path (approve-by-a-different-user, a real save, a real
+generation) — routes that return `reply.status(201).send(...)`/`reply.send(...)` directly, which
+never passes through `resolveStatusCode` at all regardless of registration order. No prior claim in
+this README asserted a specific error status code or error message for a rejection path over real
+HTTP. That is confirmed by re-reading each relevant section directly, not assumed:
 
-4. **`ResponsesPage.tsx`** — a real, tested, routed backend exists
-   (`packages/domain/src/responses-monitoring-service.ts`'s `getResponsesMonitor`, at
-   `GET /editions/:id/responses-monitor` in `apps/api/src/routes/monitoring.ts`, which the
-   already-fixed Mission Board's own conditions 7/8 read from the same computation). The page's
-   `CARDS`/`DEPS` arrays are fully hardcoded. No demo-toggle buttons here (it's a pure read-only
-   dashboard), but criteria (a) and (c) are both met, and the segment-card/dependency-table shape
-   is non-trivial to replace correctly.
+| Item from the request                                | Real check found                                                                                                                                                                                                                                                                                                      | Ever claimed live/HTTP-verified for an ERROR path?                                                                                                                          | Affected by the bug?                                                                                                                            |
+| ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| Edition lock self-approval                           | `MakerCheckerViolationError` (403), `apps/api/src/routes/editions.ts`                                                                                                                                                                                                                                                 | No — §"Save/freeze flow" (above) verified only the approve-by-different-user success path                                                                                   | Yes, structurally (never previously exercised live)                                                                                             |
+| Instrument freeze self-approval                      | Same class, `routes/instruments.ts`                                                                                                                                                                                                                                                                                   | No — same section, success path only                                                                                                                                        | Yes, structurally                                                                                                                               |
+| Scoring sign-off self-approval                       | `ScoringSignoffError`/`SELF_APPROVAL` (409)                                                                                                                                                                                                                                                                           | No — Design Reconciliation Batch 1 verified only approve-by-different-user                                                                                                  | Yes, structurally                                                                                                                               |
+| Scoring sign-off self-**rejection** (new, this pass) | `ScoringSignoffError`/`SELF_REJECTION` (409)                                                                                                                                                                                                                                                                          | **Yes** — browser + direct HTTP, in §2 above                                                                                                                                | No — verified _after_ the fix landed; correct                                                                                                   |
+| Regulator engagement "referral" self-block           | —                                                                                                                                                                                                                                                                                                                     | N/A — no such maker-checker mechanism exists in `regulator-engagement-service.ts`; "referral" there means cancel-and-restart of a survey link, not a request/approve action | Not applicable                                                                                                                                  |
+| Two-approver-floor refusal on `PeopleAccessPage.tsx` | `PeopleAccessError`/`APPROVER_FLOOR` (409), real backend in `people-access-service.ts`                                                                                                                                                                                                                                | No — the page itself is a Category-1 mockup (§2 above); anything ever "seen" on it was the page's own local, fake check, never the real server rule                         | Yes, structurally (the real rule was never live-exercised through this page at all)                                                             |
+| Regulator-contact email/phone validation             | `RegulatorEngagementError`/`CONTACT_EMAIL_INVALID`/`CONTACT_PHONE_INVALID` (409)                                                                                                                                                                                                                                      | No — no README section claims a live/HTTP check of this                                                                                                                     | Yes, structurally                                                                                                                               |
+| Firm-coordinator validation                          | PIN check (`FirmTeamError`/`INVALID_PIN`, 409; `PinVerificationError`, 403) — there is no separate email/phone check for coordinators in `firm-team-service.ts`                                                                                                                                                       | No — no README section claims a live/HTTP check of this                                                                                                                     | Yes, structurally                                                                                                                               |
+| Required-clause violations (managed content/Wording) | `ManagedContentError`/`REQUIRED_CLAUSE_MISSING` (409)                                                                                                                                                                                                                                                                 | No — domain-tested only (`phase18.test.ts`), never claimed live/HTTP                                                                                                        | Yes, structurally                                                                                                                               |
+| Forbidden-phrase check (privacy notice)              | `ManagedContentError`/`FORBIDDEN_PHRASE_PRESENT` (409)                                                                                                                                                                                                                                                                | No — same, domain-tested only                                                                                                                                               | Yes, structurally                                                                                                                               |
+| Consent-gate refusal (PAT-011, S5a/S5b)              | `ConsentRequiredError` (403)                                                                                                                                                                                                                                                                                          | No — domain-tested only (`response-service.ts` tests), never claimed live/HTTP                                                                                              | Yes, structurally                                                                                                                               |
+| `InvitationsPage.tsx` file-validation checks         | `validateUploadFile` returns a `problems: [...]` array in a normal `200` response — it does not throw                                                                                                                                                                                                                 | N/A — this path never touches `resolveStatusCode` regardless of the bug                                                                                                     | No                                                                                                                                              |
+| `InvitationsPage.tsx` `{{code}}` gate                | Server: `InvitationsError`/`CODE_PLACEHOLDER_REQUIRED` (409). But the live-verification claim ("correctly disabled Save for a firm template missing `{{code}}`") is client-side: `InvitationsPage.tsx` has its own presence check (`clientErr`, line ~740) that disables the Save button _before_ any request is sent | No — the request that would hit the server's rule was never actually sent in that check                                                                                     | Server-side rule: yes, structurally (never live-exercised); the client-side check that WAS observed is unaffected (it never reaches the server) |
 
-5. **`UnfinishedPage.tsx`** — a real, tested, routed backend exists
-   (`packages/domain/src/reminder-timing-service.ts`, at `GET /editions/:id/unfinished`,
-   `PUT /reminders/schedule`, `PUT /reminders/cap`, `POST /editions/:id/reminders/run` in
-   `monitoring.ts`). The page's `DATA`/`STOPS`/`INITIAL_SCHEDULE` arrays are hardcoded, and its
-   reminder-schedule "On/Off" toggles edit only local state — never persisted, never read back.
+**Domain-level tests for every row above already existed and already passed** (`phase18.test.ts`,
+`response-service.test.ts`, `edition-service.test.ts`/`instrument-freeze.test.ts`,
+`people-access-service`'s own tests, etc.) — those call the service functions directly and never go
+through Fastify, so they were **never** affected by this bug regardless. The bug lived exclusively
+in the HTTP layer, and no prior HTTP-level test in this repository asserted an error-path status
+code at all (confirmed directly: this pass's own two new HTTP test files are the first ones that
+do). So nothing above was a false positive in the sense of "we said it passed and it didn't" — the
+gap is narrower and specific: the real, correct, classified HTTP behavior for every one of these
+rules had simply never been checked before, at the HTTP layer, by anyone, ever.
+
+**Re-verification performed now, live, against a freshly seeded `cis_dev`** (the two-new-endpoint
+verification in §2 above already covers the scoring-reject row; the following covers a
+representative sample of the remaining structurally-affected rows, each a different error class and
+a different route file, run against the built server via real `app.inject()` HTTP calls after the
+fix):
+
+| Check                                                                           | Result                                                                                                                                                       |
+| ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Instrument freeze, self-approval                                                | `403 MakerCheckerViolationError` — "Maker-checker violation: user … cannot both request and approve/reject critical action …"                                |
+| Edition lock, self-approval                                                     | `403 MakerCheckerViolationError` — same message shape                                                                                                        |
+| Scoring sign-off, self-approval                                                 | `409 ScoringSignoffError` — "A maker can never approve their own sign-off request"                                                                           |
+| People & Access, two-approver-floor refusal (real backend, not the mockup page) | `409 PeopleAccessError` — "This person is one of the last two approvers and cannot be removed. Give somebody else the approval right first, then come back." |
+| Regulator contact, invalid email                                                | `409 RegulatorEngagementError` — "That is not a working email address"                                                                                       |
+
+All five came back with their intended, correctly-classified status code and the exact intended
+message — none of them 500, none of them the generic Fastify shape. This directly confirms the fix
+in §3 below applies platform-wide, not only to the two routes this pass added, across three
+different maker-checker services (edition, instruments, scoring), the People & Access service, and
+the regulator-engagement service. The remaining rows in the table above (required clauses,
+forbidden phrases, consent gate, firm-coordinator PIN) were not individually re-run live — they
+share the identical mechanism (a `DomainError` subclass thrown inside a route handler, resolved by
+the same `resolveStatusCode`/`setErrorHandler` this fix corrects) and no prior claim about them
+needs correcting, so a further live pass would confirm the same mechanism a sixth, seventh and
+eighth time rather than surface new information.
 
 ### §3 — 2a: scoring sign-off can now be rejected
 
@@ -2846,20 +2958,20 @@ lockfile touched.
 1. **National report approval is currently unreachable end-to-end** — needs a product decision on
    how draft sentences get produced before the adversarial-checker gate can ever pass. Unchanged by
    this pass; explicitly out of scope.
-2. **`FirmResultsPage.tsx` (UX-FRM-RES-001)** — real backend and route already exist, but the route
-   is coordinator-access-code-authenticated while the page sits behind the operator-authenticated
-   admin session. Needs a product decision on the auth model before it can be wired, then a
-   dedicated pass.
-3. **`PeopleAccessPage.tsx` (UX-OPS-006)** — confirmed same "local-state mockup, never calls its own
-   real routes" defect as the four already fixed. Real, fully-routed backend already exists. Needs
-   a dedicated pass — three views, real CRUD, replacing the hardcoded "signed-in operator" with the
-   real session identity.
-4. **`ResponsesPage.tsx` (UX-OPS-003)** — same defect; real, routed backend already exists
-   (`getResponsesMonitor`, the same computation Mission Board already reads). Needs a dedicated
-   pass.
-5. **`UnfinishedPage.tsx` (UX-OPS-004)** — same defect; real, routed backend already exists
-   (`reminder-timing-service.ts`), including the schedule/cap the page's own UI edits only locally
-   today. Needs a dedicated pass.
+2. **`FirmResultsPage.tsx` (UX-FRM-RES-001)** — a genuine Category-1 mockup (§2) that additionally
+   carries a Category-2 defect: the route is coordinator-access-code-authenticated while the page
+   sits behind the operator-authenticated admin session. Needs a product decision on the auth model
+   _before_ it can even be wired, then a dedicated pass.
+3. **`PeopleAccessPage.tsx` (UX-OPS-006)** — a genuine Category-1 mockup (§2): "local-state mockup,
+   never calls its own real routes," same shape as the four already fixed. Real, fully-routed
+   backend already exists. Needs a dedicated pass — three views, real CRUD, replacing the hardcoded
+   "signed-in operator" with the real session identity.
+4. **`ResponsesPage.tsx` (UX-OPS-003)** — a genuine Category-1 mockup (§2); real, routed backend
+   already exists (`getResponsesMonitor`, the same computation Mission Board already reads). Needs
+   a dedicated pass.
+5. **`UnfinishedPage.tsx` (UX-OPS-004)** — a genuine Category-1 mockup (§2); real, routed backend
+   already exists (`reminder-timing-service.ts`), including the schedule/cap the page's own UI
+   edits only locally today. Needs a dedicated pass.
 6. **`RegulatorsPage.tsx` (UX-OPS-007)** — unchanged: an honestly, previously self-disclosed
    deliberate scope decision, not a hidden gap. No action needed beyond what's already documented.
 

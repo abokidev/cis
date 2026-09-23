@@ -14,6 +14,7 @@ export default defineWorkspace([
         'packages/auth/tests/**/*.test.ts',
         'packages/domain/tests/**/*.test.ts',
         'packages/survey/tests/**/*.test.ts',
+        'apps/api/tests/**/*.test.ts',
       ],
       globals: true,
       environment: 'node',

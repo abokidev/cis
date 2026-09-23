@@ -31,7 +31,7 @@ interface Card {
 
 // Example board state (the shapes the domain evaluator produces). Retail shortfall
 // is ONE card with every dependent output folded into Consequence (§4A).
-const CARDS: Card[] = [
+export const CARDS: Card[] = [
   {
     conditionId: 2,
     severity: 2,
@@ -45,9 +45,9 @@ const CARDS: Card[] = [
     ],
     consequence: [
       'National retail floor missed by 333',
-      'IEI / ICI headline at risk (folded in — not a separate card)',
-      'IEI / ICI by segment at risk (folded in — not a separate card)',
-      'Top investor frustrations at risk (folded in — not a separate card)',
+      'IEI / ICI headline at risk as a consequence of the same shortfall',
+      'IEI / ICI by segment at risk as a consequence of the same shortfall',
+      'Top investor frustrations at risk as a consequence of the same shortfall',
     ],
     why: 'Distribution problem — the funnel is healthy, not enough invitations sent.',
     action: 'Bulk nudge — knowable without a client list (generated list → UX-OPS-002 upload)',
@@ -66,7 +66,7 @@ const CARDS: Card[] = [
     ],
     consequence: [
       'Foreign institution floor missed by 2',
-      'Local vs foreign comparison at risk (folded in)',
+      'Local vs foreign comparison at risk as a consequence of the same shortfall',
     ],
     why: null,
     action: 'Message all participating firms — the relevant cohort cannot be identified',
@@ -82,7 +82,7 @@ const CARDS: Card[] = [
   },
 ];
 
-const SEVERITY_LABEL: Record<number, string> = {
+export const SEVERITY_LABEL: Record<number, string> = {
   1: 'Cannot deliver the promised study',
   2: 'Statistical target threatened',
   3: 'Report dependency threatened',
@@ -98,7 +98,7 @@ interface RailSection {
   phases: Phase[]; // phases in which this section is relevant/enabled
 }
 
-const RAIL: RailSection[] = [
+export const RAIL: RailSection[] = [
   {
     key: 'invitations',
     label: 'Invitations',
@@ -107,21 +107,21 @@ const RAIL: RailSection[] = [
   },
   {
     key: 'regulators',
-    label: 'Regulators (UX-OPS-007 — not built)',
-    built: false,
+    label: 'Regulators',
+    built: true,
     phases: ['before_launch', 'collection_open', 'closing_week'],
   },
   {
     key: 'monitoring',
-    label: 'Monitoring (UX-OPS-003/004 — not built)',
-    built: false,
+    label: 'Monitoring',
+    built: true,
     phases: ['collection_open', 'closing_week'],
   },
   { key: 'results', label: 'Results', built: true, phases: ['closed'] },
   {
     key: 'dragnet',
-    label: 'Dragnet analysis (UX-ADM-007 — not built)',
-    built: false,
+    label: 'Dragnet analysis',
+    built: true,
     phases: ['closed'],
   },
   {
@@ -211,8 +211,7 @@ export function MissionBoardPage(): JSX.Element {
                     </p>
                   ) : (
                     <p className="tag soft">
-                      Expected impact omitted — not enough history yet to compute it (correct, not a
-                      bug).
+                      Expected impact not shown yet — not enough history to estimate it.
                     </p>
                   )}
                 </div>
@@ -232,7 +231,7 @@ export function MissionBoardPage(): JSX.Element {
                 disabled={!relevant}
                 title={
                   !s.built
-                    ? 'Not built yet — honest stub'
+                    ? 'Not available yet'
                     : !relevant
                       ? 'Not relevant in this edition phase'
                       : undefined

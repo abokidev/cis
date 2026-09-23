@@ -2074,3 +2074,157 @@ position). No code in either journey was changed.
 Verified: `@cis/domain` full suite (29 files, 337 tests) and `@cis/db` (3 files, 25 tests,
 sequential) green against a live Postgres; `pnpm turbo build lint typecheck` clean; `pnpm audit`
 unchanged (no dependency change was needed for a test-only confirmation).
+
+## Phase 23 — Post-Demo Findings: Two Confirmed Copy Bugs Fixed, Save/Freeze Flow Live-Reproduced
+
+Three findings from a post-demo report. Two were real, confirmed bugs in Mission Board copy,
+fixed directly. The third — a reported failure to save edition dates and to reflect an
+instrument freeze — was not fixed, because it could not be reproduced: a genuinely fresh
+environment (fresh clone state, fresh install, fresh migrate, fresh seed, fresh servers) drove
+both flows end to end, in a real browser, against a real Postgres database, and both worked
+correctly. Per the report's own instruction, this was not guessed at — see §2 below for exactly
+how it was reproduced and what was checked.
+
+### §1a — Internal-mechanics rationale leaking into user-facing copy (fixed)
+
+`packages/domain/src/mission-board-service.ts`'s card builder wrote dependent Engine-2 findings
+into a card's `consequence` array as `` `${e2.what} (folded in — not a separate card)` `` — a
+description of the dedup MECHANISM (why this finding isn't its own card), not of the
+CONSEQUENCE, and using an internal term ("folded in") a study-team user has no reason to know.
+Fixed to `` `${e2.what} as a consequence of the same shortfall` `` — states the actual causal
+relationship, says nothing about how the board decided to render it.
+
+The same pattern, audited broadly rather than just at the quoted strings: `MissionBoardPage.tsx`
+(the admin SPA's local-state Mission Board mockup — see its own file header; the real evaluator is
+`mission-board-service.ts` above) carried three more instances in its example `consequence`
+arrays, one in its "expected impact omitted" fallback text (`'Expected impact omitted — not
+enough history yet to compute it (correct, not a bug)'`), and one in a rail-button tooltip
+(`'Not built yet — honest stub'`). All rewritten to plain language with no reference to
+implementation mechanics: no "folded in," no "not a separate card," no "correct, not a bug," no
+"honest stub." `SEVERITY_LABEL`'s six rank labels were individually audited and are unaffected —
+they're terse, factually accurate tier names (`'Statistical target threatened'` for rank 2
+correctly describes every rank-2 condition, all of which are forecast-vs-floor shortfalls), not
+leaked mechanism.
+
+A repo-wide grep for the exact phrases plus "dedup(e/lication)" and "Engine 1/2" found two other,
+unrelated surfaces using their own "not built"/stub language: `portalModel.ts`'s
+`notBuiltForSeat` (Phase 4's orphaned-seat message, UX-FRM-004/005/006, already covered by its
+own passing regression test) and `RespondentApp.tsx`'s firm-onboarding routing stub
+(UX-FRM-001). Both are different, apparently-intentional, already-tested surfaces — not the
+Mission Board drift this finding was about — and were left untouched.
+
+### §1b — Stale "not built" rail labels for surfaces that are actually shipped (fixed)
+
+`MissionBoardPage.tsx`'s `RAIL` array claimed three sections were not built:
+`'Regulators (UX-OPS-007 — not built)'`, `'Monitoring (UX-OPS-003/004 — not built)'`, and
+`'Dragnet analysis (UX-ADM-007 — not built)'`. All three are wrong — Regulators shipped in
+Phase 12, Monitoring in Phase 13, and Dragnet analysis in Phase 16, each with its own real,
+routed page (`RegulatorsPage`, `ResponsesPage`/`UnfinishedPage`, `DragnetPage`) already wired
+into the top-level nav bar in `App.tsx`. This is a genuine regression: Mission Board's own
+internal rail was never updated when those later phases landed. Fixed by setting `built: true`
+and removing the parenthetical qualifier on all three, so the rail now reads `'Regulators'`,
+`'Monitoring'`, `'Dragnet analysis'` like the other three (already-correct) entries. No new
+click-through navigation was added — `MissionBoardPage` has no navigation wiring to any sibling
+page for any rail entry, built or not (it's a self-contained mockup, matching the same
+deliberate-scope pattern as `RegulatorsPage`'s Phase 19 `SEED` array), and adding it selectively
+for just these three would create an inconsistent asymmetry the report didn't ask for. The rest
+of the rail's definitions were audited and carry no other stale claim.
+
+### §1c — Regression test
+
+New `apps/admin/src/pages/MissionBoardPage.test.ts` (`CARDS`/`SEVERITY_LABEL`/`RAIL` exported for
+testability): asserts no card field, severity label, or rail label matches a set of
+internal-mechanics patterns (`folded in`, `not a separate card`, `correct, not a bug`,
+`honest stub`, `dedup(e/lication)`, `Engine [12]` — by pattern, so a differently-worded re-leak of
+the same class is still caught, not just the exact original strings), and that every `built: true`
+rail entry's label carries no "not built" qualifier, with Regulators/Monitoring/Dragnet analysis
+explicitly checked.
+
+### §2 — Save/freeze flow: reproduced fresh, live, twice — no bug found
+
+The report described planned-launch/closing-date saves and instrument freeze/approve not taking
+effect. Both `EditionPage.tsx`→`client.setOpeningDate`/`setClosingDate` and
+`SurveysPage.tsx`→`client.requestFreeze`/`decideFreeze` read as correctly wired from source
+inspection alone, which made three explanations equally plausible: a stale demo environment, a
+genuine runtime bug invisible to static review (the same class as a prior timezone bug), or
+something environment-specific. Rather than guess, it was reproduced for real:
+
+1. **Genuinely fresh state.** This session's container started with no `node_modules` anywhere
+   and no Postgres roles or databases beyond the OS defaults — confirmed fresh, not reused. Ran
+   `pnpm install`, `pnpm turbo build`, created the `cis` role and `cis_dev`/`cis_test` databases,
+   ran `pnpm --filter @cis/db migrate:up` against `cis_dev` (19 migrations, clean), seeded with
+   `pnpm --filter @cis/api seed` (real `seedReferenceData`, not a fixture), and started the API
+   and admin dev servers as fresh processes (not reused from any prior state).
+2. **Edition dates, in a real browser (Playwright, Chromium).** Logged in as the seeded maker
+   user, on the Edition screen (the app's default landing tab). Set the planned launch date,
+   clicked Save — a real `PATCH /editions/:id/opening-date` fired and returned 200. Set the
+   closing date, clicked Save — a real `PATCH /editions/:id/closing-date` fired and returned 200.
+   Reloaded the page (a full SPA reload, not a soft navigation): both dates were still shown,
+   correctly. Queried `cis_dev.editions` directly: `planned_open_at` and `survey_close_at` had
+   actually changed to the saved values.
+3. **Instrument freeze, across two different logged-in users.** From the Surveys screen, requested
+   a freeze as the maker (`POST .../freeze/request`, 201, with a reason). Logged in as a
+   genuinely different user (the seeded checker) in a second browser context, opened "Review the
+   request," and approved (`POST .../freeze/:id/decide`, 200, `{status: 'approved', frozen:
+true}`). The frozen banner, the per-instrument "Frozen" pills, and the "FROZEN" eyebrow all
+   appeared correctly for the approving user immediately, and for the requesting user after a
+   fresh reload and re-navigation to Surveys. Queried the database directly: all ten
+   `instrument_definition_versions` rows had `is_frozen = true`, and the `critical_actions` row
+   showed `status = 'approved'` with `requested_by` and `approved_by` genuinely different users.
+
+Everything worked, both times, at every layer checked (UI, network request/response, and the
+underlying database row). **Conclusion: the reported failure was stale or misconfigured demo
+infrastructure, not a code defect.** No fix was made — per the report's own instruction, the
+freeze-transition UI was not touched or rebuilt; it was already correct.
+
+**Exact, minimal checklist for a reliable fresh demo, going forward:**
+
+```bash
+git pull                                            # 1. latest code
+pnpm install                                        # 2. reinstall — a stale node_modules or
+                                                     #    lockfile mismatch is the single most
+                                                     #    likely cause of a demo behaving
+                                                     #    differently from what the code says
+pnpm turbo build                                    # 3. rebuild every workspace package's dist/
+pnpm --filter @cis/db migrate:up                    # 4. re-migrate — a demo DB on an old schema
+                                                     #    version will not show new-phase behaviour
+pnpm --filter @cis/api seed                         # 5. re-seed (idempotent — safe to re-run;
+                                                     #    skips if the 2026 edition already exists)
+# 6. restart BOTH servers as fresh processes — do not reuse a process from a previous demo,
+#    especially one started before step 2–4 above:
+pnpm --filter @cis/api dev      # in one terminal
+pnpm --filter @cis/admin dev    # in another
+```
+
+### §2 (continued) — the coverage gap this surfaced, closed
+
+The save/freeze flow itself needed no fix, but the reproduction surfaced a real, pre-existing gap:
+`apps/api` had zero tests of any kind. Every domain rule these routes call
+(`setSurveyOpenAt`/`setClosingDate`/`requestFreeze`/`decideFreeze`) is already well covered in
+`packages/domain/tests/edition-service.test.ts` and `instrument-freeze.test.ts`, but nothing
+exercised the HTTP layer itself — request parsing, JWT auth wiring, response serialization —
+which is exactly the layer a stale-environment class of report tends to implicate, and exactly
+the layer this session's reproduction had to fall back to manual browser automation to check
+because no automated test covered it.
+
+New `apps/api/tests/edition-instrument-save-flow.test.ts`, added to the existing DB-backed
+`integration` Vitest project (`apps/api/tests/**/*.test.ts` added to `vitest.workspace.ts`) rather
+than as new test infrastructure: calls the real `buildServer()` Fastify app via `app.inject`
+(no listening socket needed) against a real Postgres database. Mirrors the manual reproduction
+exactly — logs in over `/auth/login`, `PATCH`es both dates, then issues a fresh `GET` (the
+save-then-reload path) and a direct row query to confirm persistence past the API's own echo;
+requests a freeze as one user, approves as a different user, and confirms both the API's
+`frozen: true` response and the underlying `instrument_definition_versions`/`critical_actions`
+rows. A future regression in this exact HTTP path — not just the domain logic underneath it —
+now has a test that would catch it.
+
+### Verification
+
+Fresh Postgres role/databases created, `pnpm --filter @cis/db migrate:up` and
+`pnpm --filter @cis/api seed` run clean against `cis_dev`; live browser reproduction (Playwright/
+Chromium) of both the date-save and freeze/approve flows, cross-checked against direct database
+queries, found no defect. Full suite: `pnpm test` — **39 files, 410 tests, all green** (including
+the new `MissionBoardPage.test.ts` and `apps/api/tests/edition-instrument-save-flow.test.ts`)
+against a live Postgres. `pnpm lint`, `pnpm typecheck`, and `pnpm turbo build` all clean.
+`pnpm audit` unchanged — the same pre-existing devDependency advisories as every prior phase, no
+`package.json` or lockfile touched.

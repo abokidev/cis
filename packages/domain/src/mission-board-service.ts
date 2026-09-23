@@ -489,7 +489,7 @@ export function evaluateBoard(ctx: BoardContext): MissionCard[] {
     for (const e2 of CONDITIONS) {
       if (e2.engine !== 2 || !enabled(e2.id)) continue;
       if (dependsOnSegment(e2, seg))
-        consequence.push(`${e2.what} (folded in — not a separate card)`);
+        consequence.push(`${e2.what} as a consequence of the same shortfall`);
     }
     const rem = remediationForCohort(cond.cohort);
     const impact = expectedImpact(cohortCountFor(ctx, cond.cohort));

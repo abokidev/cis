@@ -190,6 +190,8 @@ export {
   getInvitationRequests,
   resolveInvitationRequest,
   resolveFirmNameToOrg,
+  resolveFirmNamesToOrgs,
+  getBouncedRecipients,
   getFirmAudienceState,
   RECORDING_SENDING_SERVICE,
   ZeptomailSendingService,

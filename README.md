@@ -2517,3 +2517,111 @@ pre-existing devDependency advisories as every prior phase. Live-verified in a r
 completed a real two-user sign-off, generated a real national report with correct sufficiency
 evaluation, and confirmed the honest "zero participating firms" firm-reports state — screenshotted
 for the record at every step, not just asserted in a test.
+
+## InvitationsPage — Live Wiring (fourth and largest instance of the same defect class)
+
+The fourth instance of the "self-contained local state" mockup defect — Mission Board, then
+`UX-ADM-004/005/006` — confirmed for `InvitationsPage.tsx` (UX-OPS-002) in the last batch's
+targeted grep, and given its own dedicated pass here as planned, since it's a substantially
+larger surface than the previous three. Phase 9 built the full invitations engine —
+`invitations-service.ts` — in advance; this was purely a wiring fix, not a rebuild.
+
+### §1 — Inventory: every piece checked independently
+
+| Piece                       | Before                                                              | After                                                                                               |
+| --------------------------- | ------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| Audience selection & counts | Hardcoded `AUDIENCES` array (fixed numbers like `n: 249`)           | Live `listAudiences` — real query against Phase 4 firm/seat state and Phase 3 contact-consent       |
+| Templates (list/edit/save)  | `SEED_TEMPLATES`, edits discarded on close                          | Real CRUD (`listMessageTemplates`/`saveMessageTemplate`), real `{{code}}` gate enforced server-side |
+| Send wizard                 | `onDone` just closed the wizard — nothing was ever sent             | Real `sendInvitationBatch`, real per-template dedup                                                 |
+| File-upload validation      | Descriptive text only — no file input existed at all                | Real four-check validation (`validateUploadFile`), live file input                                  |
+| Batch / delivery report     | `SEED_BATCHES`, fixed numbers                                       | Real `listInvitationBatches` + `getInvitationBatchReport` per batch                                 |
+| Bounce listing              | A "List the addresses that bounced" button with no `onClick` at all | Real listing — see the found gap below                                                              |
+| Access-request queue        | `SEED_REQUESTS`, resolved state never left the browser              | Real `listInvitationRequests` / `resolveInvitationRequest`                                          |
+
+Every piece was mocked; none were already real. `InvitationsPage.tsx` now takes `{client,
+editionId}` (previously zero props, per the last batch's grep) and calls the real backend for
+all seven.
+
+### §2 — Two real backend gaps found while wiring, both fixed (not just noted)
+
+1. **`resolveFirmNameToOrg` existed, untested, and was never called from anywhere.** Without it,
+   an uploaded CSV row had no way to carry a real `organizationId`, so the fourth file-validation
+   check (a firm already sent this template) could never fire for an upload — only for a
+   firm-audience send. Added `resolveFirmNamesToOrgs` (`packages/domain/src/invitations-service.ts`)
+   — the same exact, case-insensitive match, batched to fetch the register once instead of once
+   per row — plus `POST /editions/:id/invitations/resolve-firm-names`, wired into the upload
+   handler before validation. This is _not_ a fifth validation check and does not block a row on
+   its own; it only supplies the id the already-existing fourth check needs. Live-verified: a CSV
+   row naming an already-invited firm is now correctly flagged `already_sent`.
+2. **`listBouncedRecipients` existed at the `@cis/db` layer only** — its own doc comment already
+   said "for the 'list the addresses that bounced' action" — with no domain-service wrapper and no
+   route. Added `getBouncedRecipients` (thin pass-through, matching the existing
+   `listMessageTemplates`/`getBatches` pattern) and `GET /invitations/batches/:batchId/bounced`,
+   wired into the batch report view. Live-verified: simulated a real Zeptomail bounce webhook
+   event and confirmed the exact bounced address is listed, with no resend action anywhere.
+
+Both gaps were the same shape as last batch's `getLatestNationalReportForEdition`: real,
+tested-at-one-layer domain capability, never exposed the rest of the way — fixed, not left as a
+discovered-but-unresolved note, per this batch's explicit instruction.
+
+### §3 — Live verification, real seeded data
+
+The canonical seed (`seedReferenceData`, used by every existing test) creates zero firm
+organizations — confirmed by checking every test that needs a firm; each creates its own via
+`createOrganization` directly, and none depend on `seedReferenceData` for firm data, so this
+wasn't touched (avoids risk to the ~400 existing tests that already pass against it). Instead, a
+verification-only script (not part of the repo, not part of any test) seeded six real firms
+spanning six of the seven audience states via the same real `@cis/db` functions the domain
+layer's own tests use (`createOrganization`, `insertFirmClaim`, `ensureSeats`/`setSeatState`,
+`createOutreachLink`), directly against the running dev database — extending available data to
+verify against, per this batch's instruction, without touching the shared canonical seed every
+other test relies on.
+
+Verified live, in a real browser, against that data:
+
+- **Audience counts** — all seven firm audiences showed the exact live count matching the seeded
+  state (1 each in six non-trivial states, 6 for "every firm").
+- **Dedup enforcement** — a firm-audience send to an already-invited firm correctly reported
+  "0 of 1 sent — 1 skipped, already received this template"; a send to a genuinely new firm sent
+  correctly.
+- **All four file-validation checks, individually triggered** — a five-row CSV correctly flagged
+  `no_address`, `malformed_address`, and `in_file_duplicate` in one pass; a separate upload naming
+  an already-invited real firm correctly flagged `already_sent` (closing the §2 gap above).
+- **Delivery report accuracy, including the opened/clicked absent-vs-zero distinction** — real
+  Zeptomail webhook events (`delivered`/`opened`/`clicked` for one recipient, `bounced` for
+  another, via the existing `/invitations/zeptomail-webhook` route) produced a report showing
+  Delivered 1 / Opened 1 ("indicative") / Clicked 1 / Bounced 1 for that batch, while every
+  _other_ batch (never sent a webhook event) correctly showed "not reported" for opened/clicked —
+  never zero.
+- **Bounce list, no resend** — "List the addresses that bounced" correctly showed the one bounced
+  address; no resend action exists anywhere in the UI or the routes underneath it.
+- **Templates** — the `{{code}}` gate correctly disabled Save for a firm template missing
+  `{{code}}` and enabled it once added; the new template persisted and appeared in the real list.
+- **Access-request queue, submission through resolution** — a request submitted via the real
+  `submitInvitationRequest` (the respondent-facing submission surface, UX-FRM-001, is out of
+  scope) appeared correctly in the queue and the "Requests" tab count; both resolution paths were
+  exercised — "Mark done without issuing" and "Issue a code" (the latter correctly created a real
+  reissue batch, visible in "Messages sent").
+
+No network errors (4xx/5xx) at any point across the full verification pass.
+
+### §4 — Verification
+
+New tests: `apps/admin/src/pages/InvitationsPage.test.ts` (a source scan, since this repo has no
+DOM test infrastructure — asserts none of the old mockup's fixture arrays, hardcoded example
+names/counts, or the stale "sending service not yet decided" placeholder remain in the file, that
+the component signature takes real props, that every real client method is actually called, and
+that no resend action exists); two new domain tests for `resolveFirmNamesToOrgs` and
+`getBouncedRecipients` (`packages/domain/tests/invitations.test.ts`); two new HTTP-level tests for
+the two new routes (`apps/api/tests/invitations-live-wiring.test.ts`).
+
+Full suite: `pnpm test` — **42 files, 426 tests, all green** (up from 40/415) against a live
+Postgres. `pnpm lint`, `pnpm typecheck`, `pnpm turbo build` all clean. `pnpm audit` unchanged.
+
+### §5 — What's left from the running open-items list
+
+Unaffected by this pass, still open from the last batch: national report approval is still
+unreachable end-to-end (needs Phase 20's AI report exemplars before draft-sentence generation can
+be built); scoring sign-off still has no reject capability at any layer; firm-report regeneration
+still has no route. This pass closes the fourth and largest confirmed instance of the "mockup
+never wired to its real backend" defect class; no fifth instance is currently known.

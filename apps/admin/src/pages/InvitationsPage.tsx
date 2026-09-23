@@ -1,282 +1,131 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { AdminClient } from '../api/client';
+import {
+  ApiError,
+  type AudienceCategory,
+  type BatchReport,
+  type InvitationRequestItem,
+  type MessageAudienceKind,
+  type MessageBatch,
+  type MessageRecipient,
+  type MessageTemplate,
+  type UploadCheckKind,
+} from '../api/types';
 
 /**
- * UX-OPS-002 — Study Operations: Invitations. Ported faithfully from the
- * approved v3.18 artefact. Self-contained functional surface (local state); the
- * enforced rules (audience queries, per-template dedup, four-check file
- * validation, {{code}} gate, graceful delivery reporting) live and are tested in
- * @cis/domain (invitations-service).
- *
- * Load-bearing behaviours the changelog earned and this surface preserves:
- *   - No register/near-match resolution (removed v3.16): a row that resolves to
- *     nothing still sends and shows in the delivery report — not blocked before.
+ * UX-OPS-002 — Study Operations: Invitations, live-wired to the real evaluator
+ * (`@cis/domain` invitations-service, via `apps/api/src/routes/invitations.ts`):
+ *   - Audience counts are live queries against Phase 4's firm/seat state and
+ *     Phase 3's contact-consent records — never hardcoded.
  *   - Deduplication is per TEMPLATE, not per batch, across all earlier batches.
- *   - File validation is exactly four checks; there is no fifth register check.
- *   - An open is a floor, never a reader count; a click is a real event.
- *   - No resend-to-bounced action exists.
+ *   - File validation is exactly four checks; there is no fifth register check
+ *     (removed in the artefact's own v3.16 — a row that resolves to nothing
+ *     still sends and shows in the delivery report, not blocked before).
+ *   - An open is a floor, never a reader count (null ≠ 0 — rendered absent when
+ *     the provider didn't report it); a click is a real event.
+ *   - No resend-to-bounced action exists anywhere in this UI or the API path
+ *     underneath it.
  *   - No respondent-in-progress audience.
  */
 
 type Tab = 'messages' | 'templates' | 'requests';
 type MsgView = 'list' | 'batch' | 'wizard';
 
-interface Batch {
-  id: string;
-  name: string;
-  sent: string;
-  audience: string;
-  firms: number;
-  delivered: number;
-  bounced: number;
-  opened: number | null; // null = provider did not report opens (not zero)
-  clicked: number | null;
+const PROBLEM_LABEL: Record<UploadCheckKind, string> = {
+  no_address: 'No address',
+  malformed_address: 'Malformed address',
+  in_file_duplicate: 'Duplicated within the file',
+  already_sent: 'Already sent this template',
+};
+
+/** Minimal CSV parsing (firmName,email columns, optional header row) — the
+ *  four real validation checks happen server-side in validateUploadFile;
+ *  this only turns file text into rows to send it. */
+function parseCsv(text: string): Array<{ firmName: string; email: string }> {
+  const lines = text
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+  const rows = lines.map((line) => {
+    const [firmName = '', email = ''] = line.split(',').map((c) => c.trim());
+    return { firmName, email };
+  });
+  if (rows.length && /email/i.test(rows[0]!.email) && /firm/i.test(rows[0]!.firmName)) {
+    rows.shift(); // header row
+  }
+  return rows;
 }
 
-interface Template {
-  name: string;
-  subject: string;
-  body: string;
-  requiresCode: boolean;
-  used: string;
-  edited: string;
-}
-
-interface RequestItem {
-  firm: string;
-  name: string;
-  role: string;
-  email: string;
-  phone: string;
-  when: string;
-  flag: string;
-  done: boolean;
-}
-
-const CATS = [
-  { k: 'firms', b: 'Firms', s: 'By where each one has got to, or all of them.' },
-  { k: 'regs', b: 'Regulators', s: 'SEC, NGX and CSCS.' },
-  {
-    k: 'parts',
-    b: 'Participants who asked to hear from us',
-    s: 'People who gave a contact detail.',
-  },
-  { k: 'other', b: 'Something else', s: 'A list you upload.' },
-] as const;
-
-const AUDIENCES: Array<{ cat: string; id: string; label: string; sub: string; n: number | null }> =
-  [
-    {
-      cat: 'firms',
-      id: 'all',
-      label: 'Every firm we hold an address for',
-      sub: 'All on the register, whatever state.',
-      n: 249,
-    },
-    {
-      cat: 'firms',
-      id: 'newaddr2',
-      label: 'Firms not yet invited',
-      sub: 'On the register, never written to this edition.',
-      n: 37,
-    },
-    {
-      cat: 'firms',
-      id: 'unclaimed',
-      label: 'Invited, space not claimed',
-      sub: 'Delivered, but nobody has set up the space.',
-      n: 141,
-    },
-    {
-      cat: 'firms',
-      id: 'noassign',
-      label: 'Space claimed, nobody assigned',
-      sub: 'Coordinator in, but no one assigned to the three surveys.',
-      n: 26,
-    },
-    {
-      cat: 'firms',
-      id: 'partial',
-      label: 'Assigned, surveys not finished',
-      sub: 'At least one of the three is outstanding.',
-      n: 37,
-    },
-    {
-      cat: 'firms',
-      id: 'noreach',
-      label: 'Claimed, no client outreach yet',
-      sub: 'The firm has not written to its clients.',
-      n: 52,
-    },
-    {
-      cat: 'firms',
-      id: 'complete',
-      label: 'Everything complete',
-      sub: 'All three surveys in and clients invited.',
-      n: 19,
-    },
-    { cat: 'regs', id: 'regsall', label: 'All three regulators', sub: 'SEC, NGX and CSCS.', n: 3 },
-    {
-      cat: 'parts',
-      id: 'retail',
-      label: 'Retail investors',
-      sub: 'Of 1,406 responses, these gave a contact detail.',
-      n: 812,
-    },
-    {
-      cat: 'parts',
-      id: 'localinst',
-      label: 'Nigerian institutional investors',
-      sub: 'Of 61 responses, these gave a contact detail.',
-      n: 34,
-    },
-    {
-      cat: 'parts',
-      id: 'foreigninst',
-      label: 'Institutional investors abroad',
-      sub: 'Of 22 responses, these gave a contact detail.',
-      n: 14,
-    },
-    {
-      cat: 'parts',
-      id: 'allpart',
-      label: 'Everyone who asked for the report',
-      sub: 'Retail and institutional together.',
-      n: 860,
-    },
-    {
-      cat: 'other',
-      id: 'upload',
-      label: 'A list I upload',
-      sub: 'Any specific set of firms the platform does not know yet.',
-      n: null,
-    },
-  ];
-
-const SEED_TEMPLATES: Template[] = [
-  {
-    name: 'First invitation',
-    subject: 'Your firm has been invited to the 2026 benchmark',
-    requiresCode: true,
-    used: 'Batch 1, Batch 2',
-    edited: '12 August 2026',
-    body: 'Dear {{firm}},\n\nYour invitation code is {{code}}.',
-  },
-  {
-    name: 'Reminder',
-    subject: 'Your firm has not yet claimed its space',
-    requiresCode: true,
-    used: 'Not used yet',
-    edited: '14 August 2026',
-    body: 'Dear {{firm}},\n\nYour code is {{code}}.',
-  },
-  {
-    name: 'Reissued code',
-    subject: 'A new invitation code for your firm',
-    requiresCode: true,
-    used: 'Not used yet',
-    edited: '14 August 2026',
-    body: 'Dear {{firm}},\n\nA new code: {{code}}.',
-  },
-  {
-    name: 'Nobody assigned yet',
-    subject: 'Who at your firm is answering?',
-    requiresCode: false,
-    used: 'Not used yet',
-    edited: '17 August 2026',
-    body: 'Dear {{firm}},\n\nThe three surveys have not been assigned yet.',
-  },
-  {
-    name: 'Surveys outstanding',
-    subject: 'Your firm has surveys still to complete',
-    requiresCode: false,
-    used: 'Not used yet',
-    edited: '17 August 2026',
-    body: 'Dear {{firm}},\n\nAt least one survey is outstanding.',
-  },
-  {
-    name: 'Invite your clients',
-    subject: 'Your clients have not been invited yet',
-    requiresCode: false,
-    used: 'Not used yet',
-    edited: '18 August 2026',
-    body: 'Dear {{firm}},\n\nYour firm has not invited its clients yet.',
-  },
-];
-
-const SEED_BATCHES: Batch[] = [
-  {
-    id: 'b1',
-    name: 'First invitation',
-    sent: '15 August 2026',
-    audience: 'Firms not yet invited',
-    firms: 187,
-    delivered: 181,
-    bounced: 6,
-    opened: 96,
-    clicked: 61,
-  },
-  {
-    id: 'b2',
-    name: 'First invitation',
-    sent: '18 August 2026',
-    audience: 'Firms not yet invited',
-    firms: 42,
-    delivered: 40,
-    bounced: 2,
-    opened: null,
-    clicked: null,
-  },
-];
-
-const SEED_REQUESTS: RequestItem[] = [
-  {
-    firm: 'FBNQuest Securities Limited',
-    name: 'Ifeoma Lawal',
-    role: 'Head, Client Operations',
-    email: 'ifeoma.lawal@fbnquest.com',
-    phone: '+234 802 445 1180',
-    when: '2 hours ago',
-    flag: 'The invitation to this firm bounced. This is likely the replacement contact.',
-    done: false,
-  },
-  {
-    firm: 'Chapel Hill Denham Securities Limited',
-    name: 'Adaeze Nwosu',
-    role: 'Compliance Officer',
-    email: 'adaeze.nwosu@chapelhilldenham.com',
-    phone: '+234 809 220 7734',
-    when: 'yesterday',
-    flag: 'An invitation went to a different person at this firm 6 days ago and has not been used.',
-    done: false,
-  },
-];
-
-export function InvitationsPage(): JSX.Element {
+export function InvitationsPage({
+  client,
+  editionId,
+}: {
+  client: AdminClient;
+  editionId: string;
+}): JSX.Element {
   const [tab, setTab] = useState<Tab>('messages');
   const [msgView, setMsgView] = useState<MsgView>('list');
   const [batchId, setBatchId] = useState<string | null>(null);
-  const [requests, setRequests] = useState<RequestItem[]>(() =>
-    SEED_REQUESTS.map((r) => ({ ...r })),
-  );
 
-  const waiting = requests.filter((r) => !r.done).length;
+  const [audiences, setAudiences] = useState<AudienceCategory[] | null>(null);
+  const [templates, setTemplates] = useState<MessageTemplate[]>([]);
+  const [batches, setBatches] = useState<MessageBatch[]>([]);
+  const [batchReports, setBatchReports] = useState<Record<string, BatchReport>>({});
+  const [requests, setRequests] = useState<InvitationRequestItem[]>([]);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setError(null);
+    try {
+      const [aud, tpl, bat, req] = await Promise.all([
+        client.listAudiences(editionId),
+        client.listMessageTemplates(editionId),
+        client.listInvitationBatches(editionId),
+        client.listInvitationRequests(editionId, true),
+      ]);
+      setAudiences(aud.audiences);
+      setTemplates(tpl.templates);
+      setBatches(bat.batches);
+      setRequests(req.requests);
+      const reports = await Promise.all(
+        bat.batches.map((b) => client.getInvitationBatchReport(b.id)),
+      );
+      setBatchReports(Object.fromEntries(bat.batches.map((b, i) => [b.id, reports[i]!.report])));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not load invitations');
+    }
+  }, [client, editionId]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const waiting = requests.filter((r) => !r.resolved).length;
+  const totalFirmsWrittenTo = Object.values(batchReports).reduce((s, r) => s + r.firms, 0);
+  const totalBounced = Object.values(batchReports).reduce((s, r) => s + r.bounced, 0);
+
+  if (audiences === null) {
+    return <main>{error ? <div className="err">{error}</div> : <p>Loading…</p>}</main>;
+  }
 
   return (
     <main>
-      <p className="eyebrow">Study operations · 2026 edition</p>
+      <p className="eyebrow">Study operations · current edition</p>
       <h1 tabIndex={-1}>Invitations</h1>
+
+      {error && <div className="err">{error}</div>}
 
       <div className="statgrid">
         <div className="stat">
-          <b>{SEED_BATCHES.length}</b>
+          <b>{batches.length}</b>
           <span>Messages sent</span>
         </div>
         <div className="stat">
-          <b>{SEED_BATCHES.reduce((s, b) => s + b.firms, 0)}</b>
+          <b>{totalFirmsWrittenTo}</b>
           <span>Firms written to</span>
         </div>
         <div className="stat">
-          <b>{SEED_BATCHES.reduce((s, b) => s + b.bounced, 0)}</b>
+          <b>{totalBounced}</b>
           <span>Needing a new address</span>
         </div>
         <div className="stat">
@@ -309,6 +158,8 @@ export function InvitationsPage(): JSX.Element {
 
       {tab === 'messages' && msgView === 'list' && (
         <MessagesList
+          batches={batches}
+          batchReports={batchReports}
           onOpen={(id) => {
             setBatchId(id);
             setMsgView('batch');
@@ -316,32 +167,43 @@ export function InvitationsPage(): JSX.Element {
           onNew={() => setMsgView('wizard')}
         />
       )}
-      {tab === 'messages' && msgView === 'batch' && batchId && (
+      {tab === 'messages' && msgView === 'batch' && batchId && batchReports[batchId] && (
         <BatchReportView
-          batch={SEED_BATCHES.find((b) => b.id === batchId)!}
+          client={client}
+          report={batchReports[batchId]}
           onBack={() => setMsgView('list')}
         />
       )}
       {tab === 'messages' && msgView === 'wizard' && (
-        <NewMessageWizard onDone={() => setMsgView('list')} />
-      )}
-      {tab === 'templates' && <TemplatesView />}
-      {tab === 'requests' && (
-        <RequestsView
-          requests={requests}
-          onResolve={(i) =>
-            setRequests((list) => list.map((r, j) => (j === i ? { ...r, done: true } : r)))
-          }
+        <NewMessageWizard
+          client={client}
+          editionId={editionId}
+          templates={templates}
+          audiences={audiences}
+          onDone={() => {
+            setMsgView('list');
+            void load();
+          }}
         />
+      )}
+      {tab === 'templates' && (
+        <TemplatesView client={client} editionId={editionId} templates={templates} onSaved={load} />
+      )}
+      {tab === 'requests' && (
+        <RequestsView client={client} templates={templates} requests={requests} onResolved={load} />
       )}
     </main>
   );
 }
 
 function MessagesList({
+  batches,
+  batchReports,
   onOpen,
   onNew,
 }: {
+  batches: MessageBatch[];
+  batchReports: Record<string, BatchReport>;
   onOpen: (id: string) => void;
   onNew: () => void;
 }): JSX.Element {
@@ -367,31 +229,47 @@ function MessagesList({
             </tr>
           </thead>
           <tbody>
-            {SEED_BATCHES.map((b) => (
-              <tr key={b.id}>
-                <td>
-                  {b.name}
-                  <span className="tag soft" style={{ marginLeft: 6 }}>
-                    {b.audience}
-                  </span>
-                </td>
-                <td>{b.sent}</td>
-                <td>{b.firms}</td>
-                <td>{b.delivered}</td>
-                <td>
-                  {b.opened === null ? <span className="tag soft">not reported</span> : b.opened}
-                </td>
-                <td>
-                  {b.clicked === null ? <span className="tag soft">not reported</span> : b.clicked}
-                </td>
-                <td>{b.bounced ? <span className="tag risk">{b.bounced}</span> : 0}</td>
-                <td>
-                  <button type="button" className="btn-2" onClick={() => onOpen(b.id)}>
-                    Open
-                  </button>
-                </td>
+            {batches.length === 0 && (
+              <tr>
+                <td colSpan={8}>No messages sent yet.</td>
               </tr>
-            ))}
+            )}
+            {batches.map((b) => {
+              const r = batchReports[b.id];
+              return (
+                <tr key={b.id}>
+                  <td>
+                    {r?.templateName ?? '—'}
+                    <span className="tag soft" style={{ marginLeft: 6 }}>
+                      {b.audienceLabel}
+                    </span>
+                  </td>
+                  <td>{new Date(b.sentAt).toLocaleDateString()}</td>
+                  <td>{r?.firms ?? '—'}</td>
+                  <td>{r?.delivered ?? '—'}</td>
+                  <td>
+                    {!r || !r.opensReported ? (
+                      <span className="tag soft">not reported</span>
+                    ) : (
+                      r.opened
+                    )}
+                  </td>
+                  <td>
+                    {!r || !r.clicksReported ? (
+                      <span className="tag soft">not reported</span>
+                    ) : (
+                      r.clicked
+                    )}
+                  </td>
+                  <td>{r?.bounced ? <span className="tag risk">{r.bounced}</span> : 0}</td>
+                  <td>
+                    <button type="button" className="btn-2" onClick={() => onOpen(b.id)}>
+                      Open
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -399,47 +277,73 @@ function MessagesList({
   );
 }
 
-function BatchReportView({ batch, onBack }: { batch: Batch; onBack: () => void }): JSX.Element {
-  const opensReported = batch.opened !== null;
+function BatchReportView({
+  client,
+  report,
+  onBack,
+}: {
+  client: AdminClient;
+  report: BatchReport;
+  onBack: () => void;
+}): JSX.Element {
+  const [bounced, setBounced] = useState<MessageRecipient[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function showBounced(): Promise<void> {
+    setError(null);
+    try {
+      const r = await client.getBouncedRecipients(report.batch.id);
+      setBounced(r.bounced);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not load the bounced addresses');
+    }
+  }
+
   return (
     <>
       <button type="button" className="back" onClick={onBack}>
         ← All messages
       </button>
-      <h2>{batch.name}</h2>
+      <h2>{report.templateName}</h2>
       <p className="lede">
-        Sent {batch.sent} · {batch.audience}
+        Sent {new Date(report.batch.sentAt).toLocaleString()} · {report.batch.audienceLabel}
       </p>
       <div className="statgrid">
         <div className="stat">
-          <b>{batch.firms}</b>
+          <b>{report.firms}</b>
           <span>Sent to</span>
         </div>
         <div className="stat">
-          <b>{batch.delivered}</b>
+          <b>{report.delivered}</b>
           <span>Delivered</span>
         </div>
         <div className="stat">
-          <b>{opensReported ? batch.opened : '—'}</b>
-          <span>Opened {opensReported && <em>indicative</em>}</span>
+          <b>{report.opensReported ? report.opened : '—'}</b>
+          <span>Opened {report.opensReported && <em>indicative</em>}</span>
         </div>
         <div className="stat">
-          <b>{batch.clicked === null ? '—' : batch.clicked}</b>
+          <b>{report.clicksReported ? report.clicked : '—'}</b>
           <span>Clicked the link</span>
         </div>
         <div className="stat">
-          <b>{batch.bounced}</b>
+          <b>{report.bounced}</b>
           <span>Bounced</span>
         </div>
       </div>
 
-      {opensReported ? (
+      {report.opensReported ? (
         <div className="note">
           <p>
             <b>A click is a real event. An open is not, quite.</b> Blocked images and privacy
             proxies mean some people who read a message are never counted as opening it, so the open
             figure is a floor rather than a count. Useful for comparing one message against another,
             and <b>never quoted as a number of readers</b>.
+            {report.deliveredNeverOpened > 0 && (
+              <> {report.deliveredNeverOpened} delivered but never opened.</>
+            )}
+            {report.openedNotClicked > 0 && (
+              <> {report.openedNotClicked} opened but never clicked.</>
+            )}
           </p>
         </div>
       ) : (
@@ -452,45 +356,146 @@ function BatchReportView({ batch, onBack }: { batch: Batch; onBack: () => void }
         </div>
       )}
 
-      <div className="actions">
-        <button type="button" className="btn-2">
-          Download this message
-        </button>
-        {opensReported && (
-          <button type="button" className="btn-2">
-            Write to those who never opened it
-          </button>
-        )}
-        {batch.bounced > 0 && (
-          <button type="button" className="btn-2">
-            List the addresses that bounced
-          </button>
-        )}
-      </div>
-      {batch.bounced > 0 && (
+      {report.bounced > 0 && (
         <div className="warnbox" style={{ marginTop: 12 }}>
           <b>
-            {batch.bounced} address{batch.bounced > 1 ? 'es' : ''} bounced.
+            {report.bounced} address{report.bounced > 1 ? 'es' : ''} bounced.
           </b>
           <p style={{ margin: '6px 0 0' }}>
             Nothing can be sent to a bounced address until a working one exists — either CIS
             supplies a replacement, or the firm requests an invitation itself. There is deliberately
-            no “resend to the bounced address” action.
+            no "resend to the bounced address" action anywhere on this surface.
           </p>
+          {error && <div className="err">{error}</div>}
+          {bounced === null ? (
+            <div className="actions" style={{ marginTop: 8 }}>
+              <button type="button" className="btn-2" onClick={() => void showBounced()}>
+                List the addresses that bounced
+              </button>
+            </div>
+          ) : (
+            <ul style={{ margin: '10px 0 0', paddingLeft: 20 }}>
+              {bounced.map((r) => (
+                <li key={r.id}>{r.recipientEmail ?? r.firmName ?? '—'}</li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
     </>
   );
 }
 
-function NewMessageWizard({ onDone }: { onDone: () => void }): JSX.Element {
+function NewMessageWizard({
+  client,
+  editionId,
+  templates,
+  audiences,
+  onDone,
+}: {
+  client: AdminClient;
+  editionId: string;
+  templates: MessageTemplate[];
+  audiences: AudienceCategory[];
+  onDone: () => void;
+}): JSX.Element {
   const [step, setStep] = useState(1);
-  const [templateName, setTemplateName] = useState<string | null>(null);
+  const [templateId, setTemplateId] = useState<string | null>(null);
   const [cat, setCat] = useState<string | null>(null);
   const [audienceId, setAudienceId] = useState<string | null>(null);
+  const [uploadRows, setUploadRows] = useState<
+    Array<{ firmName: string; email: string; organizationId: string | null }>
+  >([]);
+  const [uploadCheck, setUploadCheck] = useState<{
+    validRows: Array<{ firmName: string; email: string }>;
+    problems: Array<{ kind: UploadCheckKind; row: number; value: string }>;
+  } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<{
+    attempted: number;
+    sent: number;
+    skippedDuplicates: number;
+  } | null>(null);
 
-  const audience = AUDIENCES.find((a) => a.id === audienceId) ?? null;
-  const canContinue = (step === 1 && templateName) || (step === 2 && audienceId) || step === 3;
+  const template = templates.find((t) => t.id === templateId) ?? null;
+  const category = audiences.find((a) => a.key === cat) ?? null;
+  const audience = category?.audiences.find((a) => a.id === audienceId) ?? null;
+
+  const canContinue =
+    (step === 1 && templateId) ||
+    (step === 2 && audienceId && (audienceId !== 'upload' || uploadCheck)) ||
+    step === 3;
+
+  async function handleFile(file: File): Promise<void> {
+    setError(null);
+    const text = await file.text();
+    const parsed = parseCsv(text);
+    if (!templateId) return;
+    try {
+      // Resolve each row's firm name to a real organization id, once, so the
+      // fourth validation check (already sent this template) can fire for an
+      // upload the same way it already does for a firm-audience send — a
+      // name with no register match resolves to null and is simply unmatched,
+      // never blocked (no fifth "register match" check was added).
+      const { resolved } = await client.resolveFirmNames(
+        editionId,
+        parsed.map((r) => r.firmName),
+      );
+      const rows = parsed.map((r) => ({ ...r, organizationId: resolved[r.firmName] ?? null }));
+      setUploadRows(rows);
+      const check = await client.validateUpload(editionId, templateId, rows);
+      setUploadCheck(check);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not validate the file');
+    }
+  }
+
+  async function send(): Promise<void> {
+    if (!templateId || !audienceId) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const byEmail = new Map(uploadRows.map((r) => [r.email.toLowerCase(), r.organizationId]));
+      const r = await client.sendInvitationBatch(editionId, {
+        templateId,
+        audienceId,
+        ...(audienceId === 'upload' && uploadCheck
+          ? {
+              uploadRows: uploadCheck.validRows.map((row) => ({
+                ...row,
+                organizationId: byEmail.get(row.email.toLowerCase()) ?? null,
+              })),
+            }
+          : {}),
+      });
+      setResult(r);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not send the message');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (result) {
+    return (
+      <>
+        <h2>Sent.</h2>
+        <div className="note">
+          <p>
+            {result.sent} of {result.attempted} sent.
+            {result.skippedDuplicates > 0 &&
+              ` ${result.skippedDuplicates} skipped — already received this template.`}
+          </p>
+        </div>
+        <div className="actions">
+          <button type="button" className="btn" onClick={onDone}>
+            Done
+          </button>
+        </div>
+      </>
+    );
+  }
 
   return (
     <>
@@ -498,6 +503,7 @@ function NewMessageWizard({ onDone }: { onDone: () => void }): JSX.Element {
         ← Cancel
       </button>
       <p className="eyebrow">Step {step} of 4</p>
+      {error && <div className="err">{error}</div>}
 
       {step === 1 && (
         <>
@@ -505,11 +511,11 @@ function NewMessageWizard({ onDone }: { onDone: () => void }): JSX.Element {
           <div className="tablewrap">
             <table className="ftbl">
               <tbody>
-                {SEED_TEMPLATES.map((t) => (
+                {templates.map((t) => (
                   <tr
-                    key={t.name}
+                    key={t.id}
                     style={
-                      templateName === t.name
+                      templateId === t.id
                         ? { outline: '2px solid var(--dragnet-black)' }
                         : undefined
                     }
@@ -520,12 +526,8 @@ function NewMessageWizard({ onDone }: { onDone: () => void }): JSX.Element {
                       <span className="tag soft">{t.subject}</span>
                     </td>
                     <td>
-                      <button
-                        type="button"
-                        className="btn-2"
-                        onClick={() => setTemplateName(t.name)}
-                      >
-                        {templateName === t.name ? 'Chosen' : 'Choose'}
+                      <button type="button" className="btn-2" onClick={() => setTemplateId(t.id)}>
+                        {templateId === t.id ? 'Chosen' : 'Choose'}
                       </button>
                     </td>
                   </tr>
@@ -542,16 +544,18 @@ function NewMessageWizard({ onDone }: { onDone: () => void }): JSX.Element {
           <p className="lede">Pick a group, or upload your own list.</p>
           {!cat ? (
             <div className="statgrid">
-              {CATS.map((c) => (
+              {audiences.map((c) => (
                 <button
-                  key={c.k}
+                  key={c.key}
                   type="button"
                   className="stat"
                   style={{ cursor: 'pointer', textAlign: 'left' }}
-                  onClick={() => setCat(c.k)}
+                  onClick={() => setCat(c.key)}
                 >
-                  <b>{c.b}</b>
-                  <span>{c.s}</span>
+                  <b>{c.label}</b>
+                  <span>
+                    {c.audiences.length} option{c.audiences.length === 1 ? '' : 's'}
+                  </span>
                 </button>
               ))}
             </div>
@@ -563,11 +567,12 @@ function NewMessageWizard({ onDone }: { onDone: () => void }): JSX.Element {
                 onClick={() => {
                   setCat(null);
                   setAudienceId(null);
+                  setUploadCheck(null);
                 }}
               >
                 ← All categories
               </button>
-              {AUDIENCES.filter((a) => a.cat === cat).map((a) => (
+              {category?.audiences.map((a) => (
                 <label
                   key={a.id}
                   style={{
@@ -584,10 +589,13 @@ function NewMessageWizard({ onDone }: { onDone: () => void }): JSX.Element {
                     type="radio"
                     name="aud"
                     checked={audienceId === a.id}
-                    onChange={() => setAudienceId(a.id)}
+                    onChange={() => {
+                      setAudienceId(a.id);
+                      setUploadCheck(null);
+                    }}
                   />
                   <span>
-                    <b>{a.label}</b> {a.n !== null && <span className="tag ok">{a.n}</span>}
+                    <b>{a.label}</b> {a.count !== null && <span className="tag ok">{a.count}</span>}
                     <br />
                     <span className="tag soft">{a.sub}</span>
                   </span>
@@ -595,13 +603,53 @@ function NewMessageWizard({ onDone }: { onDone: () => void }): JSX.Element {
               ))}
               {audienceId === 'upload' && (
                 <div className="note">
-                  <b>Drop a CSV here</b>
+                  <b>Upload a CSV</b>
                   <p>
                     One row per firm: firm name and email address. The file is checked for four
                     things — missing address, malformed address, in-file duplicate, and a firm
                     already sent this template. Anything else is answered by the delivery report
                     after sending.
                   </p>
+                  <input
+                    type="file"
+                    accept=".csv,text/csv"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) void handleFile(file);
+                    }}
+                  />
+                  {uploadCheck && (
+                    <div style={{ marginTop: 10 }}>
+                      <p>
+                        <b>{uploadCheck.validRows.length}</b> of <b>{uploadRows.length}</b> rows
+                        will send.
+                      </p>
+                      {uploadCheck.problems.length > 0 && (
+                        <div className="tablewrap">
+                          <table className="ftbl">
+                            <thead>
+                              <tr>
+                                <th>Row</th>
+                                <th>Value</th>
+                                <th>Problem</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {uploadCheck.problems.map((p, i) => (
+                                <tr key={i}>
+                                  <td>{p.row}</td>
+                                  <td>{p.value}</td>
+                                  <td>
+                                    <span className="tag risk">{PROBLEM_LABEL[p.kind]}</span>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </>
@@ -614,11 +662,15 @@ function NewMessageWizard({ onDone }: { onDone: () => void }): JSX.Element {
           <h2>Check</h2>
           <div className="note">
             <p>
-              <b>Template:</b> {templateName}
+              <b>Template:</b> {template?.name}
             </p>
             <p>
               <b>Audience:</b> {audience?.label}
-              {audience?.n !== null && audience ? ` (${audience.n})` : ''}
+              {audienceId === 'upload'
+                ? ` (${uploadCheck?.validRows.length ?? 0} will send)`
+                : audience?.count !== null && audience
+                  ? ` (${audience.count})`
+                  : ''}
             </p>
             <p style={{ marginBottom: 0 }}>
               A firm that already received <b>this template</b> in an earlier batch is skipped
@@ -632,16 +684,9 @@ function NewMessageWizard({ onDone }: { onDone: () => void }): JSX.Element {
       {step === 4 && (
         <>
           <h2>Ready to send.</h2>
-          <div className="warnbox">
-            <b>Sending service not yet decided.</b>
-            <p style={{ margin: '6px 0 0' }}>
-              Who the invitation comes from decides whether it arrives and whether bounces come back
-              at all. Delivery and bounce reports arrive against this batch as they come back.
-            </p>
-          </div>
           <div className="actions">
-            <button type="button" className="btn" onClick={onDone}>
-              Send
+            <button type="button" className="btn" disabled={busy} onClick={() => void send()}>
+              {busy ? 'Sending…' : 'Send'}
             </button>
           </div>
         </>
@@ -668,21 +713,54 @@ function NewMessageWizard({ onDone }: { onDone: () => void }): JSX.Element {
   );
 }
 
-function TemplatesView(): JSX.Element {
-  const [editing, setEditing] = useState<Template | null>(null);
+function TemplatesView({
+  client,
+  editionId,
+  templates,
+  onSaved,
+}: {
+  client: AdminClient;
+  editionId: string;
+  templates: MessageTemplate[];
+  onSaved: () => Promise<void>;
+}): JSX.Element {
+  const [editing, setEditing] = useState<MessageTemplate | 'new' | null>(null);
   const [name, setName] = useState('');
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
+  const [audienceKind, setAudienceKind] = useState<MessageAudienceKind>('firm');
   const [requiresCode, setRequiresCode] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   // Presence check, not correctness — a code-bearing firm template must carry {{code}}.
-  const err = useMemo(() => {
+  const clientErr = useMemo(() => {
     if (editing === null) return '';
     if (!name.trim()) return 'A template name is required.';
-    if (requiresCode && !body.includes('{{code}}'))
+    if (audienceKind === 'firm' && requiresCode && !body.includes('{{code}}'))
       return 'A firm invitation template must include {{code}} — a code-less invitation is unusable.';
     return '';
-  }, [editing, name, body, requiresCode]);
+  }, [editing, name, body, audienceKind, requiresCode]);
+
+  async function save(): Promise<void> {
+    setBusy(true);
+    setError(null);
+    try {
+      await client.saveMessageTemplate(editionId, {
+        name,
+        subject,
+        body,
+        audienceKind,
+        requiresCode: audienceKind === 'firm' ? requiresCode : false,
+      });
+      setEditing(null);
+      await onSaved();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not save the template');
+    } finally {
+      setBusy(false);
+    }
+  }
 
   if (editing) {
     return (
@@ -691,6 +769,7 @@ function TemplatesView(): JSX.Element {
           ← All templates
         </button>
         <h2>{name || 'New template'}</h2>
+        {error && <div className="err">{error}</div>}
         <div className="field">
           <label>Name</label>
           <input value={name} onChange={(e) => setName(e.target.value)} />
@@ -700,6 +779,18 @@ function TemplatesView(): JSX.Element {
           <input value={subject} onChange={(e) => setSubject(e.target.value)} />
         </div>
         <div className="field">
+          <label>Audience kind</label>
+          <select
+            value={audienceKind}
+            onChange={(e) => setAudienceKind(e.target.value as MessageAudienceKind)}
+          >
+            <option value="firm">Firm</option>
+            <option value="participant">Participant</option>
+            <option value="regulator">Regulator</option>
+            <option value="upload">Uploaded list</option>
+          </select>
+        </div>
+        <div className="field">
           <label>Message</label>
           <p className="hint">
             Write {'{{firm}}'} where the firm name goes and {'{{code}}'} where the invitation code
@@ -707,21 +798,23 @@ function TemplatesView(): JSX.Element {
           </p>
           <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={8} />
         </div>
-        <label style={{ display: 'block', margin: '6px 0' }}>
-          <input
-            type="checkbox"
-            checked={requiresCode}
-            onChange={(e) => setRequiresCode(e.target.checked)}
-          />{' '}
-          This is a firm invitation that carries a code
-        </label>
-        {err && <div className="err">{err}</div>}
+        {audienceKind === 'firm' && (
+          <label style={{ display: 'block', margin: '6px 0' }}>
+            <input
+              type="checkbox"
+              checked={requiresCode}
+              onChange={(e) => setRequiresCode(e.target.checked)}
+            />{' '}
+            This is a firm invitation that carries a code
+          </label>
+        )}
+        {clientErr && <div className="err">{clientErr}</div>}
         <div className="actions">
           <button
             type="button"
             className="btn"
-            disabled={!!err || !name.trim()}
-            onClick={() => setEditing(null)}
+            disabled={!!clientErr || !name.trim() || busy}
+            onClick={() => void save()}
           >
             Save template
           </button>
@@ -740,10 +833,11 @@ function TemplatesView(): JSX.Element {
           type="button"
           className="btn"
           onClick={() => {
-            setEditing({} as Template);
+            setEditing('new');
             setName('');
             setSubject('');
             setBody('');
+            setAudienceKind('firm');
             setRequiresCode(true);
           }}
         >
@@ -755,14 +849,14 @@ function TemplatesView(): JSX.Element {
           <thead>
             <tr>
               <th>Template</th>
-              <th>Used in</th>
+              <th>Audience</th>
               <th>Last edited</th>
               <th />
             </tr>
           </thead>
           <tbody>
-            {SEED_TEMPLATES.map((t) => (
-              <tr key={t.name}>
+            {templates.map((t) => (
+              <tr key={t.id}>
                 <td>
                   <b>{t.name}</b>
                   {t.requiresCode && (
@@ -771,8 +865,8 @@ function TemplatesView(): JSX.Element {
                     </span>
                   )}
                 </td>
-                <td>{t.used}</td>
-                <td>{t.edited}</td>
+                <td>{t.audienceKind}</td>
+                <td>{new Date(t.updatedAt).toLocaleDateString()}</td>
                 <td>
                   <button
                     type="button"
@@ -782,6 +876,7 @@ function TemplatesView(): JSX.Element {
                       setName(t.name);
                       setSubject(t.subject);
                       setBody(t.body);
+                      setAudienceKind(t.audienceKind);
                       setRequiresCode(t.requiresCode);
                     }}
                   >
@@ -798,42 +893,86 @@ function TemplatesView(): JSX.Element {
 }
 
 function RequestsView({
+  client,
+  templates,
   requests,
-  onResolve,
+  onResolved,
 }: {
-  requests: RequestItem[];
-  onResolve: (i: number) => void;
+  client: AdminClient;
+  templates: MessageTemplate[];
+  requests: InvitationRequestItem[];
+  onResolved: () => Promise<void>;
 }): JSX.Element {
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const reissueTemplate = templates.find((t) => t.audienceKind === 'firm' && t.requiresCode);
+
+  async function resolve(id: string, resolution: 'code_issued' | 'marked_done'): Promise<void> {
+    setBusyId(id);
+    setError(null);
+    try {
+      await client.resolveInvitationRequest(
+        id,
+        resolution,
+        resolution === 'code_issued' ? reissueTemplate?.id : undefined,
+      );
+      await onResolved();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not resolve the request');
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   return (
     <>
       <h2>Firms asking for an invitation</h2>
       <p className="lede">
         The operational other half of the firm-side request-an-invitation flow.
       </p>
-      {requests.every((r) => r.done) && <p>Nothing waiting.</p>}
-      {requests.map((r, i) => (
+      {error && <div className="err">{error}</div>}
+      {requests.every((r) => r.resolved) && <p>Nothing waiting.</p>}
+      {requests.map((r) => (
         <section
-          key={r.email}
-          className={`stage${r.done ? '' : ' now'}`}
+          key={r.id}
+          className={`stage${r.resolved ? '' : ' now'}`}
           style={{ marginBottom: 12 }}
         >
           <div className="stagehead">
-            <h3 style={{ margin: 0 }}>{r.firm}</h3>
-            <span className={`pill ${r.done ? 'ok' : 'wait'}`}>{r.done ? 'Resolved' : r.when}</span>
+            <h3 style={{ margin: 0 }}>{r.firmName}</h3>
+            <span className={`pill ${r.resolved ? 'ok' : 'wait'}`}>
+              {r.resolved
+                ? r.resolution === 'code_issued'
+                  ? 'Code issued'
+                  : 'Marked done'
+                : new Date(r.createdAt).toLocaleDateString()}
+            </span>
           </div>
           <div className="stagebody">
             <p>
-              {r.name} · {r.role} · {r.email} · {r.phone}
+              {r.requesterName} · {r.role} · {r.email} · {r.phone}
             </p>
-            <div className="note">
-              <p style={{ margin: 0 }}>{r.flag}</p>
-            </div>
-            {!r.done && (
+            {r.flag && (
+              <div className="note">
+                <p style={{ margin: 0 }}>{r.flag}</p>
+              </div>
+            )}
+            {!r.resolved && (
               <div className="actions">
-                <button type="button" className="btn" onClick={() => onResolve(i)}>
+                <button
+                  type="button"
+                  className="btn"
+                  disabled={busyId === r.id}
+                  onClick={() => void resolve(r.id, 'code_issued')}
+                >
                   Issue a code
                 </button>
-                <button type="button" className="btn-2" onClick={() => onResolve(i)}>
+                <button
+                  type="button"
+                  className="btn-2"
+                  disabled={busyId === r.id}
+                  onClick={() => void resolve(r.id, 'marked_done')}
+                >
                   Mark done without issuing
                 </button>
               </div>

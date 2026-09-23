@@ -140,6 +140,98 @@ export interface ScoringRunsResponse {
   authoritative: ScoringSignoff | null;
 }
 
+// ─── Invitations (UX-OPS-002) ───────────────────────────────────────────────
+
+export type MessageAudienceKind = 'firm' | 'participant' | 'regulator' | 'upload';
+
+export interface MessageTemplate {
+  id: string;
+  editionId: string;
+  name: string;
+  subject: string;
+  body: string;
+  audienceKind: MessageAudienceKind;
+  requiresCode: boolean;
+  createdBy: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type MessageDeliveryState = 'sent' | 'delivered' | 'bounced';
+
+export interface MessageBatch {
+  id: string;
+  editionId: string;
+  templateId: string;
+  audienceId: string;
+  audienceLabel: string;
+  sendingService: string;
+  sentBy: string | null;
+  sentAt: string;
+  createdAt: string;
+}
+
+export interface AudienceCategory {
+  key: 'firms' | 'regs' | 'parts' | 'other';
+  label: string;
+  audiences: Array<{ id: string; label: string; sub: string; count: number | null }>;
+}
+
+export interface BatchReport {
+  batch: MessageBatch;
+  templateName: string;
+  firms: number;
+  delivered: number;
+  bounced: number;
+  opened: number;
+  clicked: number;
+  opensReported: boolean;
+  clicksReported: boolean;
+  deliveredNeverOpened: number;
+  openedNotClicked: number;
+}
+
+export type UploadCheckKind =
+  'no_address' | 'malformed_address' | 'in_file_duplicate' | 'already_sent';
+
+export interface UploadCheckResult {
+  validRows: Array<{ firmName: string; email: string }>;
+  problems: Array<{ kind: UploadCheckKind; row: number; value: string }>;
+}
+
+export interface MessageRecipient {
+  id: string;
+  batchId: string;
+  organizationId: string | null;
+  recipientEmail: string | null;
+  firmName: string | null;
+  deliveryState: MessageDeliveryState;
+}
+
+export interface InvitationRequestItem {
+  id: string;
+  editionId: string;
+  organizationId: string | null;
+  firmName: string;
+  requesterName: string;
+  role: string | null;
+  email: string;
+  phone: string | null;
+  flag: string | null;
+  resolved: boolean;
+  resolution: 'code_issued' | 'marked_done' | null;
+  resolvedBy: string | null;
+  resolvedAt: string | null;
+  createdAt: string;
+}
+
+export interface SendBatchResult {
+  batchId: string;
+  attempted: number;
+  sent: number;
+  skippedDuplicates: number;
+}
+
 export interface FirmSummary {
   id: string;
   displayName: string;

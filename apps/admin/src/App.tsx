@@ -271,7 +271,7 @@ export function App(): JSX.Element {
       ) : tab === 'people' ? (
         <PeopleAccessPage />
       ) : tab === 'invitations' ? (
-        <InvitationsPage />
+        <InvitationsPage client={client} editionId={editionId} />
       ) : tab === 'regulators' ? (
         <RegulatorsPage />
       ) : tab === 'scoring' ? (

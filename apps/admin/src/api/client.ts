@@ -1,6 +1,8 @@
 import type { SurveyItem } from '@cis/survey';
 import {
   ApiError,
+  type AudienceCategory,
+  type BatchReport,
   type Coordinator,
   type EditionDetail,
   type EditionSummary,
@@ -8,7 +10,12 @@ import {
   type FirmSummary,
   type IndexScoreView,
   type InstrumentsResponse,
+  type InvitationRequestItem,
   type LoginResponse,
+  type MessageAudienceKind,
+  type MessageBatch,
+  type MessageRecipient,
+  type MessageTemplate,
   type MissionBoardResponse,
   type NationalReportDetailResponse,
   type NationalReportSection,
@@ -17,6 +24,8 @@ import {
   type ScoringCheckedAccount,
   type ScoringRunsResponse,
   type ScoringSignoff,
+  type SendBatchResult,
+  type UploadCheckResult,
 } from './types';
 
 // All API calls go through this single typed layer so later admin surfaces
@@ -107,6 +116,48 @@ export interface AdminClient {
   generateFirmReports(id: string, scoringRunId: string): Promise<unknown>;
   approveFirmReport(reportId: string): Promise<{ approvalState: string }>;
   releaseFirmReports(id: string): Promise<ReleaseFirmReportsResult>;
+  // Invitations (UX-OPS-002)
+  listAudiences(id: string): Promise<{ audiences: AudienceCategory[] }>;
+  resolveFirmNames(
+    id: string,
+    firmNames: string[],
+  ): Promise<{ resolved: Record<string, string | null> }>;
+  listMessageTemplates(id: string): Promise<{ templates: MessageTemplate[] }>;
+  saveMessageTemplate(
+    id: string,
+    body: {
+      name: string;
+      subject: string;
+      body: string;
+      audienceKind: MessageAudienceKind;
+      requiresCode?: boolean;
+    },
+  ): Promise<{ template: MessageTemplate }>;
+  validateUpload(
+    id: string,
+    templateId: string,
+    rows: Array<{ firmName: string; email: string; organizationId?: string | null }>,
+  ): Promise<UploadCheckResult>;
+  sendInvitationBatch(
+    id: string,
+    body: {
+      templateId: string;
+      audienceId: string;
+      uploadRows?: Array<{ firmName: string; email: string; organizationId?: string | null }>;
+    },
+  ): Promise<SendBatchResult>;
+  listInvitationBatches(id: string): Promise<{ batches: MessageBatch[] }>;
+  getInvitationBatchReport(batchId: string): Promise<{ report: BatchReport }>;
+  getBouncedRecipients(batchId: string): Promise<{ bounced: MessageRecipient[] }>;
+  listInvitationRequests(
+    id: string,
+    includeResolved?: boolean,
+  ): Promise<{ requests: InvitationRequestItem[] }>;
+  resolveInvitationRequest(
+    requestId: string,
+    resolution: 'code_issued' | 'marked_done',
+    reissueTemplateId?: string,
+  ): Promise<{ request: InvitationRequestItem }>;
   getInstrumentItems(code: string): Promise<SurveyItem[]>;
   requestFreeze(id: string, reason: string): Promise<{ criticalActionId: string }>;
   decideFreeze(
@@ -223,6 +274,40 @@ export function createClient(token: string | null): AdminClient {
       request(`/firm-reports/${reportId}/approve`, { method: 'POST', token }),
     releaseFirmReports: (id) =>
       request(`/editions/${id}/firm-reports/release`, { method: 'POST', token }),
+    listAudiences: (id) => request(`/editions/${id}/invitations/audiences`, { token }),
+    resolveFirmNames: (id, firmNames) =>
+      request(`/editions/${id}/invitations/resolve-firm-names`, {
+        method: 'POST',
+        body: { firmNames },
+        token,
+      }),
+    listMessageTemplates: (id) => request(`/editions/${id}/invitations/templates`, { token }),
+    saveMessageTemplate: (id, body) =>
+      request(`/editions/${id}/invitations/templates`, { method: 'POST', body, token }),
+    validateUpload: (id, templateId, rows) =>
+      request(`/editions/${id}/invitations/validate-upload`, {
+        method: 'POST',
+        body: { templateId, rows },
+        token,
+      }),
+    sendInvitationBatch: (id, body) =>
+      request(`/editions/${id}/invitations/send`, { method: 'POST', body, token }),
+    listInvitationBatches: (id) => request(`/editions/${id}/invitations/batches`, { token }),
+    getInvitationBatchReport: (batchId) =>
+      request(`/invitations/batches/${batchId}/report`, { token }),
+    getBouncedRecipients: (batchId) =>
+      request(`/invitations/batches/${batchId}/bounced`, { token }),
+    listInvitationRequests: (id, includeResolved) =>
+      request(
+        `/editions/${id}/invitations/requests${includeResolved ? '?includeResolved=true' : ''}`,
+        { token },
+      ),
+    resolveInvitationRequest: (requestId, resolution, reissueTemplateId) =>
+      request(`/invitations/requests/${requestId}/resolve`, {
+        method: 'POST',
+        body: { resolution, ...(reissueTemplateId ? { reissueTemplateId } : {}) },
+        token,
+      }),
     getInstrumentItems: (code) =>
       request<{ items: SurveyItem[] }>(`/instruments/${encodeURIComponent(code)}/items`, {
         token,

@@ -11,6 +11,8 @@ import {
   getBatchReport,
   getInvitationRequests,
   resolveInvitationRequest,
+  resolveFirmNamesToOrgs,
+  getBouncedRecipients,
 } from '@cis/domain';
 
 /**
@@ -68,6 +70,28 @@ export const invitationsRoutes: FastifyPluginAsyncZod = async (app) => {
         createdBy: request.user.sub,
       });
       return reply.status(201).send({ template });
+    },
+  );
+
+  // Resolves uploaded rows' firm names against the register, once, so the
+  // upload flow can carry a real organizationId into validate-upload/send —
+  // the same exact, case-insensitive match the register already uses
+  // elsewhere (resolveFirmNameToOrg), batched to one fetch instead of one per
+  // row. This is NOT a register-match validation check (no fifth check was
+  // added); it only supplies the id the already-existing fourth check
+  // (already sent this template) needs to fire for an upload.
+  app.post(
+    '/editions/:id/invitations/resolve-firm-names',
+    {
+      preHandler: [app.authenticate],
+      schema: {
+        params: editionParam,
+        body: z.object({ firmNames: z.array(z.string()) }),
+      },
+    },
+    async (request, reply) => {
+      const resolved = await resolveFirmNamesToOrgs(getPool(), request.body.firmNames);
+      return reply.send({ resolved });
     },
   );
 
@@ -155,6 +179,19 @@ export const invitationsRoutes: FastifyPluginAsyncZod = async (app) => {
     async (request, reply) => {
       const report = await getBatchReport(getPool(), request.params.batchId);
       return reply.send({ report });
+    },
+  );
+
+  // Listing only — no resend action exists anywhere in this API.
+  app.get(
+    '/invitations/batches/:batchId/bounced',
+    {
+      preHandler: [app.authenticate],
+      schema: { params: z.object({ batchId: z.string().uuid() }) },
+    },
+    async (request, reply) => {
+      const bounced = await getBouncedRecipients(getPool(), request.params.batchId);
+      return reply.send({ bounced });
     },
   );
 

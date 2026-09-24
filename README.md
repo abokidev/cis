@@ -3349,3 +3349,103 @@ this pass proves only that the portal reaches it correctly, which is what change
 
 Removed from this list, now resolved: `FirmPortal.tsx` being a complete unwired mockup;
 `FirmResultsPage.tsx`'s decision being made but not executed (Part 4, above, executes it).
+
+## Outreach-Link Consumption — the Eighth Instance of the Same Defect Class
+
+Closes the "outreach-link consumption does not exist yet" item left open above.
+`incrementOutreach` (`packages/db/src/queries/outreach.ts`) had zero callers anywhere outside its own
+test file — confirmed by an exhaustive grep. `createOutreachLink`/`ensureOutreachLinks`/
+`getFirmOutreachBySegment` were all real and tested, but nothing in the respondent-facing entry flow
+(retail or either institutional variant) ever called it. A real investor could follow a real firm's
+real outreach link, complete the entire survey, and the link's opens/starts/finishes would stay at
+zero permanently — the same "built and tested in isolation, never wired" defect this whole programme
+has now found and fixed eight times (Mission Board, ScoresSignoffPage, NationalReportPage,
+FirmReportsPage, InvitationsPage, PeopleAccessPage/ResponsesPage/UnfinishedPage, the firm portal
+rebuild's coordinator auth, and now this).
+
+**A second, compounding gap in the same feature**: the link the portal _displayed_ to a coordinator
+was itself fabricated — `OutreachView` built `${editionId}-${segment}` locally instead of reading any
+real `outreach_links.token`. Wiring the increment calls alone would not have been enough; the portal
+had to start showing the real link too, or there would be nothing real for a respondent to follow in
+the first place.
+
+### What was wired
+
+- **Segment → instrument mapping**, confirmed by `segmentForInstrument`
+  (`packages/domain/src/funnel-service.ts`) and `packages/domain/tests/funnel-segment.test.ts`:
+  `individual` → S4 (retail); `local_institutional` → I-SEC/I-NGX/I-CSCS (all three — the doc comment
+  on `segmentForInstrument` is explicit that these are Nigerian bodies, hence local) **and** S5a;
+  `foreign_institutional` → S5b, the only foreign-institution instrument. Note the enum spelling
+  mismatch between `OutreachSegment` (`'local_institutional'`/`'foreign_institutional'`, with the
+  trailing "-al") and `FunnelSegment` (`'local_institution'`/`'foreign_institution'`, without it) — no
+  shared conversion existed before this fix; the wiring translates explicitly rather than assuming
+  the strings line up.
+- **A third confirmed gap found while mapping the above: S5b (foreign institutional) had NO real UI
+  entry point at all**, anywhere — only mentioned in code comments, never reachable from any screen.
+  Same defect class as the S1/S2/S3 seat entry point found in the previous remediation. Fixed
+  minimally: `InstitutionalEntry.tsx` already renders any instrument code generically (its `VARIANTS`
+  lookup already falls back to "Institutional questionnaire" copy for an unrecognised code — no
+  invented title was needed), so this needed no new business logic, only a direct route to it,
+  bypassing the I-SEC/I-NGX/I-CSCS regulator-picker nav (which doesn't apply — there is only one
+  foreign instrument, not three to choose between).
+- `packages/db/src/queries/outreach.ts`: new `getOutreachLinkByToken` — the one new query function
+  this fix needed (no others were added; `incrementOutreach`'s signature is unchanged).
+- `packages/domain/src/firm-portal-service.ts`: `resolveOutreachToken` (returns exactly
+  `{editionId, organizationId, segment}` — never counts, never the token itself, never anything
+  respondent-related), `recordOutreachEvent` (a thin, unchanged wrapper over `incrementOutreach`,
+  silently no-opping on an unknown token — best-effort telemetry on a navigation that has already
+  happened, never a gate on it), `listOutreachLinksForFirm` (the firm's own coordinator-authenticated
+  read of its own links, **with** their real tokens).
+- `apps/api/src/routes/outreach-entry.ts` (new, public): `GET /outreach/:token/context`,
+  `POST /outreach/:token/event`. `GET /portal/outreach` now returns real per-segment tokens (via
+  `listOutreachLinksForFirm`) instead of counts alone, so the coordinator's displayed link is the one
+  a respondent following it actually reaches.
+- `apps/admin/src/journey/RespondentApp.tsx`: `?ref=<token>` resolves via the new context route,
+  fires a real `'opens'` event, and routes to the matching entry screen by segment. `'starts'` fires
+  the instant a respondent record is actually created (mirroring exactly how the seat entry point
+  already records its own `'started'` transition); `'finishes'` fires on real submission, mirroring
+  the existing `firmSeatLinkToken` → `firmSeatComplete` pattern exactly. An unknown or stale `ref` is
+  never a gate — on failure it falls straight through to the ordinary landing page, matching the
+  outreach copy's own pre-existing promise ("the link is a convenience and a measure, not a gate").
+
+### A real privacy decision made along the way, not silently defaulted
+
+`recruitingFirmId` is deliberately left `null` for a retail/institutional respondent recruited via an
+outreach link — this was the one place where "just wire it" would have been wrong. `startJourney`
+already accepts `recruitingFirmId`, and setting it to the outreach link's `organizationId` looked like
+the obvious move. But `getFirmRespondentStatuses` (`packages/db/src/queries/responses.ts`, the
+"respondent completion STATUS only" accessor `firm-team.ts`'s `/respondent-status` route already
+exposes) reads that SAME column, filtered by organization — it was built for a firm to see its own
+**named** S1/S2/S3 seat holders, people the firm itself typed the name and email for. Reusing it for
+an anonymous outreach-recruited client would have surfaced that client's individual respondent id and
+submission status to the firm — precisely the "no invitation count, no client list, counts only"
+guarantee this whole feature exists to protect. So it is not wired: only the volume counters are.
+
+### Verification
+
+Full suite: `pnpm test` — **53 files, 485 tests, all green** (up from 52/474: +6 domain tests —
+`resolveOutreachToken`'s exact three-key shape, `OutreachLinkNotFoundError`, a real event sequence
+incrementing only its own segment, an unknown token no-oping silently, the firm's own token read
+matching what the public route resolves, and — structurally — that `outreach_links` still carries no
+respondent/response column after a real event; +5 HTTP tests for the new routes and the changed
+`GET /portal/outreach` contract). `pnpm lint`, `pnpm typecheck`, `pnpm turbo build` all clean.
+`pnpm audit` unchanged — the same three pre-existing devDependency advisories as every prior phase.
+
+Live end-to-end, real browser, freshly-seeded `cis_dev`, no mocks: claimed a firm, assigned all three
+seats to unlock outreach, opened the "Invite your clients" view and read the **real** link shown for
+each of the three segments (not a fabricated one) straight out of the actual email/text templates.
+In three separate, unauthenticated browser contexts:
+
+- **Individual investors** (retail, S4): opened the real link, picked a firm to rate, answered all 14
+  real survey items (including a comparison grid and a "select up to 3, then rank the greatest"
+  compound control), submitted. Opens/starts/finishes: **1/1/1**.
+- **Nigerian institutions** (local institutional, routed to I-SEC by default): opened the real link,
+  entered an institution name, answered the full real survey, submitted. Opens/starts/finishes:
+  **1/1/1**.
+- **Institutions abroad** (foreign institutional, S5b — the newly-built entry point): opened the real
+  link and started a real journey, deliberately left unsubmitted to prove opens/starts increment
+  independently of finishes. Opens/starts/finishes: **1/1/0**.
+
+The coordinator then reloaded the whole outreach page from scratch (not just re-read in-memory state)
+and the link-performance table showed exactly these numbers, read straight from the database via
+`getOutreachVolumes` — proof the counts are genuinely persisted, not client-side arithmetic.

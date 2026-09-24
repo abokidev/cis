@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { PublicLanding } from './PublicLanding';
 import { RetailEntry } from './RetailEntry';
 import { InstitutionalEntry, type RegulatorVariant } from './InstitutionalEntry';
+import { FirmSeatEntry } from './FirmSeatEntry';
 import { RunJourney } from './RunJourney';
 import { Completion } from './Completion';
 import { HelpPrivacyAbout } from './HelpPrivacyAbout';
@@ -14,15 +15,16 @@ type Screen =
   | { name: 'landing' }
   | { name: 'retail-entry' }
   | { name: 'inst-entry'; code: RegulatorVariant }
+  | { name: 'firm-seat-entry'; linkToken: string }
   | {
       name: 'running';
       respondentId: string;
       firms: ParticipatingFirm[];
       code: string;
       retail: boolean;
+      firmSeatLinkToken: string | null;
     }
   | { name: 'complete'; respondentId: string; code: string; retail: boolean }
-  | { name: 'firm-stub' }
   | { name: 'already-submitted' }
   | { name: 'error'; kind: ErrorStateKind }
   | { name: 'help-about' }
@@ -55,9 +57,15 @@ export function RespondentApp(): JSX.Element {
         setEditionLabel(ctx.editionLabel);
         setResultsVisible(ctx.resultsSectionVisible);
 
+        // A firm seat's own entry link: ?firmSeat=<token> — independent of
+        // the "current open edition" this app otherwise assumes, since the
+        // seat carries its own edition.
+        const firmSeatToken = new URLSearchParams(window.location.search).get('firmSeat');
         // Resume-by-link: ?resume=<token>
         const token = new URLSearchParams(window.location.search).get('resume');
-        if (token) {
+        if (firmSeatToken) {
+          setScreen({ name: 'firm-seat-entry', linkToken: firmSeatToken });
+        } else if (token) {
           try {
             const state = await journeyApi.resumeByToken(token);
             if (cancelled) return;
@@ -74,6 +82,7 @@ export function RespondentApp(): JSX.Element {
                 firms,
                 code: state.respondent.instrumentCode,
                 retail: state.respondent.instrumentCode.startsWith('S'),
+                firmSeatLinkToken: null,
               });
             }
           } catch (err) {
@@ -121,7 +130,6 @@ export function RespondentApp(): JSX.Element {
               resultsSectionVisible={resultsVisible}
               onTakeRetail={() => setScreen({ name: 'retail-entry' })}
               onTakeInstitutional={() => setScreen({ name: 'inst-entry', code: 'I-SEC' })}
-              onFirmCta={() => setScreen({ name: 'firm-stub' })}
               onHelpAbout={() => setScreen({ name: 'help-about' })}
               onPreviousEditions={() => setScreen({ name: 'previous-editions' })}
             />
@@ -140,6 +148,7 @@ export function RespondentApp(): JSX.Element {
                 firms,
                 code: RETAIL_INSTRUMENT,
                 retail: true,
+                firmSeatLinkToken: null,
               })
             }
           />
@@ -170,24 +179,44 @@ export function RespondentApp(): JSX.Element {
                   firms,
                   code: screen.code,
                   retail: false,
+                  firmSeatLinkToken: null,
                 })
               }
             />
           </>
         )}
 
+        {editionId && screen.name === 'firm-seat-entry' && (
+          <FirmSeatEntry
+            linkToken={screen.linkToken}
+            onStarted={(respondentId) =>
+              setScreen({
+                name: 'running',
+                respondentId,
+                firms: [],
+                code: 'firm-seat',
+                retail: false,
+                firmSeatLinkToken: screen.linkToken,
+              })
+            }
+          />
+        )}
+
         {screen.name === 'running' && (
           <RunJourney
             respondentId={screen.respondentId}
             firms={screen.firms}
-            onSubmitted={() =>
+            onSubmitted={() => {
+              if (screen.firmSeatLinkToken) {
+                void journeyApi.firmSeatComplete(screen.firmSeatLinkToken);
+              }
               setScreen({
                 name: 'complete',
                 respondentId: screen.respondentId,
                 code: screen.code,
                 retail: screen.retail,
-              })
-            }
+              });
+            }}
           />
         )}
 
@@ -204,6 +233,7 @@ export function RespondentApp(): JSX.Element {
                 firms: [],
                 code: screen.code,
                 retail: true,
+                firmSeatLinkToken: null,
               })
             }
           />
@@ -230,19 +260,6 @@ export function RespondentApp(): JSX.Element {
             <p>Your response is in — nothing further is needed.</p>
             <button type="button" className="btn" onClick={() => setScreen({ name: 'landing' })}>
               Back to safe starting point
-            </button>
-          </div>
-        )}
-
-        {screen.name === 'firm-stub' && (
-          <div className="journey">
-            <h1 tabIndex={-1}>Firm participation</h1>
-            <p className="lede">
-              Firms take part through their own coordinator account. This routing point is a stub —
-              the firm onboarding surface is out of scope for this phase.
-            </p>
-            <button type="button" className="btn-2" onClick={() => setScreen({ name: 'landing' })}>
-              Back
             </button>
           </div>
         )}

@@ -1,15 +1,15 @@
 /**
  * UX-PUB-001 public landing. Built in full, INCLUDING the results section, which
  * is shown or hidden by a governed content flag (public.results_section_visible)
- * — a Year-1 content decision, not a code change. The firm call-to-action is a
- * routing stub only (UX-FRM-001 is out of scope for this phase).
+ * — a Year-1 content decision, not a code change. The firm call-to-action links
+ * directly to the firm portal (`/firm`), a separate top-level surface (see
+ * apps/admin/src/main.tsx) — not routed through this app's own screen state.
  */
 export function PublicLanding({
   editionLabel,
   resultsSectionVisible,
   onTakeRetail,
   onTakeInstitutional,
-  onFirmCta,
   onHelpAbout,
   onPreviousEditions,
 }: {
@@ -17,7 +17,6 @@ export function PublicLanding({
   resultsSectionVisible: boolean;
   onTakeRetail: () => void;
   onTakeInstitutional: () => void;
-  onFirmCta: () => void;
   onHelpAbout: () => void;
   onPreviousEditions: () => void;
 }): JSX.Element {
@@ -45,10 +44,9 @@ export function PublicLanding({
       <section className="landing-firm">
         <h2>Are you a brokerage firm?</h2>
         <p className="lede">Firms take part through their own coordinator.</p>
-        {/* Routing stub only — the firm onboarding surface (UX-FRM-001) is out of scope. */}
-        <button type="button" className="textlink" onClick={onFirmCta}>
+        <a className="textlink" href="/firm">
           Firm participation →
-        </button>
+        </a>
       </section>
 
       {resultsSectionVisible && (

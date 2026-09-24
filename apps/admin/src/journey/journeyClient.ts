@@ -159,6 +159,28 @@ export const journeyApi = {
       helpText: string;
     }>('/public-content'),
 
+  // A firm's own S1/S2/S3 seat entry point (Task D, Part 6) — same public,
+  // unauthenticated trust model, identified by the seat's link token rather
+  // than a journey id.
+  firmSeatContext: (linkToken: string) =>
+    request<{
+      editionId: string;
+      organizationId: string;
+      seatCode: 'S1' | 'S2' | 'S3';
+      roleLabel: string;
+      state: 'empty' | 'invited' | 'started' | 'complete';
+      editionStatus: 'draft' | 'open' | 'locked' | 'archived';
+    }>(`/firm-seats/${encodeURIComponent(linkToken)}/context`),
+
+  firmSeatStart: (linkToken: string) =>
+    request<{ respondentId: string; editionId: string; seatCode: string }>(
+      `/firm-seats/${encodeURIComponent(linkToken)}/start`,
+      'POST',
+    ),
+
+  firmSeatComplete: (linkToken: string) =>
+    request<{ ok: true }>(`/firm-seats/${encodeURIComponent(linkToken)}/complete`, 'POST'),
+
   previousEditions: (currentEditionId: string | null) =>
     request<{
       editions: Array<{

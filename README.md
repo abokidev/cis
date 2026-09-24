@@ -2981,3 +2981,155 @@ instance is currently known" claim with a verified one: the whole-directory swee
 further pages matching the technical mockup shape (items 2–5 above), none of them new or hidden —
 each already reviewed once and excluded from an earlier pass on a narrower test than this one used
 — and confirms no other page in the directory is unaccounted for.
+
+## Re-validation of the 12 "confirmed real" pages, and three of the four mockups fixed
+
+A follow-up review correctly pointed out that the "12 confirmed real" side of the whole-directory
+sweep had not been checked with the same rigor as the mockup side — a page was called real if the
+word `client` appeared in the file, not by tracing the specific rendered variable to a specific real
+call. This re-does that check properly, then fixes three of the four Category-1 mockups the sweep
+found, and reports (rather than silently resolving) a genuine decision blocker on the fourth — plus
+a fifth, much larger mockup this whole programme had never looked at, found while investigating
+that blocker.
+
+### Re-validation: all 12 hold up, with line-level evidence
+
+Every one of the 12 was read in full and checked exactly the way `SEED`/`CARDS`/`DEPS`/`DATA`/
+`STOPS` were: identify every rendered piece of data and every offered action, quote the exact line
+defining it, quote the exact line of the real call backing it.
+
+| Page                     | Data/action → real call (file:line)                                                                                                                                                                                              |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DragnetPage.tsx`        | `firms`/`friction` (70-71) ← `client.get(.../dragnet/maturity)` / `.../friction` (84-85)                                                                                                                                         |
+| `EditionPage.tsx`        | `edition` (52) ← `client.getEdition` (63); `requestLock`(113), `decideLock`(133), `setOpeningDate`(201), `setClosingDate`(243), `setFloors`(299)                                                                                 |
+| `FirmReportsPage.tsx`    | `reports`/`firms`/`authoritativeRunId`/`nationalApproved` (32-35) ← 4 real calls (48-57); `generateFirmReports`(153), `approveFirmReport`(224), `regenerateFirmReport`(261), `releaseFirmReports`(312)                           |
+| `FirmTeamPage.tsx`       | `firms`/`coordinators` (150,152) ← `listFirms`(160)/`listCoordinators`(173); 5 further actions (210-241); nested cards use `client.get`/`put` (44,57,104)                                                                        |
+| `InvitationsPage.tsx`    | 5 top-level pieces ← 5 real calls (81-91); 6 further actions (295-914)                                                                                                                                                           |
+| `LoginPage.tsx`          | standalone `login()` (import line 2, called line 17)                                                                                                                                                                             |
+| `MissionBoardPage.tsx`   | `cards`/`phase` (83-84) ← `client.getMissionBoard`(90). Noted, not a defect: the `RAIL` nav buttons (182-197) have no `onClick` — inert by design, previously disclosed                                                          |
+| `NationalReportPage.tsx` | `report`/`sections`/`pre`/`authoritativeRunId` (48-52) ← 3 real calls (66-79); 4 further actions (197-402). The missing sentence-generator is an honest UI disclosure of an already-flagged, out-of-scope gap, not a page defect |
+| `RendererPage.tsx`       | `items` (17) ← `client.getInstrumentItems`(26). `answers` (18) is intentionally ephemeral preview-input state — the page's own header says it is not a respondent journey                                                        |
+| `ScoresSignoffPage.tsx`  | `runs`/`signoffs`/`scores` (47-49) ← 2 real calls (60,65); 4 further actions (146-440)                                                                                                                                           |
+| `SurveysPage.tsx`        | `data` (25) ← `client.getInstruments`(33); `requestFreeze`(74), `decideFreeze`(94)                                                                                                                                               |
+| `WordingPage.tsx`        | `areas`/`state` (43,46) ← `client.get`(55,78); `client.post` drafts/publish (113,137)                                                                                                                                            |
+
+**Verdict: all 12 are genuinely, fully real.** No gap survived this level of scrutiny.
+
+### Three of the four Category-1 mockups fixed — same rigor as the five before them
+
+`PeopleAccessPage.tsx`, `ResponsesPage.tsx` and `UnfinishedPage.tsx` are now live-wired. Each real
+backend (`people-access-service.ts`, `responses-monitoring-service.ts`,
+`reminder-timing-service.ts`) already existed and was already tested at the domain layer — this was
+wiring, not a rebuild.
+
+- **`PeopleAccessPage.tsx`** now takes `{client, viewer}` (was zero props). The hardcoded `SEED`
+  array is gone; `client.getPeople()`/`addPerson()`/`updatePersonRights()`/`removePerson()` (new
+  `AdminClient` methods, `apps/api/src/routes/people.ts`, pre-existing) back the list, add, edit and
+  remove actions. `ME_EMAIL` is gone — self-identification (hiding the self-removal action) now uses
+  the real `viewer.email`. The `criticalActions` table now renders the server's own list rather than
+  a duplicated local constant. The two-approver floor and self-removal refusals are unchanged
+  server-side rules (already live-verified over real HTTP in the previous pass); this pass confirms
+  they now reach the UI: a real add persisted past reload, and the client-side "cannot remove"
+  hints track the server's real `approvers` count, not a client-recomputed guess from fake data.
+- **`ResponsesPage.tsx`** now takes `{client, editionId}`. `CARDS`/`DEPS` are gone;
+  `client.getResponsesMonitor(editionId)` backs every segment card and dependency row, rendering the
+  server's own `greyBarPct`/`redMarkerPct`/`completeFirm` fields directly rather than recomputing
+  them from fake numbers.
+- **`UnfinishedPage.tsx`** now takes `{client, editionId}`. `DATA`/`STOPS`/`INITIAL_SCHEDULE` are
+  gone; `client.getUnfinished(editionId)` backs the stats and drop-off histogram. The schedule
+  editor — the part flagged as needing REAL persistence, not just a local toggle — now mutates a
+  draft only, with an explicit "Save schedule"/"Save cap" action calling
+  `client.setReminderSchedule`/`setReminderCap` (`PUT /reminders/schedule`, `PUT /reminders/cap`,
+  pre-existing routes). Two fields the old mockup showed (`started`, `done`, `daysLeft`) have no
+  real backing anywhere in the domain layer and are not reproduced with invented substitutes — the
+  real `UnfinishedStats` type only has `unfinished`/`reachable`/`unreachable`, so that is what is
+  shown; likewise the real `DropoffBucket` carries a raw `questionId`, not a human-written label, so
+  the raw code is shown rather than inventing prose for it.
+
+New regression tests (source-scan, matching `InvitationsPage.test.ts`'s convention — no DOM test
+infrastructure exists in this repo): `PeopleAccessPage.test.ts`, `ResponsesPage.test.ts`,
+`UnfinishedPage.test.ts`, each asserting the old fixture identifiers are gone, the page takes real
+props, and every real `client.*` method is actually called.
+
+**Live-verified in a real browser, freshly seeded `cis_dev`:**
+
+- Added a real person via the UI; the roster showed the real new row (not a fixture) and reloading
+  the page did not lose it.
+- Responses showed real dependency-row IDs straight from the database (`FIRM_TIER_HEATMAP`,
+  `IEI_ICI_BY_SEGMENT`, `LOCAL_VS_FOREIGN` — none of which existed in the old mockup's six
+  hardcoded rows), and real segment-card numbers (0 of 80, 66 days left) matching the fresh seed.
+- On Unfinished, toggled the first reminder step off and saved — the "2 are currently on" count
+  updated immediately. **Reloaded the entire page from scratch** and re-navigated back: the step
+  was still "Off". This is the specific proof the task asked for — the schedule editor persists a
+  real change server-side, it does not just mutate local state that resets on refresh.
+
+### `FirmResultsPage.tsx` — decision made, then a bigger blocker found underneath it
+
+Per explicit instruction, the auth-model question was not resolved unilaterally. Asked directly:
+should the admin app grow a new operator-permission-gated route reusing `firm-results-service.ts`
+(the original recommendation), leave the coordinator-access-code route as the only path and remove
+this page from the admin app, or a more conservative gated variant of the first option.
+
+**Decision made: move the real results view into `FirmPortal.tsx`** — the surface that already
+holds the firm-coordinator's own space, not the operator admin app — and remove `FirmResultsPage.tsx`
+and its "Firm results" tab from the operator-facing pages entirely. The reasoning: `firm-results.ts`'s
+route was built for a coordinator caller from day one (`x-coordinator-access-code` header); an
+operator-facing detour was never authorized by the artefact and would be a new privacy decision, not
+a wiring fix. Finishing what Phase 14 built means connecting it to the coordinator, not to the
+operator.
+
+**Investigating that move surfaced a reason to stop, per the task's own instruction not to proceed
+past a wrong premise:** `FirmPortal.tsx` (`apps/admin/src/firm/FirmPortal.tsx`) is not, in fact, a
+real coordinator-authenticated surface to attach a results section to. It is itself a complete,
+1,398-line, entirely local-state mockup — a hardcoded `ACCOUNTS` dictionary of three demo email/PIN/
+code combinations stands in for the whole claim-and-sign-in flow, seat assignment mutates only
+`useState`, outreach volumes are hardcoded (`148`/`38`/`26`/…), and the "closed" phase's own "Open
+your results" button is not even wired to fake data — it calls `alert(...NOT_STARTED...)`. A direct
+check confirms **zero** `client.`/`fetch(` calls anywhere in the file. It is rendered from its own
+separate entry point (`apps/admin/src/main.tsx`, `<FirmPortal />` directly), outside `App.tsx`'s
+routing entirely, which is why the whole-directory sweep (scoped to `apps/admin/src/pages`) never
+saw it.
+
+Worse for the specific plan: the real backend's own routes are honest about the same gap. The
+firm-portal API routes' header comment states outright: "Seat and outreach management are
+operator-authenticated for now, matching the Phase 3 firm-team routes (**a firm-coordinator login
+surface is a later phase**)." There is no real coordinator session or login mechanism anywhere in
+this codebase — `firm-results.ts`'s raw access-code header is the only coordinator-credential check
+that exists, and nothing issues, stores, or verifies a coordinator session around it. "Give
+`FirmPortal.tsx` a results tab that calls the existing route with the access code already used
+elsewhere in the portal" is not achievable as stated, because no real access-code flow exists in
+the portal to reuse — the portal's own code check is a hardcoded `=== acct.code` string comparison
+against the fixture dictionary, not a real credential check of any kind.
+
+**Not resolved here — reported, per instruction, rather than built on a false premise.** This is a
+sixth instance of the local-state-mockup defect class, larger than any found so far (it exceeds
+`InvitationsPage.tsx`, the previous largest), and it blocks the chosen resolution for
+`FirmResultsPage.tsx` until it is itself wired — at minimum, a real coordinator claim/sign-in flow
+against `firm-portal-service.ts`'s real, tested domain logic. `FirmResultsPage.tsx` and its admin
+nav tab are **not yet removed**, pending confirmation of how to sequence this against a genuine
+`FirmPortal.tsx` fix — removing the tab now would leave firm results reachable from nowhere in the
+running application.
+
+### Verification
+
+Full suite: `pnpm test` — **47 files, 450 tests, all green** (up from 44/437: +3 new admin-side
+regression test files / +13 tests — no new domain/HTTP tests, since the routes these three pages
+wire to are pre-existing and already covered there) against a live Postgres. `pnpm lint`,
+`pnpm typecheck`, `pnpm turbo build` all clean. `pnpm audit` unchanged — the same three pre-existing
+devDependency advisories as every prior phase.
+
+### Running list of open items needing a decision (updated)
+
+1. **National report approval is currently unreachable end-to-end** — unchanged, out of scope.
+2. **`FirmPortal.tsx` is a complete, unwired local-state mockup** (newly found, this pass) — the
+   platform's largest confirmed instance of the defect class, and now also a hard blocker for
+   `FirmResultsPage.tsx`'s chosen resolution. No real coordinator login/session mechanism exists
+   anywhere in this codebase yet. Needs its own dedicated pass before firm results can move there.
+3. **`FirmResultsPage.tsx`** — decision made (results belong in `FirmPortal.tsx`, not the operator
+   admin app), but not yet executed pending item 2. The page and its admin nav tab remain in place
+   for now so the capability stays reachable from somewhere.
+4. **`RegulatorsPage.tsx`** — unchanged: an honestly, previously self-disclosed deliberate scope
+   decision, not a hidden gap.
+
+Removed from this list, now resolved: `PeopleAccessPage.tsx`, `ResponsesPage.tsx`, and
+`UnfinishedPage.tsx`'s mockup defects (all three above).

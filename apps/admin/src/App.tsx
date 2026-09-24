@@ -257,9 +257,9 @@ export function App(): JSX.Element {
       ) : tab === 'board' ? (
         <MissionBoardPage client={client} editionId={editionId} />
       ) : tab === 'responses' ? (
-        <ResponsesPage />
+        <ResponsesPage client={client} editionId={editionId} />
       ) : tab === 'unfinished' ? (
-        <UnfinishedPage />
+        <UnfinishedPage client={client} editionId={editionId} />
       ) : tab === 'edition' ? (
         <EditionPage client={client} editionId={editionId} viewer={session.user} />
       ) : tab === 'surveys' ? (
@@ -269,7 +269,7 @@ export function App(): JSX.Element {
       ) : tab === 'firmteam' ? (
         <FirmTeamPage client={client} editionId={editionId} />
       ) : tab === 'people' ? (
-        <PeopleAccessPage />
+        <PeopleAccessPage client={client} viewer={session.user} />
       ) : tab === 'invitations' ? (
         <InvitationsPage client={client} editionId={editionId} />
       ) : tab === 'regulators' ? (

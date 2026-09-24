@@ -19,12 +19,18 @@ import {
   type MissionBoardResponse,
   type NationalReportDetailResponse,
   type NationalReportSection,
+  type PeopleResponse,
+  type PersonAccess,
+  type PersonInput,
   type ReleaseFirmReportsResult,
+  type ReminderSchedule,
+  type ResponsesMonitor,
   type SampleFloor,
   type ScoringCheckedAccount,
   type ScoringRunsResponse,
   type ScoringSignoff,
   type SendBatchResult,
+  type UnfinishedResponse,
   type UploadCheckResult,
 } from './types';
 
@@ -196,6 +202,17 @@ export interface AdminClient {
     incoming: { id: string; isLead: boolean };
   }>;
   removeCoordinator(orgId: string, coordinatorId: string): Promise<{ removed: boolean }>;
+  // People & Access (UX-OPS-006)
+  getPeople(): Promise<PeopleResponse>;
+  addPerson(input: PersonInput): Promise<{ person: PersonAccess }>;
+  updatePersonRights(userId: string, input: PersonInput): Promise<{ person: PersonAccess }>;
+  removePerson(userId: string): Promise<{ removed: boolean }>;
+  // Responses monitoring (UX-OPS-003)
+  getResponsesMonitor(editionId: string): Promise<ResponsesMonitor>;
+  // Reminder timing (UX-OPS-004)
+  getUnfinished(editionId: string): Promise<UnfinishedResponse>;
+  setReminderSchedule(schedule: ReminderSchedule): Promise<{ schedule: ReminderSchedule }>;
+  setReminderCap(cap: number): Promise<{ cap: number }>;
   /** Generic escape hatch — used by surfaces that call many endpoints without adding per-method stubs. */
   get<T = unknown>(path: string): Promise<T>;
   post<T = unknown>(path: string, body: unknown): Promise<T>;
@@ -365,6 +382,17 @@ export function createClient(token: string | null): AdminClient {
       request(`/firms/${orgId}/coordinators/handover`, { method: 'POST', body, token }),
     removeCoordinator: (orgId, coordinatorId) =>
       request(`/firms/${orgId}/coordinators/${coordinatorId}`, { method: 'DELETE', token }),
+    getPeople: () => request('/people', { token }),
+    addPerson: (input) => request('/people', { method: 'POST', body: input, token }),
+    updatePersonRights: (userId, input) =>
+      request(`/people/${userId}`, { method: 'PATCH', body: input, token }),
+    removePerson: (userId) => request(`/people/${userId}`, { method: 'DELETE', token }),
+    getResponsesMonitor: (editionId) =>
+      request(`/editions/${editionId}/responses-monitor`, { token }),
+    getUnfinished: (editionId) => request(`/editions/${editionId}/unfinished`, { token }),
+    setReminderSchedule: (schedule) =>
+      request('/reminders/schedule', { method: 'PUT', body: schedule, token }),
+    setReminderCap: (cap) => request('/reminders/cap', { method: 'PUT', body: { cap }, token }),
     get: <T = unknown>(path: string) => request<T>(path, { token }),
     post: <T = unknown>(path: string, body: unknown) =>
       request<T>(path, { method: 'POST', body, token }),

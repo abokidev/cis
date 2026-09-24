@@ -356,3 +356,111 @@ export class ApiError extends Error {
     this.name = 'ApiError';
   }
 }
+
+// ─── People & Access (UX-OPS-006) ───────────────────────────────────────────
+
+export type AccessRightKey = 'view' | 'send' | 'regs' | 'setup' | 'request' | 'approve' | 'dragnet';
+export type AccessOrg = 'CIS' | 'Dragnet';
+
+export interface PersonAccess {
+  userId: string;
+  name: string;
+  email: string;
+  organization: AccessOrg;
+  rights: Record<AccessRightKey, boolean>;
+  canRequest: boolean;
+  canApprove: boolean;
+}
+
+export interface PeopleResponse {
+  people: PersonAccess[];
+  approvers: number;
+  criticalActions: Array<{ action: string; where: string; why: string }>;
+}
+
+export interface PersonInput {
+  name: string;
+  email: string;
+  organization: AccessOrg;
+  rights: Partial<Record<Exclude<AccessRightKey, 'view'>, boolean>>;
+}
+
+// ─── Responses monitoring (UX-OPS-003) ──────────────────────────────────────
+
+export type SegmentCardState = 'on_track' | 'will_miss' | 'closed';
+
+export interface CompleteFirmLine {
+  metric: 'OMI' | 'DMI';
+  requiredInstruments: string[];
+  current: number;
+  forecast: number | null;
+  state: SegmentCardState;
+}
+
+export interface SegmentCard {
+  segment: string;
+  label: string;
+  current: number;
+  target: number;
+  greyBarPct: number;
+  redMarkerPct: number | null;
+  forecast: number | null;
+  shortfall: number;
+  velocity: number | null;
+  requiredVelocity: number | null;
+  daysRemaining: number;
+  state: SegmentCardState;
+  boardConditionId: number;
+  completeFirm?: CompleteFirmLine[];
+}
+
+export type DependencyDisplayState = 'guaranteed' | 'some_suppressed' | 'at_risk' | 'on_track';
+
+export interface DependencyRow {
+  outputId: string;
+  dependsOn: string[];
+  requiredInstruments: string[] | null;
+  enabled: boolean;
+  displayState: DependencyDisplayState;
+  note: string;
+}
+
+export interface ResponsesMonitor {
+  cards: SegmentCard[];
+  dependencies: DependencyRow[];
+  funnelDiagnosis: unknown;
+  industrySeiNotCalculable: boolean;
+}
+
+// ─── Reminder timing (UX-OPS-004) ───────────────────────────────────────────
+
+export interface ReminderStepConfig {
+  step: number;
+  kind: 'relative' | 'before_close';
+  days?: number;
+  beforeCloseDays?: number;
+  enabled: boolean;
+}
+
+export interface ReminderSchedule {
+  steps: ReminderStepConfig[];
+}
+
+export interface UnfinishedStats {
+  unfinished: number;
+  reachable: number;
+  unreachable: number;
+}
+
+export interface DropoffBucket {
+  questionId: string;
+  count: number;
+  peak: boolean;
+}
+
+export interface UnfinishedResponse {
+  stats: UnfinishedStats;
+  dropoff: DropoffBucket[];
+  schedule: ReminderSchedule;
+  cap: number;
+}

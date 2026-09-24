@@ -47,6 +47,12 @@ export function FirmSeatEntry({
         if (cancelled) return;
         if (ctx.editionStatus !== 'open' && ctx.state !== 'complete') {
           setErrorKind('participation_closed');
+        } else if (ctx.state === 'empty') {
+          // A link only ever gets handed out once the seat is assigned
+          // ('invited' onward) — an empty seat's token was never meaningful,
+          // or the seat has since been cleared. Same treatment as a token
+          // that resolves to nothing at all.
+          setErrorKind('expired_link');
         } else if (ctx.state === 'complete') {
           setAlreadySubmitted(true);
         } else if (ctx.state === 'started') {

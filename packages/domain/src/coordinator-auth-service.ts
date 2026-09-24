@@ -1,5 +1,5 @@
 import { Pool } from 'pg';
-import { getCoordinatorByEmail, getCoordinatorPinHash } from '@cis/db';
+import { getActiveCoordinatorsByEmail, getCoordinatorPinHash } from '@cis/db';
 import { verifyPassword } from '@cis/auth';
 import type { FirmCoordinator } from '@cis/shared-types';
 import { DomainError } from './errors';
@@ -43,16 +43,26 @@ const DUMMY_HASH =
  * Revoked coordinators can never sign in, even with the correct PIN — a
  * removed coordinator's access ends immediately (`UX-FRM-007`), and a
  * coordinator with no PIN set yet (claim in progress) cannot sign in either.
+ *
+ * An email is unique per organization, not globally (`uniq_active_
+ * coordinator_email`), so more than one active coordinator can share an
+ * email across different firms. Every candidate is checked against the
+ * supplied PIN — the first (and, in practice, only) one it actually matches
+ * signs in, never just whichever row the lookup happened to return first.
  */
 export async function coordinatorLogin(
   pool: Pool,
   input: { email: string; pin: string },
 ): Promise<FirmCoordinator> {
-  const coordinator = await getCoordinatorByEmail(pool, input.email);
-  const pinHash = coordinator ? await getCoordinatorPinHash(pool, coordinator.id) : null;
-  const valid = await verifyPassword(input.pin, pinHash ?? DUMMY_HASH);
-  if (!coordinator || !pinHash || !valid) {
-    throw new InvalidCoordinatorCredentialsError();
+  const candidates = await getActiveCoordinatorsByEmail(pool, input.email);
+  for (const candidate of candidates) {
+    const pinHash = await getCoordinatorPinHash(pool, candidate.id);
+    if (pinHash && (await verifyPassword(input.pin, pinHash))) {
+      return candidate;
+    }
   }
-  return coordinator;
+  // Uniform work even when no candidate exists, or none has a PIN set yet —
+  // the same anti-enumeration technique as operator login.
+  await verifyPassword(input.pin, DUMMY_HASH);
+  throw new InvalidCoordinatorCredentialsError();
 }

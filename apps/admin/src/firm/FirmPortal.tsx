@@ -882,10 +882,16 @@ function Portal({
     );
   }
 
+  // A firm's own "setup vs running" is its OWN progress (all three seats
+  // assigned), not the edition's status — the edition can already be open
+  // for collection while a firm is still deciding who answers its surveys.
+  // Only "closed" tracks the edition directly, since that's genuinely when
+  // results become computable.
+  const allSeatsAssigned = seats.every((s) => s.state !== 'empty');
   const phase: 'setup' | 'running' | 'closed' =
     me.currentEdition?.status === 'locked' || me.currentEdition?.status === 'archived'
       ? 'closed'
-      : me.currentEdition?.status === 'open'
+      : allSeatsAssigned
         ? 'running'
         : 'setup';
 

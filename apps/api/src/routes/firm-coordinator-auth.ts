@@ -1,6 +1,6 @@
 import { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
-import { getPool, getCoordinatorByEmail, getCoordinatorPinHash } from '@cis/db';
+import { getPool, getActiveCoordinatorsByEmail, getCoordinatorPinHash } from '@cis/db';
 import { coordinatorLogin, setCoordinatorPin } from '@cis/domain';
 
 const LoginBody = z.object({
@@ -34,9 +34,15 @@ export const firmCoordinatorAuthRoutes: FastifyPluginAsyncZod = async (app) => {
     '/portal/auth/lookup',
     { schema: { querystring: z.object({ email: z.string().email() }) } },
     async (request, reply) => {
-      const coordinator = await getCoordinatorByEmail(getPool(), request.query.email);
-      const pinHash = coordinator ? await getCoordinatorPinHash(getPool(), coordinator.id) : null;
-      return reply.send({ branch: pinHash ? 'signin' : 'unclaimed' });
+      const candidates = await getActiveCoordinatorsByEmail(getPool(), request.query.email);
+      let hasPin = false;
+      for (const candidate of candidates) {
+        if (await getCoordinatorPinHash(getPool(), candidate.id)) {
+          hasPin = true;
+          break;
+        }
+      }
+      return reply.send({ branch: hasPin ? 'signin' : 'unclaimed' });
     },
   );
 

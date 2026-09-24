@@ -79,6 +79,38 @@ describe('coordinatorLogin', () => {
     ).rejects.toBeInstanceOf(InvalidCoordinatorCredentialsError);
   });
 
+  it('signs in the right coordinator when the same email is active at two different firms', async () => {
+    const otherOrg = await createOrganization(pool, {
+      slug: 'auth-firm-two',
+      displayName: 'Auth Firm Two',
+      orgType: 'firm',
+    });
+    const leadHere = await createLeadCoordinator(pool, {
+      organizationId: orgId,
+      name: 'Shared Email Here',
+      email: 'shared@coordinator.example',
+    });
+    await setCoordinatorPin(pool, leadHere.id, { newPin: '1111' });
+    const leadThere = await createLeadCoordinator(pool, {
+      organizationId: otherOrg.id,
+      name: 'Shared Email There',
+      email: 'shared@coordinator.example',
+    });
+    await setCoordinatorPin(pool, leadThere.id, { newPin: '2222' });
+
+    const resultHere = await coordinatorLogin(pool, {
+      email: 'shared@coordinator.example',
+      pin: '1111',
+    });
+    expect(resultHere.id).toBe(leadHere.id);
+
+    const resultThere = await coordinatorLogin(pool, {
+      email: 'shared@coordinator.example',
+      pin: '2222',
+    });
+    expect(resultThere.id).toBe(leadThere.id);
+  });
+
   it('refuses a revoked coordinator even with the correct PIN', async () => {
     const lead = await createLeadCoordinator(pool, {
       organizationId: orgId,

@@ -5,6 +5,7 @@ import {
   setFollowUpConsent,
   ensureSeats,
   getSeat,
+  getSeatByLinkToken,
   assignSeat as dbAssignSeat,
   clearSeat,
   setSeatState,
@@ -12,6 +13,7 @@ import {
   createOutreachLink,
   listFirmOutreachLinks,
   getFirmOutreachBySegment,
+  getEditionById,
 } from '@cis/db';
 import type {
   SeatAssignment,
@@ -22,6 +24,7 @@ import type {
 } from '@cis/shared-types';
 import { DomainError } from './errors';
 import { createLeadCoordinator, setCoordinatorPin } from './firm-team-service';
+import { startJourney } from './journey-service';
 
 /**
  * Firm claim / portal / seats / outreach — UX-FRM-001.
@@ -400,4 +403,86 @@ export async function getOutreachVolumes(
   organizationId: string,
 ): ReturnType<typeof getFirmOutreachBySegment> {
   return getFirmOutreachBySegment(pool, editionId, organizationId);
+}
+
+// ─── Seat entry point (Task D, Part 6) ─────────────────────────────────────────
+
+/** No seat matches this link token — either it never existed, or the seat was
+ *  reassigned/cleared since, which mints a fresh token and retires this one. */
+export class SeatLinkNotFoundError extends FirmPortalError {
+  constructor() {
+    super('This link is no longer valid', 'SEAT_LINK_NOT_FOUND');
+  }
+}
+
+export interface SeatEntryContext {
+  editionId: string;
+  organizationId: string;
+  seatCode: 'S1' | 'S2' | 'S3';
+  roleLabel: string;
+  state: SeatState;
+  editionStatus: 'draft' | 'open' | 'locked' | 'archived';
+}
+
+/** What an unauthenticated visitor following a seat link is allowed to know:
+ *  no name, no email, no respondent id — state only, plus enough of the
+ *  edition to tell whether participation is still open. */
+export async function getSeatEntryContext(
+  pool: Pool,
+  linkToken: string,
+): Promise<SeatEntryContext> {
+  const seat = await getSeatByLinkToken(pool, linkToken);
+  if (!seat) throw new SeatLinkNotFoundError();
+  const edition = await getEditionById(pool, seat.editionId);
+  if (!edition) throw new SeatLinkNotFoundError();
+  return {
+    editionId: seat.editionId,
+    organizationId: seat.organizationId,
+    seatCode: seat.seatCode,
+    roleLabel: seat.roleLabel,
+    state: seat.state,
+    editionStatus: edition.status,
+  };
+}
+
+/**
+ * Start this seat's survey: only from 'invited' (a fresh seat with nobody
+ * partway through). Reuses the same generic `startJourney` every other entry
+ * point calls — a firm seat is not a special case at the journey layer, only
+ * the recruitingFirmId attribution differs (the firm claiming its own seat).
+ */
+export async function startSeatEntry(
+  pool: Pool,
+  linkToken: string,
+): Promise<{ respondentId: string; editionId: string; seatCode: 'S1' | 'S2' | 'S3' }> {
+  const seat = await getSeatByLinkToken(pool, linkToken);
+  if (!seat) throw new SeatLinkNotFoundError();
+  if (seat.state !== 'invited') {
+    throw new FirmPortalError(`This seat is already ${seat.state}`, 'SEAT_NOT_INVITED');
+  }
+  const respondent = await startJourney(pool, {
+    editionId: seat.editionId,
+    instrumentCode: seat.seatCode,
+    recruitingFirmId: seat.organizationId,
+  });
+  await setSeatState(pool, {
+    editionId: seat.editionId,
+    organizationId: seat.organizationId,
+    seatCode: seat.seatCode,
+    state: 'started',
+    respondentId: respondent.id,
+  });
+  return { respondentId: respondent.id, editionId: seat.editionId, seatCode: seat.seatCode };
+}
+
+/** Mark this seat's survey complete once its respondent has submitted. */
+export async function completeSeatEntry(pool: Pool, linkToken: string): Promise<void> {
+  const seat = await getSeatByLinkToken(pool, linkToken);
+  if (!seat) throw new SeatLinkNotFoundError();
+  await setSeatState(pool, {
+    editionId: seat.editionId,
+    organizationId: seat.organizationId,
+    seatCode: seat.seatCode,
+    state: 'complete',
+  });
 }

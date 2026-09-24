@@ -72,8 +72,12 @@ export {
   PrivacyConsentRequiredError,
   AlreadyClaimedError,
   SeatConflictError,
+  getSeatEntryContext,
+  startSeatEntry,
+  completeSeatEntry,
+  SeatLinkNotFoundError,
 } from './firm-portal-service';
-export type { ClaimInput, InvitationRequest } from './firm-portal-service';
+export type { ClaimInput, InvitationRequest, SeatEntryContext } from './firm-portal-service';
 
 export {
   coordinatorLogin,

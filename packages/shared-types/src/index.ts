@@ -225,6 +225,11 @@ export interface SeatAssignment {
   stalledAt: string | null;
   /** Link to the response record for STATE tracking only — no answer access. */
   respondentId: string | null;
+  /** Opaque, unguessable — the entry-point link a coordinator hands to this
+   *  seat's occupant carries this, never the seat's own (stable) id.
+   *  Regenerated on every assign and every clear, so a stale link (held by a
+   *  replaced occupant) resolves to nothing. */
+  linkToken: string;
   createdAt: Date;
   updatedAt: Date;
 }

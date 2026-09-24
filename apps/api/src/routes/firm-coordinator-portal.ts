@@ -39,10 +39,17 @@ const INVESTOR_CATEGORY = z.enum([
  * a coordinator's portal has no edition picker of its own.
  */
 export const firmCoordinatorPortalRoutes: FastifyPluginAsyncZod = async (app) => {
-  async function currentEditionId(): Promise<string | null> {
+  async function currentEdition(): Promise<{
+    id: string;
+    status: 'draft' | 'open' | 'locked' | 'archived';
+  } | null> {
     const editions = await listEditions(getPool());
     const current = editions.find((e) => e.status === 'open') ?? editions[0] ?? null;
-    return current?.id ?? null;
+    return current ? { id: current.id, status: current.status } : null;
+  }
+
+  async function currentEditionId(): Promise<string | null> {
+    return (await currentEdition())?.id ?? null;
   }
 
   // The signed-in coordinator's own profile, firm, and the edition the rest
@@ -50,9 +57,9 @@ export const firmCoordinatorPortalRoutes: FastifyPluginAsyncZod = async (app) =>
   app.get('/portal/me', { preHandler: [app.authenticateCoordinator] }, async (request, reply) => {
     const pool = getPool();
     const session = request.coordinatorSession;
-    const [org, editionId] = await Promise.all([
+    const [org, edition] = await Promise.all([
       getOrganizationById(pool, session.organizationId),
-      currentEditionId(),
+      currentEdition(),
     ]);
     const coordinators = await listCoordinators(pool, session.organizationId);
     const self = coordinators.find((c) => c.id === session.sub) ?? null;
@@ -69,7 +76,7 @@ export const firmCoordinatorPortalRoutes: FastifyPluginAsyncZod = async (app) =>
           }
         : null,
       organization: org ? { id: org.id, displayName: org.displayName, slug: org.slug } : null,
-      currentEditionId: editionId,
+      currentEdition: edition,
     });
   });
 

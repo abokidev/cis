@@ -9,6 +9,7 @@ import { journeyRoutes } from './routes/journeys';
 import { firmTeamRoutes } from './routes/firm-team';
 import { firmCoordinatorAuthRoutes } from './routes/firm-coordinator-auth';
 import { firmCoordinatorPortalRoutes } from './routes/firm-coordinator-portal';
+import { firmSeatEntryRoutes } from './routes/firm-seat-entry';
 import { governedContentRoutes } from './routes/governed-content';
 import { firmPortalRoutes } from './routes/firm-portal';
 import { reportingRoutes } from './routes/reporting';
@@ -75,6 +76,7 @@ export async function buildServer() {
   await app.register(firmTeamRoutes);
   await app.register(firmCoordinatorAuthRoutes);
   await app.register(firmCoordinatorPortalRoutes);
+  await app.register(firmSeatEntryRoutes);
   await app.register(governedContentRoutes);
   await app.register(firmPortalRoutes);
   await app.register(reportingRoutes);
@@ -109,6 +111,8 @@ function resolveStatusCode(error: Error & { statusCode?: number }): number {
   switch (error.name) {
     case 'InvalidCoordinatorCredentialsError':
       return 401;
+    case 'SeatLinkNotFoundError':
+      return 404;
     case 'PermissionDeniedError':
     case 'MakerCheckerViolationError':
       return 403;

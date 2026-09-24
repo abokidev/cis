@@ -1,6 +1,6 @@
 import { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
-import { getPool } from '@cis/db';
+import { getPool, getCoordinatorByEmail, getCoordinatorPinHash } from '@cis/db';
 import { coordinatorLogin, setCoordinatorPin } from '@cis/domain';
 
 const LoginBody = z.object({
@@ -27,6 +27,19 @@ const LoginResponse = z.object({
  * access — see `apps/api/src/plugins/auth-plugin.ts`.
  */
 export const firmCoordinatorAuthRoutes: FastifyPluginAsyncZod = async (app) => {
+  // Which of the two real next steps applies to this email — sign in, or the
+  // address isn't a live coordinator's. The firm itself is never disclosed
+  // here (only the PIN screen confirms who they are signing in as).
+  app.get(
+    '/portal/auth/lookup',
+    { schema: { querystring: z.object({ email: z.string().email() }) } },
+    async (request, reply) => {
+      const coordinator = await getCoordinatorByEmail(getPool(), request.query.email);
+      const pinHash = coordinator ? await getCoordinatorPinHash(getPool(), coordinator.id) : null;
+      return reply.send({ branch: pinHash ? 'signin' : 'unclaimed' });
+    },
+  );
+
   app.post(
     '/portal/auth/login',
     {

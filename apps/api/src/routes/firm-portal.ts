@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
-import { getPool, getOrganizationById } from '@cis/db';
+import { getPool, getOrganizationById, listOrganizations } from '@cis/db';
 import {
   claimSpace,
   requestInvitation,
@@ -38,6 +38,18 @@ const INVESTOR_CATEGORY = z.enum([
  * that gates rating attribution on arrival-via-link.
  */
 export const firmPortalRoutes: FastifyPluginAsyncZod = async (app) => {
+  // The public firm directory — names and ids only, for claiming and for the
+  // request-an-invitation firm picker. A stockbroking firm's name is not
+  // confidential; it is the reason the study exists.
+  app.get('/firm/directory', async (_request, reply) => {
+    const orgs = await listOrganizations(getPool());
+    return reply.send({
+      firms: orgs
+        .filter((o) => o.orgType === 'firm')
+        .map((o) => ({ id: o.id, displayName: o.displayName })),
+    });
+  });
+
   // Claim a firm's space (privacy consent gates this; one firm, one space).
   app.post(
     '/firm/claim',

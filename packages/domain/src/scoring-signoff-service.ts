@@ -11,6 +11,7 @@ import {
   getSignoff,
   getLiveSignoffForRun,
   approveSignoffRow,
+  rejectSignoffRow,
   supersedePriorSignoffs,
   hasSignedOffRun,
   getAuthoritativeSignoff,
@@ -225,6 +226,45 @@ export async function approveSignoff(
     await supersedePriorSignoffs(c, approved.editionId, approved.id);
     return approved;
   });
+}
+
+/**
+ * Reject a requested sign-off (maker ≠ checker), with a reason — the same
+ * maker-checker shape as `approveSignoff`, and the same requirement every
+ * other reject path on the platform enforces (edition lock/instrument freeze
+ * via `critical_actions`): a bare rejection with no reason is not accepted.
+ * The run stays un-authoritative and free for a fresh sign-off request.
+ */
+export async function rejectSignoff(
+  pool: Pool,
+  input: { signoffId: string; rejectedBy: string; reason: string },
+): Promise<ScoringSignoff> {
+  const reason = input.reason.trim();
+  if (!reason) {
+    throw new SignoffPayloadError('Rejecting a sign-off requires a reason');
+  }
+
+  const signoff = await getSignoff(pool, input.signoffId);
+  if (!signoff) throw new ScoringSignoffError('Sign-off not found', 'NOT_FOUND');
+  if (signoff.state !== 'requested') {
+    throw new ScoringSignoffError(
+      `Only a requested sign-off can be rejected (state: ${signoff.state})`,
+      'NOT_REQUESTED',
+    );
+  }
+  if (signoff.requestedBy === input.rejectedBy) {
+    throw new ScoringSignoffError(
+      'A maker can never reject their own sign-off request',
+      'SELF_REJECTION',
+    );
+  }
+
+  const rejected = await rejectSignoffRow(pool, input.signoffId, input.rejectedBy, reason);
+  if (!rejected) {
+    // Lost a race, or the maker-checker DB CHECK rejected it.
+    throw new ScoringSignoffError('Sign-off could not be rejected', 'NOT_REQUESTED');
+  }
+  return rejected;
 }
 
 // ─── Score view (transparency before sign-off) ─────────────────────────────────

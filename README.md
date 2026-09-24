@@ -2074,3 +2074,1378 @@ position). No code in either journey was changed.
 Verified: `@cis/domain` full suite (29 files, 337 tests) and `@cis/db` (3 files, 25 tests,
 sequential) green against a live Postgres; `pnpm turbo build lint typecheck` clean; `pnpm audit`
 unchanged (no dependency change was needed for a test-only confirmation).
+
+## Phase 23 — Post-Demo Findings: Two Confirmed Copy Bugs Fixed, Save/Freeze Flow Live-Reproduced
+
+Three findings from a post-demo report. Two were real, confirmed bugs in Mission Board copy,
+fixed directly. The third — a reported failure to save edition dates and to reflect an
+instrument freeze — was not fixed, because it could not be reproduced: a genuinely fresh
+environment (fresh clone state, fresh install, fresh migrate, fresh seed, fresh servers) drove
+both flows end to end, in a real browser, against a real Postgres database, and both worked
+correctly. Per the report's own instruction, this was not guessed at — see §2 below for exactly
+how it was reproduced and what was checked.
+
+### §1a — Internal-mechanics rationale leaking into user-facing copy (fixed)
+
+`packages/domain/src/mission-board-service.ts`'s card builder wrote dependent Engine-2 findings
+into a card's `consequence` array as `` `${e2.what} (folded in — not a separate card)` `` — a
+description of the dedup MECHANISM (why this finding isn't its own card), not of the
+CONSEQUENCE, and using an internal term ("folded in") a study-team user has no reason to know.
+Fixed to `` `${e2.what} as a consequence of the same shortfall` `` — states the actual causal
+relationship, says nothing about how the board decided to render it.
+
+The same pattern, audited broadly rather than just at the quoted strings: `MissionBoardPage.tsx`
+(the admin SPA's local-state Mission Board mockup — see its own file header; the real evaluator is
+`mission-board-service.ts` above) carried three more instances in its example `consequence`
+arrays, one in its "expected impact omitted" fallback text (`'Expected impact omitted — not
+enough history yet to compute it (correct, not a bug)'`), and one in a rail-button tooltip
+(`'Not built yet — honest stub'`). All rewritten to plain language with no reference to
+implementation mechanics: no "folded in," no "not a separate card," no "correct, not a bug," no
+"honest stub." `SEVERITY_LABEL`'s six rank labels were individually audited and are unaffected —
+they're terse, factually accurate tier names (`'Statistical target threatened'` for rank 2
+correctly describes every rank-2 condition, all of which are forecast-vs-floor shortfalls), not
+leaked mechanism.
+
+A repo-wide grep for the exact phrases plus "dedup(e/lication)" and "Engine 1/2" found two other,
+unrelated surfaces using their own "not built"/stub language: `portalModel.ts`'s
+`notBuiltForSeat` (Phase 4's orphaned-seat message, UX-FRM-004/005/006, already covered by its
+own passing regression test) and `RespondentApp.tsx`'s firm-onboarding routing stub
+(UX-FRM-001). Both are different, apparently-intentional, already-tested surfaces — not the
+Mission Board drift this finding was about — and were left untouched.
+
+### §1b — Stale "not built" rail labels for surfaces that are actually shipped (fixed)
+
+`MissionBoardPage.tsx`'s `RAIL` array claimed three sections were not built:
+`'Regulators (UX-OPS-007 — not built)'`, `'Monitoring (UX-OPS-003/004 — not built)'`, and
+`'Dragnet analysis (UX-ADM-007 — not built)'`. All three are wrong — Regulators shipped in
+Phase 12, Monitoring in Phase 13, and Dragnet analysis in Phase 16, each with its own real,
+routed page (`RegulatorsPage`, `ResponsesPage`/`UnfinishedPage`, `DragnetPage`) already wired
+into the top-level nav bar in `App.tsx`. This is a genuine regression: Mission Board's own
+internal rail was never updated when those later phases landed. Fixed by setting `built: true`
+and removing the parenthetical qualifier on all three, so the rail now reads `'Regulators'`,
+`'Monitoring'`, `'Dragnet analysis'` like the other three (already-correct) entries. No new
+click-through navigation was added — `MissionBoardPage` has no navigation wiring to any sibling
+page for any rail entry, built or not (it's a self-contained mockup, matching the same
+deliberate-scope pattern as `RegulatorsPage`'s Phase 19 `SEED` array), and adding it selectively
+for just these three would create an inconsistent asymmetry the report didn't ask for. The rest
+of the rail's definitions were audited and carry no other stale claim.
+
+### §1c — Regression test
+
+New `apps/admin/src/pages/MissionBoardPage.test.ts` (`CARDS`/`SEVERITY_LABEL`/`RAIL` exported for
+testability): asserts no card field, severity label, or rail label matches a set of
+internal-mechanics patterns (`folded in`, `not a separate card`, `correct, not a bug`,
+`honest stub`, `dedup(e/lication)`, `Engine [12]` — by pattern, so a differently-worded re-leak of
+the same class is still caught, not just the exact original strings), and that every `built: true`
+rail entry's label carries no "not built" qualifier, with Regulators/Monitoring/Dragnet analysis
+explicitly checked.
+
+### §2 — Save/freeze flow: reproduced fresh, live, twice — no bug found
+
+The report described planned-launch/closing-date saves and instrument freeze/approve not taking
+effect. Both `EditionPage.tsx`→`client.setOpeningDate`/`setClosingDate` and
+`SurveysPage.tsx`→`client.requestFreeze`/`decideFreeze` read as correctly wired from source
+inspection alone, which made three explanations equally plausible: a stale demo environment, a
+genuine runtime bug invisible to static review (the same class as a prior timezone bug), or
+something environment-specific. Rather than guess, it was reproduced for real:
+
+1. **Genuinely fresh state.** This session's container started with no `node_modules` anywhere
+   and no Postgres roles or databases beyond the OS defaults — confirmed fresh, not reused. Ran
+   `pnpm install`, `pnpm turbo build`, created the `cis` role and `cis_dev`/`cis_test` databases,
+   ran `pnpm --filter @cis/db migrate:up` against `cis_dev` (19 migrations, clean), seeded with
+   `pnpm --filter @cis/api seed` (real `seedReferenceData`, not a fixture), and started the API
+   and admin dev servers as fresh processes (not reused from any prior state).
+2. **Edition dates, in a real browser (Playwright, Chromium).** Logged in as the seeded maker
+   user, on the Edition screen (the app's default landing tab). Set the planned launch date,
+   clicked Save — a real `PATCH /editions/:id/opening-date` fired and returned 200. Set the
+   closing date, clicked Save — a real `PATCH /editions/:id/closing-date` fired and returned 200.
+   Reloaded the page (a full SPA reload, not a soft navigation): both dates were still shown,
+   correctly. Queried `cis_dev.editions` directly: `planned_open_at` and `survey_close_at` had
+   actually changed to the saved values.
+3. **Instrument freeze, across two different logged-in users.** From the Surveys screen, requested
+   a freeze as the maker (`POST .../freeze/request`, 201, with a reason). Logged in as a
+   genuinely different user (the seeded checker) in a second browser context, opened "Review the
+   request," and approved (`POST .../freeze/:id/decide`, 200, `{status: 'approved', frozen:
+true}`). The frozen banner, the per-instrument "Frozen" pills, and the "FROZEN" eyebrow all
+   appeared correctly for the approving user immediately, and for the requesting user after a
+   fresh reload and re-navigation to Surveys. Queried the database directly: all ten
+   `instrument_definition_versions` rows had `is_frozen = true`, and the `critical_actions` row
+   showed `status = 'approved'` with `requested_by` and `approved_by` genuinely different users.
+
+Everything worked, both times, at every layer checked (UI, network request/response, and the
+underlying database row). **Conclusion: the reported failure was stale or misconfigured demo
+infrastructure, not a code defect.** No fix was made — per the report's own instruction, the
+freeze-transition UI was not touched or rebuilt; it was already correct.
+
+**Exact, minimal checklist for a reliable fresh demo, going forward:**
+
+```bash
+git pull                                            # 1. latest code
+pnpm install                                        # 2. reinstall — a stale node_modules or
+                                                     #    lockfile mismatch is the single most
+                                                     #    likely cause of a demo behaving
+                                                     #    differently from what the code says
+pnpm turbo build                                    # 3. rebuild every workspace package's dist/
+pnpm --filter @cis/db migrate:up                    # 4. re-migrate — a demo DB on an old schema
+                                                     #    version will not show new-phase behaviour
+pnpm --filter @cis/api seed                         # 5. re-seed (idempotent — safe to re-run;
+                                                     #    skips if the 2026 edition already exists)
+# 6. restart BOTH servers as fresh processes — do not reuse a process from a previous demo,
+#    especially one started before step 2–4 above:
+pnpm --filter @cis/api dev      # in one terminal
+pnpm --filter @cis/admin dev    # in another
+```
+
+### §2 (continued) — the coverage gap this surfaced, closed
+
+The save/freeze flow itself needed no fix, but the reproduction surfaced a real, pre-existing gap:
+`apps/api` had zero tests of any kind. Every domain rule these routes call
+(`setSurveyOpenAt`/`setClosingDate`/`requestFreeze`/`decideFreeze`) is already well covered in
+`packages/domain/tests/edition-service.test.ts` and `instrument-freeze.test.ts`, but nothing
+exercised the HTTP layer itself — request parsing, JWT auth wiring, response serialization —
+which is exactly the layer a stale-environment class of report tends to implicate, and exactly
+the layer this session's reproduction had to fall back to manual browser automation to check
+because no automated test covered it.
+
+New `apps/api/tests/edition-instrument-save-flow.test.ts`, added to the existing DB-backed
+`integration` Vitest project (`apps/api/tests/**/*.test.ts` added to `vitest.workspace.ts`) rather
+than as new test infrastructure: calls the real `buildServer()` Fastify app via `app.inject`
+(no listening socket needed) against a real Postgres database. Mirrors the manual reproduction
+exactly — logs in over `/auth/login`, `PATCH`es both dates, then issues a fresh `GET` (the
+save-then-reload path) and a direct row query to confirm persistence past the API's own echo;
+requests a freeze as one user, approves as a different user, and confirms both the API's
+`frozen: true` response and the underlying `instrument_definition_versions`/`critical_actions`
+rows. A future regression in this exact HTTP path — not just the domain logic underneath it —
+now has a test that would catch it.
+
+### Verification
+
+Fresh Postgres role/databases created, `pnpm --filter @cis/db migrate:up` and
+`pnpm --filter @cis/api seed` run clean against `cis_dev`; live browser reproduction (Playwright/
+Chromium) of both the date-save and freeze/approve flows, cross-checked against direct database
+queries, found no defect. Full suite: `pnpm test` — **39 files, 410 tests, all green** (including
+the new `MissionBoardPage.test.ts` and `apps/api/tests/edition-instrument-save-flow.test.ts`)
+against a live Postgres. `pnpm lint`, `pnpm typecheck`, and `pnpm turbo build` all clean.
+`pnpm audit` unchanged — the same pre-existing devDependency advisories as every prior phase, no
+`package.json` or lockfile touched.
+
+## Phase 23 correction — Brief-Derived Copy Is a Systemic Pattern, Not Five Phrases
+
+Phase 23 §1a/§1b fixed the exact phrases a bug report named. That was too narrow: the underlying
+defect is that `OPS_MISSION_BOARD_BUILD_BRIEF.md`'s worked examples, severity-table vocabulary,
+and remediation-table reasoning had leaked into user-facing copy wholesale — fixing five named
+phrases left the same class of defect sitting in plain sight elsewhere on the same screen. This
+correction fixes those remaining instances and, more importantly, replaces the phrase-list method
+with a durable one: **search by source, not by phrase.** A build brief exists to make engineering's
+reasoning legible to engineers — its worked examples, severity taxonomy, and audience-selection
+rationale are for a build team, never for the person reading a finished screen. Anything in a brief
+that reads like a sentence a user would see is an illustration, not a string; any number in a brief
+is a worked example, not a value to hardcode. The correct standing rule, confirmed directly against
+the current live `UX-OPS-001` v4.9 artefact (whose functional JavaScript is `var WORK = {}` /
+`var RULES = []` — genuinely empty, with every card field supplied by `bindData(payload)` at
+runtime): **the artefact and the brief both carry no literal product copy. Production copy is
+always written fresh, describing a real computed value in plain language — never adapted from
+either.**
+
+### What was still wrong, and why the previous fix missed it
+
+`317254c` fixed the phrases the report quoted, but two of the brief's own worked examples were
+still present verbatim, unrelated to those five phrases:
+
+- `'National retail floor missed by 333'` — §4A's illustrative shortfall number — was hardcoded in
+  `MissionBoardPage.tsx`'s `CARDS` array as though it were a real value.
+- `2: 'Statistical target threatened'` — §5's own severity-table label for rank 2 — was sitting
+  unchanged in `SEVERITY_LABEL`, because the previous audit judged it "stylistically consistent"
+  without checking where the wording actually came from.
+
+And the §1a fix itself, while an improvement, was incomplete in kind: rewriting
+`` `${e2.what} (folded in — not a separate card)` `` to
+`` `${e2.what} as a consequence of the same shortfall` `` changed the words but kept the same
+shape — engineering still explaining, via an appended clause, _why the system organized this
+information the way it did_, rather than simply stating the consequence. Under a "Consequence"
+heading, the fact alone (`e2.what`) already reads correctly; no wrapper clause was ever needed.
+
+### The actual defect: `MissionBoardPage.tsx` was never connected to the real evaluator
+
+The deepest issue, and the reason the phrase-by-phrase fix couldn't fully succeed: `evaluateBoard`
+(`mission-board-service.ts`) is a real, tested, live evaluator, reachable over a real route
+(`GET /editions/:id/mission-board`, `apps/api/src/routes/mission-board.ts`) — but nothing in
+`apps/admin` ever called it. `App.tsx` rendered `<MissionBoardPage />` with **no props at all**,
+and the page held its own permanently-static `CARDS` array. Every real, logged-in user who opened
+"Mission board" — in production, today, regardless of the edition's actual state — saw the same
+fabricated example forever. This is not a dev-only fixture (`CARDS`'s own comment called it
+"Example board state," which invited exactly that wrong assumption without ever being checked):
+it was the literal, unconditional, production render path for a core screen. As long as this was
+true, no amount of phrase-editing inside `CARDS` could produce "genuine computed values" — a
+static array cannot compute anything. The fix had to be structural, not lexical.
+
+`MissionBoardPage.tsx` now takes `{client, editionId}` (the same pattern every other wired admin
+page already uses — `EditionPage`, `SurveysPage`), fetches the real board via a new
+`client.getMissionBoard(id)` (added to `AdminClient`, mirroring the existing method pattern; new
+`MissionCard`/`MissionBoardResponse` types in `api/types.ts` mirror `@cis/shared-types`'s real
+`MissionCard`), and renders exactly what `evaluateBoard` returns — real evidence, real consequence
+text, real recommended actions, real (or genuinely omitted) expected impact. The fake local
+"Edition phase" toggle buttons — which let anyone click through four fabricated phases regardless
+of the edition's actual state — are gone; the rail's phase-awareness now reads the real `phase` the
+API returns alongside the cards. `RAIL` (navigation metadata — which admin sections exist and
+when they're relevant) stays static, same as before, because it's genuinely UI structure, not
+brief-illustrative content, and isn't materially different from Phase 23's already-correct fix to
+it.
+
+Verified live, not just by test: with the API and admin dev servers running against a freshly
+seeded `cis_dev`, the Mission Board screen now shows real computed evidence (`"Forecast
+firm-attributable 0 of 80 required"` — the seed's actual firm floor, actual zero responses) and a
+freshly-worded severity label (`"A planned report is at risk"`), with the rail correctly greying
+out Monitoring/Results/Dragnet analysis because the seeded edition is genuinely in `before_launch`
+phase — not because they're unbuilt.
+
+### Severity labels, rewritten fresh — not paraphrased
+
+All six `SEVERITY_LABEL` entries were rewritten, not just rank 2 — the whole table traces to the
+same brief section (§5), so the whole table was suspect, not only the one instance a report
+happened to quote. Same six ranks, same order (1 most consequential), independently composed:
+
+| Rank | Before (brief §5's own wording)   | After (written fresh for this screen) |
+| ---- | --------------------------------- | ------------------------------------- |
+| 1    | Cannot deliver the promised study | Puts the whole study at risk          |
+| 2    | Statistical target threatened     | A sample target will be missed        |
+| 3    | Report dependency threatened      | A planned report is at risk           |
+| 4    | Severe funnel failure             | Many firms are stuck in the funnel    |
+| 5    | Representation risk               | A required voice may go missing       |
+| 6    | Routine operational follow-up     | Needs a routine follow-up             |
+
+### Remediation-cohort labels: the same "why we chose this route" leak, in §8B's table
+
+Applying the same test (does this explain real-world state a user needs, or the system's own
+internal reasoning?) to `remediationForCohort` — the source of every card's "Recommended action"
+text — found three more instances of the identical em-dash-appended-rationale pattern already
+confirmed in §1a, this time from §8B's remediation table:
+
+- `'Bulk nudge — knowable without a client list'` → `'Bulk nudge'`
+- `'Message all participating firms — the relevant cohort cannot be identified'` →
+  `'Message all participating firms'`
+- `'Export the bounced addresses for CIS — nowhere to bulk-send'` →
+  `'Export the bounced addresses for CIS'`
+
+Each dropped clause explained an internal audience-targeting/data-modeling limitation ("knowable,"
+"cannot be identified," "nowhere to bulk-send" are all properties of Phase 9's targeting system,
+not of the real world) — the exact same shape as `'(folded in — not a separate card)'`, just in a
+different table. By contrast, `mission-forecast.ts`'s four funnel-diagnosis labels (`'Invited but
+not claimed — wrong person, dead address, or nobody acted.'` and its three siblings, §17's
+funnel-diagnosis example) were deliberately left untouched: they explain plausible _real-world_
+reasons a firm might be stuck, which is exactly what an operator needs to act — not how the
+software is built. Not every string that traces to a brief section is a defect; the test is what
+kind of thing it explains, not where it originated.
+
+### Dragnet rail label — confirmed, not just Regulators/Monitoring
+
+Re-verified directly against the current file: `RAIL`'s `dragnet` entry reads `built: true`,
+`label: 'Dragnet analysis'` — no "not built" qualifier. This was already corrected in `317254c`
+alongside Regulators and Monitoring; nothing further was needed here.
+
+### A durable test, not a bigger phrase list
+
+`packages/domain/tests/mission-board.test.ts` gained a new describe block asserting, by pattern
+rather than by exact string: no `CONDITIONS[].what`, no `remediationForCohort(...).label` for any
+of the eight cohorts, and no field of a real, live-evaluated board's cards matches the confirmed
+jargon-shape patterns (`folded in`, `not a separate card`, `dedup`, `engine [12]`, `knowable
+without`, `cannot be identified`, `nowhere to (bulk-)send`, an em-dash followed by a
+system/audience/cohort/targeting-reasoning clause, and — a direct regression guard — the exact
+brief-table phrase `'Statistical target threatened'`). This runs against the real evaluator, not a
+fixture, so it catches a reintroduction regardless of which card produces it.
+`apps/admin/src/pages/MissionBoardPage.test.ts` was updated to match: the old `CARDS`-specific
+test is gone (there's no longer a static `CARDS` export to test — the page fetches real data), and
+it now guards the two exports that remain genuinely static: `SEVERITY_LABEL` and `RAIL`. The
+"illustrative number hardcoded as if real" failure mode (`333`) has no equivalent test, deliberately:
+it doesn't need a numeric blocklist, because the structural fix (the page can no longer render
+anything but a real computed value) eliminates the failure mode by construction, not by pattern-
+matching a number that could legitimately recur as a real, coincidental shortfall in a different
+scenario.
+
+### Verification
+
+Full suite: `pnpm test` — **39 files, 412 tests, all green** against a live Postgres (up from 410:
++3 new domain jargon-regression tests, +4/−5 in the rewritten admin page test). `pnpm lint`,
+`pnpm typecheck`, and `pnpm turbo build` all clean. `pnpm audit` unchanged. Live-verified in a real
+browser (Playwright/Chromium) against a freshly seeded `cis_dev`: the Mission Board screen renders
+real evidence, real consequence text, and the correct phase-aware rail state — screenshotted for
+the record, not just asserted in a test.
+
+**The standing rule for any future screen built from a brief:** a build brief explains reasoning
+and gives worked examples so engineering understands the rules. It never supplies copy. Anything
+in a brief that reads like a sentence a user would see is an illustration, not a string; any number
+in a brief is a worked example, not a value to hardcode. When an artefact exists, check it
+directly before assuming it's a copy source — this artefact carries no literal text at all, every
+field arrives via `bindData` at runtime, which means the standing rule is not "copy text from the
+artefact" either. Production copy is written fresh, in plain language, describing a real computed
+value.
+
+## Design Reconciliation Audit — Batch 1 of 7
+
+Every surface was originally built against a specific artefact version; the controlled design
+estate has since moved on via source-hygiene ("Clean Artefact Gate") passes. This audit works
+through the estate five surfaces at a time, verifying each artefact's own `product_behaviour_changed`
+claim against its itemized changelog rather than trusting the summary field, and cross-checking for
+defect classes already found on this programme. Batch 1: `UX-ADM-001` (Edition, v4.7), `UX-ADM-002`
+(Surveys, v1.6), `UX-ADM-004` (Scoring, v1.8), `UX-ADM-005` (National report, v1.9), `UX-ADM-006`
+(Firm reports, v1.9).
+
+### UX-ADM-001 (Edition) — outcome (a), confirmed no functional change
+
+`functional_baseline_version: "v4.1"`; `source_purity_delta.product_behaviour_changed: false` from
+v4.2 through v4.7. Read every itemized `changes_from_v4_0`/`changes_from_v4_2` entry directly: the
+real functional history (single-date model, opening-is-observed-not-declared, sample floors
+locked at open) all predates v4.1 and is already built (`EditionPage.tsx`, verified against this
+session's own live fresh-environment reproduction of the save flow). v4.2→v4.7 is exclusively
+review-harness removal and `bindData(payload)` externalization. No code change.
+
+### UX-ADM-002 (Surveys) — outcome (a), confirmed no functional change
+
+`functional_baseline_version: "v1.2"`. The one real, itemized functional correction in this
+artefact's history — `changes_from_v1_1`: "the prose said firm instruments while the list beneath
+it named S4-A1, S5a-A1 and S5b-A1 — they span the firm and investor instruments both" — is already
+correctly implemented: `SurveysPage.tsx`'s copy reads "folded into the natural flow of the scored
+**firm and investor** instruments," not "firm instruments" alone. `changes_from_clean_artefact_migration`
+confirms no further behaviour change through v1.6. One minor, non-functional cosmetic difference
+noted, not fixed (out of this audit's functional scope): the artefact's pill reads "Dragnet
+product-internal," the built page reads "Dragnet internal" — same meaning, different wording, no
+behavioural consequence.
+
+### UX-ADM-004/005/006 (Scoring, National report, Firm reports) — outcome (a) on version delta, but a much bigger issue found underneath
+
+All three artefacts confirm `product_behaviour_changed: false` from their stated functional
+baselines (v1.2, v1.5, v1.3 respectively) through their current versions, and the itemized
+changelogs agree — the real functional history (scores shown before sign-off, the ten-sections
+rebuild, atomic-per-report release) all predates each baseline and was already correctly built.
+**On the version-reconciliation question alone, all three are outcome (a).**
+
+But item 4 of this audit's own method — cross-check for a hardcoded fixture where the artefact
+expects live data — caught something version-reconciliation doesn't test for: **all three pages
+were built the exact same way Mission Board was before the post-demo-findings fix** (`1432282`,
+above): a "Self-contained functional surface (local state)" mockup with a manual demo
+state-toggle button row, `<Page />` rendered with zero props from `App.tsx`, never calling the
+real, tested, already-routed backend. Every artefact here also declares
+`product_persists_declared: true` — the real product was always expected to persist, not simulate.
+A targeted grep across every file in `apps/admin/src/pages` for the same shape (the exact phrase
+"Self-contained functional surface (local state)", plus a manual `STATES`/`DRAGNET_STATES` toggle
+row, plus zero props in `App.tsx`) found **one further, not-yet-fixed instance beyond these
+three: `InvitationsPage.tsx` (UX-OPS-002)** — same header phrasing, same zero-prop call site, and
+`apps/api/src/routes/invitations.ts` already exposes a full set of real GET endpoints it never
+calls. `InvitationsPage` is not part of this batch's five artefacts and is a substantially larger
+surface (messages/templates/requests, batches, file-upload validation, an audience wizard) — it is
+flagged here for a dedicated pass, not fixed in this one. Two OTHER zero-prop pages
+(`RegulatorsPage.tsx`, `PeopleAccessPage.tsx`/`ResponsesPage.tsx`/`UnfinishedPage.tsx`/`FirmResultsPage.tsx`)
+were checked and are a different case: `RegulatorsPage.tsx` explicitly and honestly documents
+itself as "a DELIBERATE scope decision (documented in the README), not yet wired to the live
+per-role API" — an acknowledged, previously-reviewed gap, not a hidden one — and the other four use
+different, non-misleading header language ("mirrors that," never "self-contained"). Only the four
+using the exact misleading phrasing were in scope for this fix.
+
+**Fixed, live-wired exactly like Mission Board — `ScoresSignoffPage.tsx`, `NationalReportPage.tsx`,
+`FirmReportsPage.tsx`:**
+
+- All three now take `{client, editionId}` (`ScoresSignoffPage`/`NationalReportPage` also take
+  `viewer`, for maker-checker identity) instead of zero props, calling real endpoints in
+  `scoring.ts`/`reporting.ts` through new `AdminClient` methods and matching types in `api/types.ts`.
+- **Scoring**: real run history, real per-index scores/populations/floor status
+  (`getScoreView`), real structured sign-off request/approve. Live-verified: triggered a real
+  scoring run, requested sign-off as one seeded user, approved as a different seeded user — the DB
+  row shows `state: 'signed_off'`, `requested_by ≠ approved_by`.
+- **National report**: real ten-section sufficiency evaluation (`evaluateSection`), draft-opened
+  tracking, the four real approval preconditions, request/approve. Live-verified against the
+  fresh seed (no institutional data): correctly evaluated 9 publishable / 1 suppressed
+  (`PUB_10_INSTITUTIONAL_PERSPECTIVES`, 0 of 3 regulators engaged) — real business logic, not
+  fabricated numbers.
+- **Firm reports**: real generation, per-firm approval, atomic-per-report release, and the
+  "zero participating firms is an outcome, not an empty list" state the artefact explicitly
+  requires — live-verified against the fresh seed (genuinely zero participating firms): the page
+  now says so honestly ("There are no reports to release... this is not a suppression and nothing
+  is being withheld") instead of looking identical to "generation never attempted."
+- One small, necessary backend addition, not a new feature: `national_reports` had no
+  lookup-by-edition, only by-report-id — a fresh page load had no way to discover the current
+  report. Added `getLatestNationalReportForEdition` (`packages/db`) and
+  `GET /editions/:id/national-report` (thin plumbing over the already-tested domain layer,
+  mirroring `getFirmReports`' existing by-edition pattern), with a new HTTP-level test
+  (`apps/api/tests/national-report-lookup.test.ts`) and two new domain-level tests
+  (`packages/domain/tests/national-report.test.ts`).
+
+**Real gaps found while wiring, documented honestly rather than fabricated or silently worked
+around:**
+
+- `ScoringSignoffState` has no `'rejected'` value, and there is no
+  `POST /scoring-signoffs/:id/reject` route — the old mockup's "Reject" button was never backed by
+  a real capability at any layer, not even the domain model. The live-wired review view offers
+  only what's real: approve, or leave pending.
+- `regenerateFirmReport` exists and is tested in `firm-report-service.ts`, but has no route — a
+  held/failed firm report cannot actually be retried from the admin app yet. Shown honestly (the
+  held state and its reason are real and visible); no fake retry button was added.
+- **The significant one**: `national-report-service.ts`'s sentence-level adversarial review
+  (`saveNationalDraft`, `runChecker`, `runAdversaryHealth`, `disposeFinding`) is real, tested
+  domain logic — but nothing anywhere in this codebase generates draft report sentences from real
+  scores (no LLM call, no template engine, no generator of any kind). The old mockup's `DRAFT`
+  array was entirely invented example prose standing in for a capability that doesn't exist. Since
+  `nationalApprovalPreconditions` requires `checkerHealthy` (which requires a persisted
+  `adversary_health` row, which requires `runAdversaryHealth` to have run at all), **no national
+  report can be approved through the real system today** until this is resolved. This is flagged
+  here, not resolved unilaterally, per this programme's standing escalation discipline — it needs a
+  product decision (build a real AI-generation pipeline for the ten sections; or define a
+  human-drafts-the-text-directly workflow, which the domain layer's own neutral design already
+  supports — `saveNationalDraft` "persists a generated draft; it computes nothing," and doesn't
+  care whether the sentences came from a model or a person), not a UI-only fix.
+
+### Running list of open items needing a decision (not resolved here)
+
+1. **National report approval is currently unreachable end-to-end** (above) — needs a product
+   decision on how draft sentences get produced before the adversarial-checker gate can ever pass.
+2. **`InvitationsPage.tsx` (UX-OPS-002)** — confirmed same "local-state mockup, never calls its own
+   real routes" defect as Mission Board/ADM-004/005/006, not yet fixed. Real routes already exist
+   (`apps/api/src/routes/invitations.ts`). Needs a dedicated pass — this surface is large
+   (messages/templates/requests, batches, file-upload validation, an audience wizard).
+3. **Scoring sign-off has no reject path** — `ScoringSignoffState` and the API both lack one. Worth
+   a product decision on whether a reject capability should exist here (the national-report and
+   edition-lock flows both have one; scoring sign-off doesn't).
+4. **Firm-report regeneration has no route** — `regenerateFirmReport` is real and tested but
+   unreachable from the admin app. Small, mechanical fix once prioritized.
+
+### Verification
+
+Full suite: `pnpm test` — **40 files, 415 tests, all green** (up from 39/412: +2 domain tests for
+`getLatestNationalReportForEdition`, +1 new HTTP-level test file) against a live Postgres.
+`pnpm lint`, `pnpm typecheck`, `pnpm turbo build` all clean. `pnpm audit` unchanged — the same
+pre-existing devDependency advisories as every prior phase. Live-verified in a real browser
+(Playwright/Chromium) against a freshly seeded and locked edition: triggered a real scoring run,
+completed a real two-user sign-off, generated a real national report with correct sufficiency
+evaluation, and confirmed the honest "zero participating firms" firm-reports state — screenshotted
+for the record at every step, not just asserted in a test.
+
+## InvitationsPage — Live Wiring (fourth and largest instance of the same defect class)
+
+The fourth instance of the "self-contained local state" mockup defect — Mission Board, then
+`UX-ADM-004/005/006` — confirmed for `InvitationsPage.tsx` (UX-OPS-002) in the last batch's
+targeted grep, and given its own dedicated pass here as planned, since it's a substantially
+larger surface than the previous three. Phase 9 built the full invitations engine —
+`invitations-service.ts` — in advance; this was purely a wiring fix, not a rebuild.
+
+### §1 — Inventory: every piece checked independently
+
+| Piece                       | Before                                                              | After                                                                                               |
+| --------------------------- | ------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| Audience selection & counts | Hardcoded `AUDIENCES` array (fixed numbers like `n: 249`)           | Live `listAudiences` — real query against Phase 4 firm/seat state and Phase 3 contact-consent       |
+| Templates (list/edit/save)  | `SEED_TEMPLATES`, edits discarded on close                          | Real CRUD (`listMessageTemplates`/`saveMessageTemplate`), real `{{code}}` gate enforced server-side |
+| Send wizard                 | `onDone` just closed the wizard — nothing was ever sent             | Real `sendInvitationBatch`, real per-template dedup                                                 |
+| File-upload validation      | Descriptive text only — no file input existed at all                | Real four-check validation (`validateUploadFile`), live file input                                  |
+| Batch / delivery report     | `SEED_BATCHES`, fixed numbers                                       | Real `listInvitationBatches` + `getInvitationBatchReport` per batch                                 |
+| Bounce listing              | A "List the addresses that bounced" button with no `onClick` at all | Real listing — see the found gap below                                                              |
+| Access-request queue        | `SEED_REQUESTS`, resolved state never left the browser              | Real `listInvitationRequests` / `resolveInvitationRequest`                                          |
+
+Every piece was mocked; none were already real. `InvitationsPage.tsx` now takes `{client,
+editionId}` (previously zero props, per the last batch's grep) and calls the real backend for
+all seven.
+
+### §2 — Two real backend gaps found while wiring, both fixed (not just noted)
+
+1. **`resolveFirmNameToOrg` existed, untested, and was never called from anywhere.** Without it,
+   an uploaded CSV row had no way to carry a real `organizationId`, so the fourth file-validation
+   check (a firm already sent this template) could never fire for an upload — only for a
+   firm-audience send. Added `resolveFirmNamesToOrgs` (`packages/domain/src/invitations-service.ts`)
+   — the same exact, case-insensitive match, batched to fetch the register once instead of once
+   per row — plus `POST /editions/:id/invitations/resolve-firm-names`, wired into the upload
+   handler before validation. This is _not_ a fifth validation check and does not block a row on
+   its own; it only supplies the id the already-existing fourth check needs. Live-verified: a CSV
+   row naming an already-invited firm is now correctly flagged `already_sent`.
+2. **`listBouncedRecipients` existed at the `@cis/db` layer only** — its own doc comment already
+   said "for the 'list the addresses that bounced' action" — with no domain-service wrapper and no
+   route. Added `getBouncedRecipients` (thin pass-through, matching the existing
+   `listMessageTemplates`/`getBatches` pattern) and `GET /invitations/batches/:batchId/bounced`,
+   wired into the batch report view. Live-verified: simulated a real Zeptomail bounce webhook
+   event and confirmed the exact bounced address is listed, with no resend action anywhere.
+
+Both gaps were the same shape as last batch's `getLatestNationalReportForEdition`: real,
+tested-at-one-layer domain capability, never exposed the rest of the way — fixed, not left as a
+discovered-but-unresolved note, per this batch's explicit instruction.
+
+### §3 — Live verification, real seeded data
+
+The canonical seed (`seedReferenceData`, used by every existing test) creates zero firm
+organizations — confirmed by checking every test that needs a firm; each creates its own via
+`createOrganization` directly, and none depend on `seedReferenceData` for firm data, so this
+wasn't touched (avoids risk to the ~400 existing tests that already pass against it). Instead, a
+verification-only script (not part of the repo, not part of any test) seeded six real firms
+spanning six of the seven audience states via the same real `@cis/db` functions the domain
+layer's own tests use (`createOrganization`, `insertFirmClaim`, `ensureSeats`/`setSeatState`,
+`createOutreachLink`), directly against the running dev database — extending available data to
+verify against, per this batch's instruction, without touching the shared canonical seed every
+other test relies on.
+
+Verified live, in a real browser, against that data:
+
+- **Audience counts** — all seven firm audiences showed the exact live count matching the seeded
+  state (1 each in six non-trivial states, 6 for "every firm").
+- **Dedup enforcement** — a firm-audience send to an already-invited firm correctly reported
+  "0 of 1 sent — 1 skipped, already received this template"; a send to a genuinely new firm sent
+  correctly.
+- **All four file-validation checks, individually triggered** — a five-row CSV correctly flagged
+  `no_address`, `malformed_address`, and `in_file_duplicate` in one pass; a separate upload naming
+  an already-invited real firm correctly flagged `already_sent` (closing the §2 gap above).
+- **Delivery report accuracy, including the opened/clicked absent-vs-zero distinction** — real
+  Zeptomail webhook events (`delivered`/`opened`/`clicked` for one recipient, `bounced` for
+  another, via the existing `/invitations/zeptomail-webhook` route) produced a report showing
+  Delivered 1 / Opened 1 ("indicative") / Clicked 1 / Bounced 1 for that batch, while every
+  _other_ batch (never sent a webhook event) correctly showed "not reported" for opened/clicked —
+  never zero.
+- **Bounce list, no resend** — "List the addresses that bounced" correctly showed the one bounced
+  address; no resend action exists anywhere in the UI or the routes underneath it.
+- **Templates** — the `{{code}}` gate correctly disabled Save for a firm template missing
+  `{{code}}` and enabled it once added; the new template persisted and appeared in the real list.
+- **Access-request queue, submission through resolution** — a request submitted via the real
+  `submitInvitationRequest` (the respondent-facing submission surface, UX-FRM-001, is out of
+  scope) appeared correctly in the queue and the "Requests" tab count; both resolution paths were
+  exercised — "Mark done without issuing" and "Issue a code" (the latter correctly created a real
+  reissue batch, visible in "Messages sent").
+
+No network errors (4xx/5xx) at any point across the full verification pass.
+
+### §4 — Verification
+
+New tests: `apps/admin/src/pages/InvitationsPage.test.ts` (a source scan, since this repo has no
+DOM test infrastructure — asserts none of the old mockup's fixture arrays, hardcoded example
+names/counts, or the stale "sending service not yet decided" placeholder remain in the file, that
+the component signature takes real props, that every real client method is actually called, and
+that no resend action exists); two new domain tests for `resolveFirmNamesToOrgs` and
+`getBouncedRecipients` (`packages/domain/tests/invitations.test.ts`); two new HTTP-level tests for
+the two new routes (`apps/api/tests/invitations-live-wiring.test.ts`).
+
+Full suite: `pnpm test` — **42 files, 426 tests, all green** (up from 40/415) against a live
+Postgres. `pnpm lint`, `pnpm typecheck`, `pnpm turbo build` all clean. `pnpm audit` unchanged.
+
+### §5 — What's left from the running open-items list
+
+Unaffected by this pass, still open from the last batch: national report approval is still
+unreachable end-to-end (needs Phase 20's AI report exemplars before draft-sentence generation can
+be built); scoring sign-off still has no reject capability at any layer; firm-report regeneration
+still has no route. This pass closes the fourth and largest confirmed instance of the "mockup
+never wired to its real backend" defect class; no fifth instance is currently known.
+
+## Whole-Directory Mockup Sweep + Two Domain Gaps Closed
+
+The previous four passes each ended with a version of "no further instance is currently known" —
+a claim built by grepping for one specific header phrase (`"Self-contained functional surface
+(local state)"`) plus a manual demo-toggle pattern. That is a weaker claim than it sounds: a page
+using different, non-misleading header language would never match the grep, whether or not it has
+the same underlying defect. This pass replaces it with a deliberate, page-by-page pass over every
+file in `apps/admin/src/pages` (17 files), checked directly against three technical criteria
+regardless of how each page's own comments describe itself: (a) local state standing in for live
+API data, (b) a manual demo/state-toggle UI, (c) no real `client.*` call backing what the page
+shows. Independently, it closes two small, previously-flagged domain gaps (§2 above: scoring
+sign-off's missing reject path, firm-report regeneration's missing route).
+
+### §1 — The definitive sweep: all 17 pages, no exceptions
+
+| Page                     | Props                         | `client.` calls                    | Verdict                                                                                                                                                               |
+| ------------------------ | ----------------------------- | ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DragnetPage.tsx`        | `{client, editionId}`         | 2                                  | **Confirmed real**                                                                                                                                                    |
+| `EditionPage.tsx`        | `{client, editionId, viewer}` | 6                                  | **Confirmed real**                                                                                                                                                    |
+| `FirmReportsPage.tsx`    | `{client, editionId}`         | 8                                  | **Confirmed real** (fixed in the Batch-1 pass, §2 above)                                                                                                              |
+| `FirmResultsPage.tsx`    | none                          | 0                                  | **Genuine mockup + a distinct auth-mismatch defect** — see §2                                                                                                         |
+| `FirmTeamPage.tsx`       | `{client, editionId}`         | 6                                  | **Confirmed real**                                                                                                                                                    |
+| `InvitationsPage.tsx`    | `{client, editionId}`         | 11                                 | **Confirmed real** (fixed above, largest instance)                                                                                                                    |
+| `LoginPage.tsx`          | `{onSignIn}`                  | 0 (calls the standalone `login()`) | **Confirmed real** — different call shape, genuinely live                                                                                                             |
+| `MissionBoardPage.tsx`   | `{client, editionId}`         | 1                                  | **Confirmed real** (fixed, first instance)                                                                                                                            |
+| `NationalReportPage.tsx` | `{client, editionId, viewer}` | 7                                  | **Confirmed real** — the page itself is wired; its _approval flow_ is separately blocked by the missing draft-sentence generator (already flagged, out of scope here) |
+| `PeopleAccessPage.tsx`   | none                          | 0                                  | **Genuine mockup** — see §2                                                                                                                                           |
+| `RegulatorsPage.tsx`     | none                          | 0                                  | **Not a defect** — documented, deliberate scope boundary — see §2                                                                                                     |
+| `RendererPage.tsx`       | `{client}`                    | 1                                  | **Confirmed real**                                                                                                                                                    |
+| `ResponsesPage.tsx`      | none                          | 0                                  | **Genuine mockup** — see §2                                                                                                                                           |
+| `ScoresSignoffPage.tsx`  | `{client, editionId, viewer}` | 6 (now incl. `rejectSignoff`)      | **Confirmed real** (fixed; extended in §2a below)                                                                                                                     |
+| `SurveysPage.tsx`        | `{client, editionId, viewer}` | 3                                  | **Confirmed real**                                                                                                                                                    |
+| `UnfinishedPage.tsx`     | none                          | 0                                  | **Genuine mockup** — see §2                                                                                                                                           |
+| `WordingPage.tsx`        | `{client}`                    | 4                                  | **Confirmed real**                                                                                                                                                    |
+
+**Totals: 12 confirmed real, 4 genuine mockups, 1 (of the 4) additionally carries a second, distinct
+defect, 1 documented non-defect, 0 ambiguous.** Every page was read in full, not just grepped; the
+zero-prop/zero-`client.`-call signature is a triage heuristic, not the verdict — `LoginPage.tsx` is
+the proof it can false-positive (it calls a standalone `login()` export, not the `client` object,
+and is genuinely live).
+
+### §2 — The five flagged pages, corrected: three categories, not one "mockup" bucket
+
+An earlier version of this section put all five pages in one "confirmed mockup" bucket. That
+conflated three genuinely different things: a page whose own local state stands in for a real,
+unused backend (the actual mockup defect this whole programme has been fixing); a page with a real
+but _differently-shaped_ defect; and a page that is not a defect at all. Restated precisely, with
+the exact state variable and exact missing/mismatched call for each:
+
+**Category 1 — Genuine mockup (same shape as the five already fixed: local state/demo toggle
+standing in for a real, callable backend that exists and is never called).**
+
+- **`PeopleAccessPage.tsx`** — `const [people, setPeople] = useState<Person[]>(() => clone(SEED))`,
+  where `SEED` is a hardcoded four-person literal array. `save()`, `removePerson()`, and every
+  other mutation call only `setPeople(...)`, held in React state and discarded on reload; there is
+  no `client.*` call anywhere in the file (zero props — `PeopleAccessPage(): JSX.Element`). Real,
+  tested, fully-routed backend already exists and enforces the same rules server-side
+  (`GET/POST/PATCH/DELETE /people` in `apps/api/src/routes/people.ts` →
+  `packages/domain/src/people-access-service.ts`, including the two-approver floor and
+  self-removal — both independently re-verified live over HTTP below, §2b) — never called.
+
+- **`ResponsesPage.tsx`** — `const CARDS: Card[] = [...]` and `const DEPS: DepRow[] = [...]` are
+  hardcoded literal arrays (four segment cards, six dependency rows, e.g.
+  `{current: 61, target: 80, forecast: 74, ...}`) rendered directly with no state and no props
+  (`ResponsesPage(): JSX.Element`); no `client.*` call anywhere in the file. There is no demo-toggle
+  UI here specifically (it is a pure read-only render of the two constants — criterion (b) does not
+  apply to this one), but criteria (a) and (c) are both fully met. Real, tested, routed backend
+  already exists (`GET /editions/:id/responses-monitor` in `apps/api/src/routes/monitoring.ts` →
+  `getResponsesMonitor` in `responses-monitoring-service.ts` — the exact computation Mission
+  Board's own conditions 7/8 already read from, post-fix) — never called.
+
+- **`UnfinishedPage.tsx`** — `const DATA = {started: 1874, done: 1406, ...}`, `const STOPS = [...]`,
+  and `const [schedule, setSchedule] = useState<ScheduleStep[]>(INITIAL_SCHEDULE)` where
+  `INITIAL_SCHEDULE` is a hardcoded three-step literal. The page's own "On/Off" toggle buttons and
+  day-count inputs (`toggleStep`, `setStepValue`) mutate only this local `schedule` state; no
+  `client.*` call anywhere persists it. Zero props, zero `client.*` calls. Of the three pages in
+  this category, this one's editable schedule is the closest analogue to a genuine demo-toggle: it
+  visually behaves like a working settings screen while doing nothing. Real, tested, routed backend
+  already exists (`GET /editions/:id/unfinished`, `PUT /reminders/schedule`, `PUT /reminders/cap`,
+  `POST /editions/:id/reminders/run` in `monitoring.ts` → `reminder-timing-service.ts`) — never
+  called.
+
+- **`FirmResultsPage.tsx`** — `const IDX: Idx[] = [...]` (five hardcoded index rows with fixed
+  `you`/`ind` numbers) plus an explicit, literal demo-toggle button row:
+  `<button onClick={() => setRetail(47)}>Retail unlocked</button>`,
+  `onClick={() => setRetail(19)}` "Directional only", `onClick={() => setRetail(6)}` "Below the
+  floor" — three buttons that switch one `useState<number>(47)` between three canned values to fake
+  three different retail-cut states. Zero props, zero `client.*` calls. Of all five pages, this is
+  the single most literal match to the original criterion (b) — structurally identical in shape to
+  Mission Board's now-removed fake "Edition phase" toggle. **On its own technical merits this is a
+  genuine Category-1 instance**, independent of the auth question below.
+
+**Category 2 — A real defect, but a different shape (not the mockup pattern).**
+
+- **`FirmResultsPage.tsx` additionally** — a real, tested backend already exists
+  (`getFirmResults` in `packages/domain/src/firm-results-service.ts`, exposed at
+  `GET /editions/:editionId/firms/:firmId/results` in `apps/api/src/routes/firm-results.ts`), so
+  the reason this page cannot simply be wired the way the other three above can is not "the backend
+  doesn't exist" — it's an **auth-model mismatch**. That route authenticates via a coordinator
+  access code header (`x-coordinator-access-code`, checked against `getCoordinatorByAccessCode`) —
+  its own file comment says outright "it is not operator-authenticated... coordinator-only (§9)."
+  But the page is rendered at `tab === 'firmresults'` **inside `App.tsx`'s operator-session-gated
+  tree**, reached only after a normal `/auth/login` as an operator. Even after the `IDX` array and
+  the toggle are replaced with a real fetch, there is today no operator-session-authenticated path
+  to call this specific route: does the operator hold or enter a coordinator's own access code?
+  does a firm-picker get added? does a second, operator-scoped variant of the route need to be
+  built? This is not a working backend that simply went uncalled (the mockup pattern) — it's two
+  correctly-built pieces (the route, for a coordinator caller; the page, inside an operator
+  session) that were never meant to call each other as-is, and need a decision before either can
+  change.
+
+**Category 3 — Not a defect.**
+
+- **`RegulatorsPage.tsx`** — its own file header states, verbatim: "Local state stands in for the
+  live edition here, exactly as the other Study Operations surfaces do — a DELIBERATE scope
+  decision (documented in the README), not yet wired to the live per-role API." That same decision
+  is independently documented at this README's own "Deliberate scope decision —
+  `RegulatorsPage.tsx` stays a local-state mockup" note, written before this sweep ever ran. It
+  technically matches the same (a)/(c) criteria as the four pages above — zero props, zero
+  `client.*` calls, a local `SEED`-shaped state — but it is the one page on this list that honestly
+  discloses this in its own code, and was already a known, reviewed, intentional boundary. Not a
+  hidden gap; not fixed here because there is nothing to fix — carried forward unchanged.
+
+None of the four Category-1 pages is fixed in this pass — none is "a handful of lines"; each is
+comparable in size to `InvitationsPage.tsx` (the largest prior fix), and `FirmResultsPage.tsx`
+additionally cannot be fixed at all until its Category-2 auth question is decided. Three of the
+four Category-1 pages, and the Category-2 finding, are **not new discoveries**: they were already
+checked in the Design Reconciliation Audit (Batch 1, above) and excluded from that fix on a
+narrower test ("does the header say 'self-contained,' the misleading phrasing") than this pass's
+literal technical criteria ("does it match the shape, regardless of what the header calls it").
+Re-applying the literal criteria here means they now appear on this list; it does not mean they
+were hidden before. Per this task's own instruction, each is reported and stopped, for a future
+dedicated pass.
+
+### §2b — Error-handler bug: blast-radius assessment against every prior live-verification claim
+
+The error-handler ordering bug (full description in §3 below) means every domain error thrown from
+inside any route handler, on any route, always returned Fastify's generic 500 instead of the
+intended classified 4xx — for the entire lifetime of this repository, not just the two new
+endpoints this pass added. Before treating that as closed, every check in this programme's history
+that was specifically claimed as **live-verified in a real browser or over real HTTP, checking an
+error/rejection outcome**, was re-examined against the actual source and the actual prior wording,
+to determine whether any of those claims was unknowingly resting on the bug (a masked 500 that
+happened to still look like "it failed" to whoever was watching).
+
+**Finding: none of them were.** Every prior "live-verified"/"real browser" claim in this README, on
+inspection, exercised a **success** path (approve-by-a-different-user, a real save, a real
+generation) — routes that return `reply.status(201).send(...)`/`reply.send(...)` directly, which
+never passes through `resolveStatusCode` at all regardless of registration order. No prior claim in
+this README asserted a specific error status code or error message for a rejection path over real
+HTTP. That is confirmed by re-reading each relevant section directly, not assumed:
+
+| Item from the request                                | Real check found                                                                                                                                                                                                                                                                                                      | Ever claimed live/HTTP-verified for an ERROR path?                                                                                                                          | Affected by the bug?                                                                                                                            |
+| ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| Edition lock self-approval                           | `MakerCheckerViolationError` (403), `apps/api/src/routes/editions.ts`                                                                                                                                                                                                                                                 | No — §"Save/freeze flow" (above) verified only the approve-by-different-user success path                                                                                   | Yes, structurally (never previously exercised live)                                                                                             |
+| Instrument freeze self-approval                      | Same class, `routes/instruments.ts`                                                                                                                                                                                                                                                                                   | No — same section, success path only                                                                                                                                        | Yes, structurally                                                                                                                               |
+| Scoring sign-off self-approval                       | `ScoringSignoffError`/`SELF_APPROVAL` (409)                                                                                                                                                                                                                                                                           | No — Design Reconciliation Batch 1 verified only approve-by-different-user                                                                                                  | Yes, structurally                                                                                                                               |
+| Scoring sign-off self-**rejection** (new, this pass) | `ScoringSignoffError`/`SELF_REJECTION` (409)                                                                                                                                                                                                                                                                          | **Yes** — browser + direct HTTP, in §2 above                                                                                                                                | No — verified _after_ the fix landed; correct                                                                                                   |
+| Regulator engagement "referral" self-block           | —                                                                                                                                                                                                                                                                                                                     | N/A — no such maker-checker mechanism exists in `regulator-engagement-service.ts`; "referral" there means cancel-and-restart of a survey link, not a request/approve action | Not applicable                                                                                                                                  |
+| Two-approver-floor refusal on `PeopleAccessPage.tsx` | `PeopleAccessError`/`APPROVER_FLOOR` (409), real backend in `people-access-service.ts`                                                                                                                                                                                                                                | No — the page itself is a Category-1 mockup (§2 above); anything ever "seen" on it was the page's own local, fake check, never the real server rule                         | Yes, structurally (the real rule was never live-exercised through this page at all)                                                             |
+| Regulator-contact email/phone validation             | `RegulatorEngagementError`/`CONTACT_EMAIL_INVALID`/`CONTACT_PHONE_INVALID` (409)                                                                                                                                                                                                                                      | No — no README section claims a live/HTTP check of this                                                                                                                     | Yes, structurally                                                                                                                               |
+| Firm-coordinator validation                          | PIN check (`FirmTeamError`/`INVALID_PIN`, 409; `PinVerificationError`, 403) — there is no separate email/phone check for coordinators in `firm-team-service.ts`                                                                                                                                                       | No — no README section claims a live/HTTP check of this                                                                                                                     | Yes, structurally                                                                                                                               |
+| Required-clause violations (managed content/Wording) | `ManagedContentError`/`REQUIRED_CLAUSE_MISSING` (409)                                                                                                                                                                                                                                                                 | No — domain-tested only (`phase18.test.ts`), never claimed live/HTTP                                                                                                        | Yes, structurally                                                                                                                               |
+| Forbidden-phrase check (privacy notice)              | `ManagedContentError`/`FORBIDDEN_PHRASE_PRESENT` (409)                                                                                                                                                                                                                                                                | No — same, domain-tested only                                                                                                                                               | Yes, structurally                                                                                                                               |
+| Consent-gate refusal (PAT-011, S5a/S5b)              | `ConsentRequiredError` (403)                                                                                                                                                                                                                                                                                          | No — domain-tested only (`response-service.ts` tests), never claimed live/HTTP                                                                                              | Yes, structurally                                                                                                                               |
+| `InvitationsPage.tsx` file-validation checks         | `validateUploadFile` returns a `problems: [...]` array in a normal `200` response — it does not throw                                                                                                                                                                                                                 | N/A — this path never touches `resolveStatusCode` regardless of the bug                                                                                                     | No                                                                                                                                              |
+| `InvitationsPage.tsx` `{{code}}` gate                | Server: `InvitationsError`/`CODE_PLACEHOLDER_REQUIRED` (409). But the live-verification claim ("correctly disabled Save for a firm template missing `{{code}}`") is client-side: `InvitationsPage.tsx` has its own presence check (`clientErr`, line ~740) that disables the Save button _before_ any request is sent | No — the request that would hit the server's rule was never actually sent in that check                                                                                     | Server-side rule: yes, structurally (never live-exercised); the client-side check that WAS observed is unaffected (it never reaches the server) |
+
+**Domain-level tests for every row above already existed and already passed** (`phase18.test.ts`,
+`response-service.test.ts`, `edition-service.test.ts`/`instrument-freeze.test.ts`,
+`people-access-service`'s own tests, etc.) — those call the service functions directly and never go
+through Fastify, so they were **never** affected by this bug regardless. The bug lived exclusively
+in the HTTP layer, and no prior HTTP-level test in this repository asserted an error-path status
+code at all (confirmed directly: this pass's own two new HTTP test files are the first ones that
+do). So nothing above was a false positive in the sense of "we said it passed and it didn't" — the
+gap is narrower and specific: the real, correct, classified HTTP behavior for every one of these
+rules had simply never been checked before, at the HTTP layer, by anyone, ever.
+
+**Re-verification performed now, live, against a freshly seeded `cis_dev`** (the two-new-endpoint
+verification in §2 above already covers the scoring-reject row; the following covers a
+representative sample of the remaining structurally-affected rows, each a different error class and
+a different route file, run against the built server via real `app.inject()` HTTP calls after the
+fix):
+
+| Check                                                                           | Result                                                                                                                                                       |
+| ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Instrument freeze, self-approval                                                | `403 MakerCheckerViolationError` — "Maker-checker violation: user … cannot both request and approve/reject critical action …"                                |
+| Edition lock, self-approval                                                     | `403 MakerCheckerViolationError` — same message shape                                                                                                        |
+| Scoring sign-off, self-approval                                                 | `409 ScoringSignoffError` — "A maker can never approve their own sign-off request"                                                                           |
+| People & Access, two-approver-floor refusal (real backend, not the mockup page) | `409 PeopleAccessError` — "This person is one of the last two approvers and cannot be removed. Give somebody else the approval right first, then come back." |
+| Regulator contact, invalid email                                                | `409 RegulatorEngagementError` — "That is not a working email address"                                                                                       |
+
+All five came back with their intended, correctly-classified status code and the exact intended
+message — none of them 500, none of them the generic Fastify shape. This directly confirms the fix
+in §3 below applies platform-wide, not only to the two routes this pass added, across three
+different maker-checker services (edition, instruments, scoring), the People & Access service, and
+the regulator-engagement service. The remaining rows in the table above (required clauses,
+forbidden phrases, consent gate, firm-coordinator PIN) were not individually re-run live — they
+share the identical mechanism (a `DomainError` subclass thrown inside a route handler, resolved by
+the same `resolveStatusCode`/`setErrorHandler` this fix corrects) and no prior claim about them
+needs correcting, so a further live pass would confirm the same mechanism a sixth, seventh and
+eighth time rather than surface new information.
+
+### §3 — 2a: scoring sign-off can now be rejected
+
+`packages/domain/src/scoring-signoff-service.ts` gains `rejectSignoff(pool, {signoffId,
+rejectedBy, reason})`, mirroring `approveSignoff`'s exact shape: only a `requested` sign-off can be
+rejected, the rejecter can never be the requester (`ScoringSignoffError`/`SELF_REJECTION` — the
+same class and pattern as the existing `SELF_APPROVAL`), and a reason is required
+(`SignoffPayloadError` if blank, the same error class the checked-account validation already
+uses). `ScoringSignoffState` gains `'rejected'` (`packages/shared-types`); a rejected sign-off is
+treated the same as `superseded` for "liveness" — `getLiveSignoffForRun` already excludes both, so
+a maker can submit a fresh request for the same run immediately after a rejection, with no schema
+change needed there.
+
+New migration `20260919000000_phase24-scoring-signoff-reject.js` adds `rejected_by`/`rejected_at`/
+`rejection_reason` to `scoring_signoffs`, widens the `state` CHECK to include `'rejected'`, and adds
+two new CHECK constraints mirroring the table's existing ones: `rejected_by <> requested_by` (the
+same maker-checker shape as the existing `approved_by` CHECK) and a rejected row must carry all
+three rejection fields (mirroring the existing signed-off-fields CHECK). New
+`rejectSignoffRow` in `packages/db/src/queries/scoring-signoffs.ts` mirrors `approveSignoffRow`'s
+guarded single-UPDATE shape exactly.
+
+New route `POST /scoring-signoffs/:signoffId/reject` (`apps/api/src/routes/scoring.ts`), taking
+`{rejectedBy, reason}` — the same body-carries-actor shape `approve` already uses, not the
+JWT-`sub` shape `people.ts` uses (kept consistent with this route file's own existing convention,
+not changed). New `client.rejectSignoff(signoffId, rejectedBy, reason)` in
+`apps/admin/src/api/client.ts`.
+
+`ScoresSignoffPage.tsx`'s review section — which previously offered only "Approve and sign off,"
+with a header comment explicitly noting the old mockup's Reject button was never backed by a real
+capability — now offers a real "Reject" action: clicking it reveals a required reason field, and
+submission calls the real route. The requester sees the rejection (who, when, why) the next time
+they view the run, with a fresh "Request approval" control immediately available again. The
+self-check is enforced at three independent layers, each verified: the UI hides both decision
+controls entirely for the requester's own request (not merely disables them — same convention as
+the platform's other maker-checker reviews); a direct HTTP call as the requester is refused with a
+clean `409 SELF_REJECTION`; and the DB's own CHECK constraint is the structural backstop under both.
+
+**A pre-existing bug found and fixed while adding this**: `apps/api/src/server.ts` registered its
+custom `setErrorHandler` **after** every route plugin (`app.register(scoringRoutes)`, etc.).
+Fastify resolves a route's error handler from its plugin-encapsulation context at _registration_
+time, not dynamically per request — a handler set on the root instance after a child plugin has
+already registered its routes never applies to that plugin's routes. The practical effect: **every
+domain error thrown from inside any route handler in this entire API, always, returned Fastify's
+generic default 500 response instead of the intended classified 4xx** — the whole
+`resolveStatusCode` name-to-status mapping (self-approval → 409, validation → 400, permission → 403,
+etc.) had never actually been reachable, for any route, at any point. This was never caught before
+because no existing HTTP-level test in the repo asserted a 4xx domain-error response over real
+`app.inject()` — every prior HTTP test asserted only the happy path. Fixed by moving
+`app.setErrorHandler(...)` to before the route registrations, and hardening `resolveStatusCode`
+itself to check the name-based switch before falling back to `error.statusCode` (Fastify assigns
+every thrown error a default `statusCode` of 500 before the handler ever sees it, so checking that
+field first would have silently defeated the switch even with correct registration order). Proven
+by the two new HTTP-level test files below, both of which assert real 409/400 responses that would
+have failed loudly against the old code (confirmed directly: they did fail, with the generic
+Fastify shape, before this fix).
+
+### §4 — 2b: firm-report regeneration now has a route
+
+`regenerateFirmReport(pool, id)` already existed in `packages/domain/src/firm-report-service.ts`
+and was already exported from the package — confirmed directly before doing anything else, per
+this task's own instruction to check first. It was not, in fact, already tested anywhere (the
+prior write-up's "exists and is tested" was half right); no test file referenced it. It also had
+one real gap of its own: it would call `setGenerationState` unconditionally, with no check for an
+already-`released` report — the DB's own `prevent_released_firm_report_change` trigger would
+eventually refuse it, but as a raw, unclassified Postgres exception (a 500), not a clean domain
+error. Fixed by adding the same released-state check the rest of this module already performs
+elsewhere, throwing `FirmReportError`/`ALREADY_RELEASED` (409) before ever reaching the DB.
+
+New route `POST /firm-reports/:id/regenerate` (`apps/api/src/routes/reporting.ts`). New
+`client.regenerateFirmReport(reportId)` in `apps/admin/src/api/client.ts`.
+`FirmReportsPage.tsx`'s existing "N of M failed to generate and are HELD" warning box — which
+previously said outright "Retrying generation from this page is not yet available" — now lists
+each held firm with a real "Retry generation" button, calling the real route.
+
+### §5 — Live verification, real seeded data
+
+Both flows were driven end to end in a real browser (Playwright/Chromium) against the dev API and
+admin servers, freshly migrated and seeded, with the edition advanced to `locked` (via the same
+domain functions the tests use, not a UI shortcut — a fresh seed starts in `draft`, and this admin
+UI currently has no "trigger a second run" control beyond the very first one, so a second run was
+created directly over HTTP as the seeded maker user, the same way the verification methodology has
+done throughout this programme when a screen doesn't yet expose every setup step it depends on):
+
+- **Reject, two different seeded users**: requested sign-off as the maker; reviewed and rejected
+  as the checker with a real reason ("Population counts look stale — please re-check before
+  resubmitting."); the run's row in the Runs table updated to a red "Rejected" pill immediately for
+  the checker. Reloading as the maker showed the same reason, attributed to the checker, by name
+  and timestamp, with the "Request approval" control available again on the same run — matching the
+  domain rule directly, not just a page refresh coincidence.
+- **Self-rejection, both layers**: as the maker viewing their own pending request, neither
+  "Approve and sign off" nor "Reject" render at all (checked by element count, not just visual
+  inspection). A direct HTTP call attempting the same self-rejection was refused with a real
+  `409 SELF_REJECTION` and the exact domain message.
+- **Firm-report retry, real held state**: seeded one firm (via the same out-of-repo
+  verification-script pattern used for `InvitationsPage`, since the canonical seed creates zero
+  firms) with a genuine generation failure (`generateFirmReports(..., failFor: [firmId])`, the same
+  mechanism `packages/domain/tests/firm-report.test.ts` uses). The page correctly showed "1 of 4
+  failed to generate and are HELD" with a "Retry generation" button; clicking it made the warning
+  box disappear entirely and the firm's row gain a real "Approve" control, meaning generation had
+  genuinely succeeded, not just re-rendered.
+- The already-released-report refusal (`ALREADY_RELEASED`) was **not** driven through the full live
+  UI: reaching a genuinely `released` report requires the national report to be approved first,
+  which is the already-flagged, out-of-scope blocker (§ above) — pushing a report to `released`
+  live would mean routing around that blocker, not verifying this one. It is proven instead at both
+  the domain layer (`packages/domain/tests/firm-report.test.ts`) and the HTTP layer
+  (`apps/api/tests/firm-report-regenerate.test.ts`), each against a report genuinely taken through
+  `releaseFirmReports` first.
+
+### §6 — Tests
+
+New domain-level tests: four in `packages/domain/tests/scoring-signoff.test.ts` (self-rejection
+blocked, reason required, a rejected run is free for a fresh request, cannot reject a non-requested
+sign-off) and two in `packages/domain/tests/firm-report.test.ts` (a failed report regenerates and
+is recorded in the release history; an already-released report refuses with `ALREADY_RELEASED` and
+is left genuinely unchanged). New HTTP-level test files:
+`apps/api/tests/scoring-signoff-reject.test.ts` (success, self-rejection 409, empty-reason 400) and
+`apps/api/tests/firm-report-regenerate.test.ts` (success, already-released 409) — both of which
+also exercise (and would have caught) the error-handler ordering bug above.
+
+Full suite: `pnpm test` — **44 files, 437 tests, all green** (up from 42/426: +6 domain tests,
++5 HTTP-level tests across the two new files) against a live Postgres. `pnpm lint`, `pnpm
+typecheck`, `pnpm turbo build` all clean. `pnpm audit` unchanged — the same three pre-existing
+devDependency advisories as every prior phase (`js-yaml` via `eslint`), no `package.json` or
+lockfile touched.
+
+### §7 — Running list of open items needing a decision (not resolved here)
+
+1. **National report approval is currently unreachable end-to-end** — needs a product decision on
+   how draft sentences get produced before the adversarial-checker gate can ever pass. Unchanged by
+   this pass; explicitly out of scope.
+2. **`FirmResultsPage.tsx` (UX-FRM-RES-001)** — a genuine Category-1 mockup (§2) that additionally
+   carries a Category-2 defect: the route is coordinator-access-code-authenticated while the page
+   sits behind the operator-authenticated admin session. Needs a product decision on the auth model
+   _before_ it can even be wired, then a dedicated pass.
+3. **`PeopleAccessPage.tsx` (UX-OPS-006)** — a genuine Category-1 mockup (§2): "local-state mockup,
+   never calls its own real routes," same shape as the four already fixed. Real, fully-routed
+   backend already exists. Needs a dedicated pass — three views, real CRUD, replacing the hardcoded
+   "signed-in operator" with the real session identity.
+4. **`ResponsesPage.tsx` (UX-OPS-003)** — a genuine Category-1 mockup (§2); real, routed backend
+   already exists (`getResponsesMonitor`, the same computation Mission Board already reads). Needs
+   a dedicated pass.
+5. **`UnfinishedPage.tsx` (UX-OPS-004)** — a genuine Category-1 mockup (§2); real, routed backend
+   already exists (`reminder-timing-service.ts`), including the schedule/cap the page's own UI
+   edits only locally today. Needs a dedicated pass.
+6. **`RegulatorsPage.tsx` (UX-OPS-007)** — unchanged: an honestly, previously self-disclosed
+   deliberate scope decision, not a hidden gap. No action needed beyond what's already documented.
+
+Removed from this list, now resolved: scoring sign-off's missing reject capability (§3 above) and
+firm-report regeneration's missing route (§4 above). This pass also closes the earlier "no fifth
+instance is currently known" claim with a verified one: the whole-directory sweep found four
+further pages matching the technical mockup shape (items 2–5 above), none of them new or hidden —
+each already reviewed once and excluded from an earlier pass on a narrower test than this one used
+— and confirms no other page in the directory is unaccounted for.
+
+## Re-validation of the 12 "confirmed real" pages, and three of the four mockups fixed
+
+A follow-up review correctly pointed out that the "12 confirmed real" side of the whole-directory
+sweep had not been checked with the same rigor as the mockup side — a page was called real if the
+word `client` appeared in the file, not by tracing the specific rendered variable to a specific real
+call. This re-does that check properly, then fixes three of the four Category-1 mockups the sweep
+found, and reports (rather than silently resolving) a genuine decision blocker on the fourth — plus
+a fifth, much larger mockup this whole programme had never looked at, found while investigating
+that blocker.
+
+### Re-validation: all 12 hold up, with line-level evidence
+
+Every one of the 12 was read in full and checked exactly the way `SEED`/`CARDS`/`DEPS`/`DATA`/
+`STOPS` were: identify every rendered piece of data and every offered action, quote the exact line
+defining it, quote the exact line of the real call backing it.
+
+| Page                     | Data/action → real call (file:line)                                                                                                                                                                                              |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DragnetPage.tsx`        | `firms`/`friction` (70-71) ← `client.get(.../dragnet/maturity)` / `.../friction` (84-85)                                                                                                                                         |
+| `EditionPage.tsx`        | `edition` (52) ← `client.getEdition` (63); `requestLock`(113), `decideLock`(133), `setOpeningDate`(201), `setClosingDate`(243), `setFloors`(299)                                                                                 |
+| `FirmReportsPage.tsx`    | `reports`/`firms`/`authoritativeRunId`/`nationalApproved` (32-35) ← 4 real calls (48-57); `generateFirmReports`(153), `approveFirmReport`(224), `regenerateFirmReport`(261), `releaseFirmReports`(312)                           |
+| `FirmTeamPage.tsx`       | `firms`/`coordinators` (150,152) ← `listFirms`(160)/`listCoordinators`(173); 5 further actions (210-241); nested cards use `client.get`/`put` (44,57,104)                                                                        |
+| `InvitationsPage.tsx`    | 5 top-level pieces ← 5 real calls (81-91); 6 further actions (295-914)                                                                                                                                                           |
+| `LoginPage.tsx`          | standalone `login()` (import line 2, called line 17)                                                                                                                                                                             |
+| `MissionBoardPage.tsx`   | `cards`/`phase` (83-84) ← `client.getMissionBoard`(90). Noted, not a defect: the `RAIL` nav buttons (182-197) have no `onClick` — inert by design, previously disclosed                                                          |
+| `NationalReportPage.tsx` | `report`/`sections`/`pre`/`authoritativeRunId` (48-52) ← 3 real calls (66-79); 4 further actions (197-402). The missing sentence-generator is an honest UI disclosure of an already-flagged, out-of-scope gap, not a page defect |
+| `RendererPage.tsx`       | `items` (17) ← `client.getInstrumentItems`(26). `answers` (18) is intentionally ephemeral preview-input state — the page's own header says it is not a respondent journey                                                        |
+| `ScoresSignoffPage.tsx`  | `runs`/`signoffs`/`scores` (47-49) ← 2 real calls (60,65); 4 further actions (146-440)                                                                                                                                           |
+| `SurveysPage.tsx`        | `data` (25) ← `client.getInstruments`(33); `requestFreeze`(74), `decideFreeze`(94)                                                                                                                                               |
+| `WordingPage.tsx`        | `areas`/`state` (43,46) ← `client.get`(55,78); `client.post` drafts/publish (113,137)                                                                                                                                            |
+
+**Verdict: all 12 are genuinely, fully real.** No gap survived this level of scrutiny.
+
+### Three of the four Category-1 mockups fixed — same rigor as the five before them
+
+`PeopleAccessPage.tsx`, `ResponsesPage.tsx` and `UnfinishedPage.tsx` are now live-wired. Each real
+backend (`people-access-service.ts`, `responses-monitoring-service.ts`,
+`reminder-timing-service.ts`) already existed and was already tested at the domain layer — this was
+wiring, not a rebuild.
+
+- **`PeopleAccessPage.tsx`** now takes `{client, viewer}` (was zero props). The hardcoded `SEED`
+  array is gone; `client.getPeople()`/`addPerson()`/`updatePersonRights()`/`removePerson()` (new
+  `AdminClient` methods, `apps/api/src/routes/people.ts`, pre-existing) back the list, add, edit and
+  remove actions. `ME_EMAIL` is gone — self-identification (hiding the self-removal action) now uses
+  the real `viewer.email`. The `criticalActions` table now renders the server's own list rather than
+  a duplicated local constant. The two-approver floor and self-removal refusals are unchanged
+  server-side rules (already live-verified over real HTTP in the previous pass); this pass confirms
+  they now reach the UI: a real add persisted past reload, and the client-side "cannot remove"
+  hints track the server's real `approvers` count, not a client-recomputed guess from fake data.
+- **`ResponsesPage.tsx`** now takes `{client, editionId}`. `CARDS`/`DEPS` are gone;
+  `client.getResponsesMonitor(editionId)` backs every segment card and dependency row, rendering the
+  server's own `greyBarPct`/`redMarkerPct`/`completeFirm` fields directly rather than recomputing
+  them from fake numbers.
+- **`UnfinishedPage.tsx`** now takes `{client, editionId}`. `DATA`/`STOPS`/`INITIAL_SCHEDULE` are
+  gone; `client.getUnfinished(editionId)` backs the stats and drop-off histogram. The schedule
+  editor — the part flagged as needing REAL persistence, not just a local toggle — now mutates a
+  draft only, with an explicit "Save schedule"/"Save cap" action calling
+  `client.setReminderSchedule`/`setReminderCap` (`PUT /reminders/schedule`, `PUT /reminders/cap`,
+  pre-existing routes). Two fields the old mockup showed (`started`, `done`, `daysLeft`) have no
+  real backing anywhere in the domain layer and are not reproduced with invented substitutes — the
+  real `UnfinishedStats` type only has `unfinished`/`reachable`/`unreachable`, so that is what is
+  shown; likewise the real `DropoffBucket` carries a raw `questionId`, not a human-written label, so
+  the raw code is shown rather than inventing prose for it.
+
+New regression tests (source-scan, matching `InvitationsPage.test.ts`'s convention — no DOM test
+infrastructure exists in this repo): `PeopleAccessPage.test.ts`, `ResponsesPage.test.ts`,
+`UnfinishedPage.test.ts`, each asserting the old fixture identifiers are gone, the page takes real
+props, and every real `client.*` method is actually called.
+
+**Live-verified in a real browser, freshly seeded `cis_dev`:**
+
+- Added a real person via the UI; the roster showed the real new row (not a fixture) and reloading
+  the page did not lose it.
+- Responses showed real dependency-row IDs straight from the database (`FIRM_TIER_HEATMAP`,
+  `IEI_ICI_BY_SEGMENT`, `LOCAL_VS_FOREIGN` — none of which existed in the old mockup's six
+  hardcoded rows), and real segment-card numbers (0 of 80, 66 days left) matching the fresh seed.
+- On Unfinished, toggled the first reminder step off and saved — the "2 are currently on" count
+  updated immediately. **Reloaded the entire page from scratch** and re-navigated back: the step
+  was still "Off". This is the specific proof the task asked for — the schedule editor persists a
+  real change server-side, it does not just mutate local state that resets on refresh.
+
+### `FirmResultsPage.tsx` — decision made, then a bigger blocker found underneath it
+
+Per explicit instruction, the auth-model question was not resolved unilaterally. Asked directly:
+should the admin app grow a new operator-permission-gated route reusing `firm-results-service.ts`
+(the original recommendation), leave the coordinator-access-code route as the only path and remove
+this page from the admin app, or a more conservative gated variant of the first option.
+
+**Decision made: move the real results view into `FirmPortal.tsx`** — the surface that already
+holds the firm-coordinator's own space, not the operator admin app — and remove `FirmResultsPage.tsx`
+and its "Firm results" tab from the operator-facing pages entirely. The reasoning: `firm-results.ts`'s
+route was built for a coordinator caller from day one (`x-coordinator-access-code` header); an
+operator-facing detour was never authorized by the artefact and would be a new privacy decision, not
+a wiring fix. Finishing what Phase 14 built means connecting it to the coordinator, not to the
+operator.
+
+**Investigating that move surfaced a reason to stop, per the task's own instruction not to proceed
+past a wrong premise:** `FirmPortal.tsx` (`apps/admin/src/firm/FirmPortal.tsx`) is not, in fact, a
+real coordinator-authenticated surface to attach a results section to. It is itself a complete,
+1,398-line, entirely local-state mockup — a hardcoded `ACCOUNTS` dictionary of three demo email/PIN/
+code combinations stands in for the whole claim-and-sign-in flow, seat assignment mutates only
+`useState`, outreach volumes are hardcoded (`148`/`38`/`26`/…), and the "closed" phase's own "Open
+your results" button is not even wired to fake data — it calls `alert(...NOT_STARTED...)`. A direct
+check confirms **zero** `client.`/`fetch(` calls anywhere in the file. It is rendered from its own
+separate entry point (`apps/admin/src/main.tsx`, `<FirmPortal />` directly), outside `App.tsx`'s
+routing entirely, which is why the whole-directory sweep (scoped to `apps/admin/src/pages`) never
+saw it.
+
+Worse for the specific plan: the real backend's own routes are honest about the same gap. The
+firm-portal API routes' header comment states outright: "Seat and outreach management are
+operator-authenticated for now, matching the Phase 3 firm-team routes (**a firm-coordinator login
+surface is a later phase**)." There is no real coordinator session or login mechanism anywhere in
+this codebase — `firm-results.ts`'s raw access-code header is the only coordinator-credential check
+that exists, and nothing issues, stores, or verifies a coordinator session around it. "Give
+`FirmPortal.tsx` a results tab that calls the existing route with the access code already used
+elsewhere in the portal" is not achievable as stated, because no real access-code flow exists in
+the portal to reuse — the portal's own code check is a hardcoded `=== acct.code` string comparison
+against the fixture dictionary, not a real credential check of any kind.
+
+**Not resolved here — reported, per instruction, rather than built on a false premise.** This is a
+sixth instance of the local-state-mockup defect class, larger than any found so far (it exceeds
+`InvitationsPage.tsx`, the previous largest), and it blocks the chosen resolution for
+`FirmResultsPage.tsx` until it is itself wired — at minimum, a real coordinator claim/sign-in flow
+against `firm-portal-service.ts`'s real, tested domain logic. `FirmResultsPage.tsx` and its admin
+nav tab are **not yet removed**, pending confirmation of how to sequence this against a genuine
+`FirmPortal.tsx` fix — removing the tab now would leave firm results reachable from nowhere in the
+running application.
+
+### Verification
+
+Full suite: `pnpm test` — **47 files, 450 tests, all green** (up from 44/437: +3 new admin-side
+regression test files / +13 tests — no new domain/HTTP tests, since the routes these three pages
+wire to are pre-existing and already covered there) against a live Postgres. `pnpm lint`,
+`pnpm typecheck`, `pnpm turbo build` all clean. `pnpm audit` unchanged — the same three pre-existing
+devDependency advisories as every prior phase.
+
+### Running list of open items needing a decision (updated)
+
+1. **National report approval is currently unreachable end-to-end** — unchanged, out of scope.
+2. **`FirmPortal.tsx` is a complete, unwired local-state mockup** (newly found, this pass) — the
+   platform's largest confirmed instance of the defect class, and now also a hard blocker for
+   `FirmResultsPage.tsx`'s chosen resolution. No real coordinator login/session mechanism exists
+   anywhere in this codebase yet. Needs its own dedicated pass before firm results can move there.
+3. **`FirmResultsPage.tsx`** — decision made (results belong in `FirmPortal.tsx`, not the operator
+   admin app), but not yet executed pending item 2. The page and its admin nav tab remain in place
+   for now so the capability stays reachable from somewhere.
+4. **`RegulatorsPage.tsx`** — unchanged: an honestly, previously self-disclosed deliberate scope
+   decision, not a hidden gap.
+
+Removed from this list, now resolved: `PeopleAccessPage.tsx`, `ResponsesPage.tsx`, and
+`UnfinishedPage.tsx`'s mockup defects (all three above).
+
+## Firm Portal Rebuild — Real Coordinator Authentication (a dedicated remediation, not part of the sweep)
+
+Confirmed by direct product-owner sign-off as an implementation gap against already-approved,
+controlled designs — **not** new scope, and materially larger than the operator-screen sweep above,
+so it gets its own pass. It closes the blocker the previous section left open: `FirmPortal.tsx` was a
+1,398-line, entirely local-state mockup with no real coordinator identity anywhere in the platform,
+so `FirmResultsPage.tsx`'s chosen resolution (move results into the coordinator's own portal) was
+undoable until this existed.
+
+### Two premise corrections, stated plainly before anything else
+
+1. **No artefact source file exists anywhere in this repository.** Exhaustively grepped for
+   `UX-FRM-001`, `UX-FRM-007`, `UX-FRM-RES-001`, `UX-X-001`, `v14.10`, and every other artefact ID
+   this task named — only this README references them, always as labels, never as a source-of-truth
+   document. "Verify directly against the artefact, never infer from the current file" is only
+   partially achievable as a result: copy below is carried over **verbatim** from the earlier
+   prototype file wherever it doesn't conflict with a stated rule (that file's own header claimed a
+   faithful v14.5 port, and its wording reads like real, deliberate design work, not placeholder
+   text), and rebuilt from the real backend's own contract where the prototype's behaviour had no
+   real backing at all (see the claim flow, below). This is flagged rather than silently presented as
+   independently verified.
+2. **The S1/S2/S3 entry point did not exist at all**, contrary to the assumption that Part 6 "should
+   require no new survey-runtime work." `RespondentApp.tsx` had only a `'firm-stub'` dead end. The
+   correction: the survey-**runtime** layer needed zero changes (`startJourney` was already fully
+   generic — a firm seat is not a special case there), but a new, purely additive UI entry point
+   (`FirmSeatEntry.tsx`) and a small, real seat-linking wiring were still required and are now built.
+
+### Part 1 — Real coordinator authentication
+
+Email + PIN only, never a username/password account (the one fixed design decision the engineering
+requirement itself states; everything else about verification/lockout/reuse is left open and not
+invented here). Design decisions, for the record:
+
+- **argon2id** for PIN hashing, reusing `packages/auth/src/password.ts` unchanged (`hashPassword`/
+  `verifyPassword`) — the exact scheme operator passwords already use.
+- **A distinct JWT claim**, not a shared session shape: `SessionPayload` (operator) now carries an
+  explicit `kind: 'operator'`; a new `CoordinatorSessionPayload` carries `kind: 'coordinator'` and
+  resolves to `firm_coordinators.id`, **never** `users.id`. `apps/api/src/plugins/auth-plugin.ts`'s
+  `authenticate` decorator now explicitly rejects a coordinator-kind token (and the new
+  `authenticateCoordinator` decorator explicitly rejects an operator-kind one) — both tokens are
+  signed with the same secret, so a valid signature alone was never enough; the two identity spaces
+  are now structurally incapable of being confused, not just conventionally kept apart.
+- **8-hour token lifetime**, matching the operator convention exactly (`sign: {expiresIn: '8h'}`,
+  the same `fastifyJwt` registration).
+- **Rate limiting** on `POST /portal/auth/login` reuses the identical `RATE_LIMIT_AUTH_MAX`/
+  `RATE_LIMIT_AUTH_WINDOW_MS` env vars and route-level config shape as operator `/auth/login`.
+- **Anti-enumeration**: `coordinatorLogin` always does real hashing work, against a dummy argon2id
+  hash when no candidate coordinator exists or none has a PIN set, the same technique operator login
+  already uses (always calling `verifyPassword` regardless of whether a user was found).
+- **PIN rotation requires the current PIN**, per the one explicit stated rule — enforced by the
+  pre-existing, already-correct `setCoordinatorPin` (unchanged), now reachable over HTTP at
+  `POST /portal/auth/pin`.
+- A coordinator's email is unique **per organization**, not globally (`uniq_active_coordinator_email`)
+  — the schema deliberately allows the same email to coordinate more than one firm (e.g. a
+  consultant). `coordinatorLogin` tries every active coordinator for that email against the supplied
+  PIN rather than assuming a single match; this was originally missed and then found and fixed by
+  live verification (see "Bugs found by live verification", below).
+
+New: `packages/domain/src/coordinator-auth-service.ts` (`coordinatorLogin`, `CoordinatorAuthError`,
+`InvalidCoordinatorCredentialsError`), `getActiveCoordinatorsByEmail`/`getCoordinatorPinHash` query
+additions, `apps/api/src/routes/firm-coordinator-auth.ts` (`POST /portal/auth/login`,
+`POST /portal/auth/pin`, `GET /portal/auth/lookup` — see Part 3).
+
+### Part 2 — Coordinator-portal routes, reusing the existing domain services unchanged
+
+`apps/api/src/routes/firm-coordinator-portal.ts` wraps `firm-team-service.ts` and
+`firm-portal-service.ts` — both already correct, already tested — behind `authenticateCoordinator`
+instead of rebuilding either. Every route is **self-scoped**: `organizationId` always comes from
+`request.coordinatorSession.organizationId` (the session token), never a client-supplied parameter,
+and a lead-handover's acting coordinator is always the session's own id, never a request body field.
+HTTP tests assert this directly — one firm's token cannot see another firm's coordinators or land a
+seat assignment outside its own organization, and a coordinator token is still refused on the
+equivalent operator-only route. "Current edition" resolves the same way the existing public
+journey-context and previous-editions routes already do (the open edition, else the most recent) —
+a coordinator's portal has no edition picker of its own.
+
+### Part 3 — `FirmPortal.tsx` rebuilt against the real backend
+
+The claim flow drops the mockup's fictional manually-typed invitation code entirely: the real
+`claimSpace` takes no code parameter at all, and a second claimant is simply redirected to sign in —
+`AlreadyClaimedError`'s own message ("This firm already has a space. Sign in instead.") is used
+**verbatim**, not paraphrased. Two small, real, necessary public endpoints back what the prototype
+faked: `GET /firm/directory` (names + ids only — a stockbroking firm's name is not confidential; it
+is the reason the study exists) replaces a hardcoded `FIRMS` array, and `GET /portal/auth/lookup`
+(does this email belong to a sign-in-capable coordinator, without ever disclosing which firm) backs
+the email-first branch the artefact's own copy already commits to.
+
+Team, seats, and outreach are wired to Part 2's routes (real add/handover/remove, real seat
+assign/replace with the real replacement-cost warning text, real per-segment outreach volumes —
+`ensureOutreachLinks`/`getOutreachVolumes`, unchanged). Results call the existing, **unchanged**
+coordinator-access-code route (`firm-results.ts`) with the signed-in coordinator's own `accessCode`
+from a new `GET /portal/me` — no backend change there, per the explicit instruction not to touch
+that route or resolve the coordinator-vs-all-three-respondents question (still open, still not
+resolved here).
+
+"Phase" (setup/running/closed) is derived from real state, not a local demo toggle — see "Bugs found
+by live verification" for a correction made to that derivation mid-build.
+
+`apps/admin/src/firm/portalModel.ts` retires `notBuiltForSeat` (a seat row now links to a real entry
+point) and `DESTINATIONS.team`/`.results` (both now built into this surface — keeping either label
+would be the exact same stale "owned elsewhere" defect already fixed once before, in Mission Board).
+
+### Part 4 — Firm results wired in; `FirmResultsPage.tsx` removed
+
+`apps/admin/src/pages/FirmResultsPage.tsx` and its "Firm results" operator admin tab are deleted
+entirely. It never had a legitimate reason to sit behind operator login once the coordinator-
+authenticated surface that should always have owned it actually exists.
+
+### Part 5 — All five `ErrorState` access-failure states, live-reachable
+
+Spread across the two new real surfaces, each with a genuine trigger, reusing the one Phase 18
+component — no second implementation:
+
+| State                  | Real trigger                                                                                                                                                                                                                                                           |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `expired_link`         | An unknown seat link token, **or** a never-assigned ('empty') seat's token — both now resolve identically, a fix made after live verification found the second case fell through to a raw inline error instead (see below)                                             |
+| `no_unfinished_survey` | A started seat's link revisited with no local session to resume — the same accepted limitation institutional entries already have                                                                                                                                      |
+| `access_denied`        | `FirmResultsAccessError` (403) from the unchanged `firm-results.ts` route — verified via `firm-results.test.ts`'s existing "Coordinator-only access" test plus code review, since a coordinator's own normal flow cannot organically trigger it against their own firm |
+| `service_unavailable`  | Any network/5xx failure loading `/portal/me` or the seat-entry context, in either surface                                                                                                                                                                              |
+| `participation_closed` | A seat link opened once the edition has closed (`editionStatus !== 'open'`) and that seat was never completed                                                                                                                                                          |
+
+### Part 6 — A real entry point for an assigned S1/S2/S3 seat
+
+`apps/admin/src/journey/FirmSeatEntry.tsx`, reached via `/survey?firmSeat=<token>`, mirrors
+`InstitutionalEntry.tsx`'s shape (a single named context, no firm-rating step) rather than
+`RetailEntry.tsx`'s — `requiresConsent()` covers only S5a/S5b, not S1/S2/S3, so there is no consent
+gate and, consequently, no recovery token either: the same accepted limitation institutional entries
+already have (closing the browser mid-survey cannot be resumed from this same link).
+
+A small, genuinely necessary schema addition: `seat_assignments.link_token` (migration
+`20260924000000_phase25-firm-seat-link-token.js`), regenerated on every seat **assign** and every
+**clear**. Without it, the seat's own stable `id` would have had to serve as the link, and a
+reassigned seat's old link would keep resolving — silently letting a _replaced_ occupant land in
+whatever gets assigned to that seat next, breaking the exact promise `replacementCost`'s own warning
+text already makes ("Their link stops working straight away"). New domain functions
+(`getSeatEntryContext`, `startSeatEntry`, `completeSeatEntry`) and a new public
+`apps/api/src/routes/firm-seat-entry.ts` (`GET .../context`, `POST .../start`,
+`POST .../complete`) wrap this. `RespondentApp.tsx`'s dead `'firm-stub'` screen and its `onFirmCta`
+indirection are removed — `PublicLanding.tsx`'s "Firm participation" link now goes straight to
+`/firm`, a real destination.
+
+### Bugs found by live verification (not unit/HTTP-testable — needed the whole real flow)
+
+A full live run — real browser, real dev Postgres, no mocks — through claim → sign in → reload →
+assign three seats → add a second coordinator → hand over lead → reload → open a real assigned
+seat's link in a **separate, unauthenticated browser context** → answer all 11 real questions of a
+real S2 (Compliance) survey → submit → reload the coordinator's page → see the seat genuinely show
+Complete, surfaced three genuine defects, each requiring the full real pipeline to reproduce (fixed,
+each with a regression test where the layer below the UI could express it):
+
+1. **Coordinator login picked whichever row an email resolved to first**, not necessarily the one
+   whose PIN was supplied — reproducible only because the live run happened to reuse an email across
+   two firms and both attempts to sign in "worked" against the wrong firm. `getCoordinatorByEmail`
+   (singular) became `getActiveCoordinatorsByEmail` (plural); `coordinatorLogin` now tries every
+   candidate's PIN hash rather than assuming a single match. New domain test:
+   `coordinatorLogin > signs in the right coordinator when the same email is active at two different
+firms`.
+2. **Phase (setup vs. running) was derived from the edition's own status**, so a firm was shown
+   "running" the instant the edition opened for collection, with zero of its three seats assigned —
+   only visible once a real edition was already open in the seeded dev database. A firm's own setup
+   progress is independent of the edition's status; phase now derives from whether all three seats
+   are actually assigned (`seats.every(s => s.state !== 'empty')`), with only "closed" still tracking
+   the edition directly.
+3. **An unassigned ('empty') seat's link let a visitor attempt to start a survey** — only the
+   backend's own state guard (`startSeatEntry` requiring `'invited'`) stopped it, surfacing as a raw
+   inline error rather than the correct explanation. `FirmSeatEntry.tsx` now treats `'empty'` the
+   same as an unknown token (`expired_link`) — confirmed by visiting both in a real browser and
+   seeing the identical, correct "Expired continuation link" screen.
+
+### Verification
+
+Full suite: `pnpm test` — **52 files, 474 tests, all green** against a live Postgres (up from 47/450:
+Task D adds 4 new domain/HTTP test files — `coordinator-auth-service.test.ts`,
+`firm-coordinator-auth.test.ts`, `firm-coordinator-portal.test.ts`, `firm-seat-entry.test.ts`
+(domain + HTTP) — plus one existing test file rewritten in place, `portalModel.test.ts`, to match the
+rebuilt model). `pnpm lint`, `pnpm typecheck`, `pnpm turbo build` all clean. `pnpm audit` unchanged —
+the same three pre-existing devDependency advisories (`js-yaml`, transitive via `eslint`) as every
+prior phase.
+
+Live end-to-end, real browser (`chromium`) against a freshly-seeded `cis_dev`, no mocks anywhere —
+the full run described under "Bugs found by live verification" above, plus each of the three
+browser-reachable `ErrorState` triggers confirmed showing the correct, real screen (`expired_link`
+for both an unknown token and an empty seat; `no_unfinished_survey` for a started seat revisited),
+and the results route's genuine `409 "No signed-off scoring run exists for this edition yet"`
+confirmed reaching the exact contract the frontend consumes (same endpoint, same
+`x-coordinator-access-code` header, the coordinator's own real access code). Full results-content
+verification (indices actually rendering `you`/`industry`/`standing` values) is not separately
+re-proven here — `firm-results-service.ts` and its 9 domain tests already prove that computation;
+this pass proves only that the portal reaches it correctly, which is what changed.
+
+### Running list of open items (updated)
+
+1. **National report approval is currently unreachable end-to-end** — unchanged, out of scope.
+2. **`RegulatorsPage.tsx`** — unchanged: an honestly, previously self-disclosed deliberate scope
+   decision, not a hidden gap.
+3. **Coordinator-vs-all-three-respondents access to firm results** — still the interim default
+   (coordinator-only), explicitly not resolved by this remediation per instruction.
+4. **A coordinator with no PIN set yet has no self-service recovery path.** This can only happen for
+   a coordinator an OPERATOR added directly (`addCoordinator`/`createLeadCoordinator` via the
+   operator-authenticated `firm-team.ts` routes never set a PIN) — a coordinator who claims their own
+   space always sets one in the same action (`claimSpace` calls `setCoordinatorPin` immediately).
+   Building an email-verification or magic-link subsystem to cover this narrow case was out of this
+   remediation's explicit scope (auth, portal wiring, team/results/seat-entry — not a new identity-
+   recovery mechanism); the portal's "email exists, no PIN" state is flagged as `'unclaimed'` from
+   `/portal/auth/lookup`, same as a genuinely unrecognised email, so nobody is shown a broken control.
+5. **Outreach link consumption does not exist yet** — `ensureOutreachLinks`/`getOutreachVolumes` are
+   real and now wired into the portal (real per-segment tokens, real volume counts), but nothing in
+   the platform increments `opens`/`starts`/`finishes` for a client who actually follows one, or
+   threads the link's segment/firm into `startJourney`'s `recruitingFirmId`. This is a pre-existing
+   gap this remediation did not introduce and was not asked to close (Task D's Part 6 scope was the
+   S1/S2/S3 seat entry point specifically, not the client-facing outreach-link landing page) — the
+   outreach numbers shown in the portal are honestly real, just honestly always zero today.
+
+Removed from this list, now resolved: `FirmPortal.tsx` being a complete unwired mockup;
+`FirmResultsPage.tsx`'s decision being made but not executed (Part 4, above, executes it).
+
+## Outreach-Link Consumption — the Eighth Instance of the Same Defect Class
+
+Closes the "outreach-link consumption does not exist yet" item left open above.
+`incrementOutreach` (`packages/db/src/queries/outreach.ts`) had zero callers anywhere outside its own
+test file — confirmed by an exhaustive grep. `createOutreachLink`/`ensureOutreachLinks`/
+`getFirmOutreachBySegment` were all real and tested, but nothing in the respondent-facing entry flow
+(retail or either institutional variant) ever called it. A real investor could follow a real firm's
+real outreach link, complete the entire survey, and the link's opens/starts/finishes would stay at
+zero permanently — the same "built and tested in isolation, never wired" defect this whole programme
+has now found and fixed eight times (Mission Board, ScoresSignoffPage, NationalReportPage,
+FirmReportsPage, InvitationsPage, PeopleAccessPage/ResponsesPage/UnfinishedPage, the firm portal
+rebuild's coordinator auth, and now this).
+
+**A second, compounding gap in the same feature**: the link the portal _displayed_ to a coordinator
+was itself fabricated — `OutreachView` built `${editionId}-${segment}` locally instead of reading any
+real `outreach_links.token`. Wiring the increment calls alone would not have been enough; the portal
+had to start showing the real link too, or there would be nothing real for a respondent to follow in
+the first place.
+
+### What was wired
+
+- **Segment → instrument mapping**, confirmed by `segmentForInstrument`
+  (`packages/domain/src/funnel-service.ts`) and `packages/domain/tests/funnel-segment.test.ts`:
+  `individual` → S4 (retail); `local_institutional` → I-SEC/I-NGX/I-CSCS (all three — the doc comment
+  on `segmentForInstrument` is explicit that these are Nigerian bodies, hence local) **and** S5a;
+  `foreign_institutional` → S5b, the only foreign-institution instrument. Note the enum spelling
+  mismatch between `OutreachSegment` (`'local_institutional'`/`'foreign_institutional'`, with the
+  trailing "-al") and `FunnelSegment` (`'local_institution'`/`'foreign_institution'`, without it) — no
+  shared conversion existed before this fix; the wiring translates explicitly rather than assuming
+  the strings line up.
+- **A third confirmed gap found while mapping the above: S5b (foreign institutional) had NO real UI
+  entry point at all**, anywhere — only mentioned in code comments, never reachable from any screen.
+  Same defect class as the S1/S2/S3 seat entry point found in the previous remediation. Fixed
+  minimally: `InstitutionalEntry.tsx` already renders any instrument code generically (its `VARIANTS`
+  lookup already falls back to "Institutional questionnaire" copy for an unrecognised code — no
+  invented title was needed), so this needed no new business logic, only a direct route to it,
+  bypassing the I-SEC/I-NGX/I-CSCS regulator-picker nav (which doesn't apply — there is only one
+  foreign instrument, not three to choose between).
+- `packages/db/src/queries/outreach.ts`: new `getOutreachLinkByToken` — the one new query function
+  this fix needed (no others were added; `incrementOutreach`'s signature is unchanged).
+- `packages/domain/src/firm-portal-service.ts`: `resolveOutreachToken` (returns exactly
+  `{editionId, organizationId, segment}` — never counts, never the token itself, never anything
+  respondent-related), `recordOutreachEvent` (a thin, unchanged wrapper over `incrementOutreach`,
+  silently no-opping on an unknown token — best-effort telemetry on a navigation that has already
+  happened, never a gate on it), `listOutreachLinksForFirm` (the firm's own coordinator-authenticated
+  read of its own links, **with** their real tokens).
+- `apps/api/src/routes/outreach-entry.ts` (new, public): `GET /outreach/:token/context`,
+  `POST /outreach/:token/event`. `GET /portal/outreach` now returns real per-segment tokens (via
+  `listOutreachLinksForFirm`) instead of counts alone, so the coordinator's displayed link is the one
+  a respondent following it actually reaches.
+- `apps/admin/src/journey/RespondentApp.tsx`: `?ref=<token>` resolves via the new context route,
+  fires a real `'opens'` event, and routes to the matching entry screen by segment. `'starts'` fires
+  the instant a respondent record is actually created (mirroring exactly how the seat entry point
+  already records its own `'started'` transition); `'finishes'` fires on real submission, mirroring
+  the existing `firmSeatLinkToken` → `firmSeatComplete` pattern exactly. An unknown or stale `ref` is
+  never a gate — on failure it falls straight through to the ordinary landing page, matching the
+  outreach copy's own pre-existing promise ("the link is a convenience and a measure, not a gate").
+
+### A real privacy decision made along the way, not silently defaulted
+
+`recruitingFirmId` is deliberately left `null` for a retail/institutional respondent recruited via an
+outreach link — this was the one place where "just wire it" would have been wrong. `startJourney`
+already accepts `recruitingFirmId`, and setting it to the outreach link's `organizationId` looked like
+the obvious move. But `getFirmRespondentStatuses` (`packages/db/src/queries/responses.ts`, the
+"respondent completion STATUS only" accessor `firm-team.ts`'s `/respondent-status` route already
+exposes) reads that SAME column, filtered by organization — it was built for a firm to see its own
+**named** S1/S2/S3 seat holders, people the firm itself typed the name and email for. Reusing it for
+an anonymous outreach-recruited client would have surfaced that client's individual respondent id and
+submission status to the firm — precisely the "no invitation count, no client list, counts only"
+guarantee this whole feature exists to protect. So it is not wired: only the volume counters are.
+
+### Verification
+
+Full suite: `pnpm test` — **53 files, 485 tests, all green** (up from 52/474: +6 domain tests —
+`resolveOutreachToken`'s exact three-key shape, `OutreachLinkNotFoundError`, a real event sequence
+incrementing only its own segment, an unknown token no-oping silently, the firm's own token read
+matching what the public route resolves, and — structurally — that `outreach_links` still carries no
+respondent/response column after a real event; +5 HTTP tests for the new routes and the changed
+`GET /portal/outreach` contract). `pnpm lint`, `pnpm typecheck`, `pnpm turbo build` all clean.
+`pnpm audit` unchanged — the same three pre-existing devDependency advisories as every prior phase.
+
+Live end-to-end, real browser, freshly-seeded `cis_dev`, no mocks: claimed a firm, assigned all three
+seats to unlock outreach, opened the "Invite your clients" view and read the **real** link shown for
+each of the three segments (not a fabricated one) straight out of the actual email/text templates.
+In three separate, unauthenticated browser contexts:
+
+- **Individual investors** (retail, S4): opened the real link, picked a firm to rate, answered all 14
+  real survey items (including a comparison grid and a "select up to 3, then rank the greatest"
+  compound control), submitted. Opens/starts/finishes: **1/1/1**.
+- **Nigerian institutions** (local institutional, routed to I-SEC by default): opened the real link,
+  entered an institution name, answered the full real survey, submitted. Opens/starts/finishes:
+  **1/1/1**.
+- **Institutions abroad** (foreign institutional, S5b — the newly-built entry point): opened the real
+  link and started a real journey, deliberately left unsubmitted to prove opens/starts increment
+  independently of finishes. Opens/starts/finishes: **1/1/0**.
+
+The coordinator then reloaded the whole outreach page from scratch (not just re-read in-memory state)
+and the link-performance table showed exactly these numbers, read straight from the database via
+`getOutreachVolumes` — proof the counts are genuinely persisted, not client-side arithmetic.

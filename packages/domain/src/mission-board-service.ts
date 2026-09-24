@@ -122,20 +122,20 @@ export function remediationForCohort(cohort: RemediationCohort): {
       return { label: 'Bulk final reminder', audienceId: 'upload', generated: true };
     case 'no_link_activity':
       return {
-        label: 'Bulk nudge — knowable without a client list',
+        label: 'Bulk nudge',
         audienceId: 'upload',
         generated: true,
       };
     case 'institutional_all_firms':
       return {
-        label: 'Message all participating firms — the relevant cohort cannot be identified',
+        label: 'Message all participating firms',
         audienceId: 'upload',
         generated: true,
       };
     case 'bounced':
       // No bulk action anywhere to send — Phase 9 lists/exports for CIS.
       return {
-        label: 'Export the bounced addresses for CIS — nowhere to bulk-send',
+        label: 'Export the bounced addresses for CIS',
         audienceId: null,
         generated: false,
       };
@@ -488,8 +488,7 @@ export function evaluateBoard(ctx: BoardContext): MissionCard[] {
     ];
     for (const e2 of CONDITIONS) {
       if (e2.engine !== 2 || !enabled(e2.id)) continue;
-      if (dependsOnSegment(e2, seg))
-        consequence.push(`${e2.what} (folded in — not a separate card)`);
+      if (dependsOnSegment(e2, seg)) consequence.push(e2.what);
     }
     const rem = remediationForCohort(cond.cohort);
     const impact = expectedImpact(cohortCountFor(ctx, cond.cohort));

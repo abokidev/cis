@@ -35,6 +35,8 @@ import {
   submitInvitationRequest,
   getInvitationRequests,
   resolveInvitationRequest,
+  resolveFirmNamesToOrgs,
+  getBouncedRecipients,
   InvitationsError,
 } from '../src';
 import { getTestPool, runMigrations, truncateAllTables, closeTestPool } from '../../db/tests/setup';
@@ -310,6 +312,68 @@ describe('Bounce handling — no resend, listing only', () => {
     // No resend function exists in the domain surface.
     const names = Object.keys(domain).join(',').toLowerCase();
     expect(names).not.toMatch(/resend/);
+  });
+});
+
+/**
+ * InvitationsPage live-wiring fix — this was a real gap found while wiring:
+ * `resolveFirmNameToOrg` existed and was never called from anywhere, so an
+ * uploaded CSV row had no way to carry a real organizationId, which meant the
+ * fourth file-validation check (already sent this template) could never fire
+ * for an upload the way it already does for a firm-audience send. This batch
+ * variant fetches the register once instead of once per row.
+ */
+describe('resolveFirmNamesToOrgs — batch firm-name resolution for uploads', () => {
+  it('resolves an exact, case-insensitive match and leaves an unmatched name null', async () => {
+    const org = await firm('verify-upload-resolve');
+    const resolved = await resolveFirmNamesToOrgs(pool, [
+      org.displayName.toUpperCase(),
+      'No Such Firm At All',
+    ]);
+    expect(resolved[org.displayName.toUpperCase()]).toBe(org.id);
+    expect(resolved['No Such Firm At All']).toBeNull();
+  });
+
+  it('makes the already-sent check fire for an uploaded row, the same as a firm-audience send', async () => {
+    const org = await firm('verify-dedup-upload');
+    const tpl = await templateId('First invitation');
+    await markInvited(org.id, tpl);
+
+    const resolved = await resolveFirmNamesToOrgs(pool, [org.slug]);
+    const check = await validateUploadFile(pool, {
+      editionId,
+      templateId: tpl,
+      rows: [{ firmName: org.slug, email: 'x@example.com', organizationId: resolved[org.slug] }],
+    });
+    expect(check.validRows).toHaveLength(0);
+    expect(check.problems).toEqual([{ kind: 'already_sent', row: 1, value: 'x@example.com' }]);
+  });
+});
+
+describe('getBouncedRecipients — the same listing the domain surface already exposed with no route', () => {
+  it('lists exactly the bounced recipients for a batch', async () => {
+    const tpl = await templateId('First invitation');
+    const batch = await createBatch(pool, {
+      editionId,
+      templateId: tpl,
+      audienceId: 'upload',
+      audienceLabel: 'Uploaded list',
+    });
+    const ok = await insertRecipient(pool, {
+      batchId: batch.id,
+      editionId,
+      recipientEmail: 'ok@x.example',
+    });
+    const bad = await insertRecipient(pool, {
+      batchId: batch.id,
+      editionId,
+      recipientEmail: 'bad@x.example',
+    });
+    await recordDelivery(pool, ok.id, { deliveryState: 'delivered' });
+    await recordDelivery(pool, bad.id, { deliveryState: 'bounced' });
+
+    const bounced = await getBouncedRecipients(pool, batch.id);
+    expect(bounced.map((r) => r.recipientEmail)).toEqual(['bad@x.example']);
   });
 });
 

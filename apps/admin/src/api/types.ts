@@ -1,5 +1,6 @@
 // Types mirroring the Fastify route zod schemas (§4 of the Phase 1 brief).
 // Dates cross the wire as ISO strings.
+import type { EditionPhase } from '../editionPhase';
 
 export type EditionStatus = 'draft' | 'open' | 'locked' | 'archived';
 
@@ -63,10 +64,261 @@ export interface InstrumentsResponse {
   drgOps: DrgOpsQuestion[];
 }
 
+// Mirrors @cis/shared-types' MissionCard/MissionSeverity — the mission board
+// endpoint's real, live-computed output (UX-OPS-001). No illustrative or
+// example content belongs here; every field is a real evaluated value.
+export type MissionSeverity = 1 | 2 | 3 | 4 | 5 | 6;
+
+export interface MissionCard {
+  conditionId: number;
+  severity: MissionSeverity;
+  whatIsAtRisk: string;
+  evidence: string[];
+  consequence: string[];
+  why: string | null;
+  recommendedAction: { label: string; cohort: string; audienceId: string | null } | null;
+  expectedImpact?: string;
+  projectedShortfall: number;
+  kind?: 'mission' | 'methodology_block';
+}
+
+export interface MissionBoardResponse {
+  cards: MissionCard[];
+  phase: EditionPhase;
+}
+
+// ─── Scoring & sign-off (UX-ADM-004) ────────────────────────────────────────
+
+export type CalculationRunStatus = 'pending' | 'running' | 'complete' | 'failed';
+
+export interface CalculationRun {
+  id: string;
+  editionId: string;
+  runType: 'eligibility' | 'scoring' | 'comparison';
+  status: CalculationRunStatus;
+  startedAt: string;
+  finishedAt: string | null;
+  createdAt: string;
+}
+
+export type ScoringSignoffState = 'requested' | 'signed_off' | 'superseded' | 'rejected';
+
+export interface ScoringCheckedAccount {
+  populationCountsReviewed: boolean;
+  floorStatusReviewed: boolean;
+  dataQualityFlagsReviewed: boolean;
+  notes?: string;
+}
+
+export interface ScoringSignoff {
+  id: string;
+  editionId: string;
+  calculationRunId: string;
+  state: ScoringSignoffState;
+  checkedAccount: ScoringCheckedAccount;
+  requestedBy: string;
+  requestedAt: string;
+  approvedBy: string | null;
+  approvedAt: string | null;
+  rejectedBy: string | null;
+  rejectedAt: string | null;
+  rejectionReason: string | null;
+}
+
+export interface IndexScoreView {
+  metricCode: string;
+  score: number | null;
+  populationLabel: string;
+  effectivePopulation: number | null;
+  floor: number | null;
+  clearsFloor: boolean | null;
+  subFloor: boolean;
+  provisional: boolean;
+  populationGap: boolean;
+}
+
+export interface ScoringRunsResponse {
+  runs: CalculationRun[];
+  signoffs: ScoringSignoff[];
+  authoritative: ScoringSignoff | null;
+}
+
+// ─── Invitations (UX-OPS-002) ───────────────────────────────────────────────
+
+export type MessageAudienceKind = 'firm' | 'participant' | 'regulator' | 'upload';
+
+export interface MessageTemplate {
+  id: string;
+  editionId: string;
+  name: string;
+  subject: string;
+  body: string;
+  audienceKind: MessageAudienceKind;
+  requiresCode: boolean;
+  createdBy: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type MessageDeliveryState = 'sent' | 'delivered' | 'bounced';
+
+export interface MessageBatch {
+  id: string;
+  editionId: string;
+  templateId: string;
+  audienceId: string;
+  audienceLabel: string;
+  sendingService: string;
+  sentBy: string | null;
+  sentAt: string;
+  createdAt: string;
+}
+
+export interface AudienceCategory {
+  key: 'firms' | 'regs' | 'parts' | 'other';
+  label: string;
+  audiences: Array<{ id: string; label: string; sub: string; count: number | null }>;
+}
+
+export interface BatchReport {
+  batch: MessageBatch;
+  templateName: string;
+  firms: number;
+  delivered: number;
+  bounced: number;
+  opened: number;
+  clicked: number;
+  opensReported: boolean;
+  clicksReported: boolean;
+  deliveredNeverOpened: number;
+  openedNotClicked: number;
+}
+
+export type UploadCheckKind =
+  'no_address' | 'malformed_address' | 'in_file_duplicate' | 'already_sent';
+
+export interface UploadCheckResult {
+  validRows: Array<{ firmName: string; email: string }>;
+  problems: Array<{ kind: UploadCheckKind; row: number; value: string }>;
+}
+
+export interface MessageRecipient {
+  id: string;
+  batchId: string;
+  organizationId: string | null;
+  recipientEmail: string | null;
+  firmName: string | null;
+  deliveryState: MessageDeliveryState;
+}
+
+export interface InvitationRequestItem {
+  id: string;
+  editionId: string;
+  organizationId: string | null;
+  firmName: string;
+  requesterName: string;
+  role: string | null;
+  email: string;
+  phone: string | null;
+  flag: string | null;
+  resolved: boolean;
+  resolution: 'code_issued' | 'marked_done' | null;
+  resolvedBy: string | null;
+  resolvedAt: string | null;
+  createdAt: string;
+}
+
+export interface SendBatchResult {
+  batchId: string;
+  attempted: number;
+  sent: number;
+  skippedDuplicates: number;
+}
+
 export interface FirmSummary {
   id: string;
   displayName: string;
   slug: string;
+}
+
+// ─── National report (UX-ADM-005) ───────────────────────────────────────────
+
+export type NationalReportSectionId =
+  | 'PUB_01_HEADLINE_INDICES'
+  | 'PUB_02_SEGMENT_IEI_ICI'
+  | 'PUB_03_OPERATIONAL_FRICTIONS'
+  | 'PUB_04_INVESTOR_FRUSTRATIONS'
+  | 'PUB_05_MATURITY_HEATMAP'
+  | 'PUB_06_CONFIDENCE_AND_PARTICIPATION'
+  | 'PUB_07_LOCAL_VS_FOREIGN'
+  | 'PUB_08_CROSS_INDUSTRY_BENCHMARK'
+  | 'PUB_09_SERVICE_EXCELLENCE_GAP'
+  | 'PUB_10_INSTITUTIONAL_PERSPECTIVES';
+
+export type SectionSufficiencyDisposition = 'publishable' | 'caveated' | 'suppressed';
+export type ReviewDisposition = 'ACCEPT_AND_EDIT' | 'REJECT_WITH_REASON' | 'SUPPRESS_CLAIM';
+export type NationalReportStatus = 'draft' | 'approved';
+
+export interface NationalReport {
+  id: string;
+  editionId: string;
+  scoringRunId: string;
+  status: NationalReportStatus;
+  draftOpened: boolean;
+  requestedBy: string | null;
+  requestedReason: string | null;
+  requestedAt: string | null;
+  approvedBy: string | null;
+  approvedAt: string | null;
+}
+
+export interface NationalReportSection {
+  id: string;
+  nationalReportId: string;
+  sectionId: NationalReportSectionId;
+  disposition: SectionSufficiencyDisposition;
+  reason: string | null;
+}
+
+export interface NationalApprovalPreconditions {
+  signedScoringRun: boolean;
+  draftOpened: boolean;
+  allFindingsDisposed: boolean;
+  checkerHealthy: boolean;
+  ok: boolean;
+  reasons: string[];
+}
+
+export interface NationalReportDetailResponse {
+  report: NationalReport;
+  sections: NationalReportSection[];
+  preconditions: NationalApprovalPreconditions;
+}
+
+// ─── Firm reports (UX-ADM-006) ──────────────────────────────────────────────
+
+export type FirmReportCutState = 'none' | 'directional' | 'unlocked';
+export type FirmReportGenerationState = 'pending' | 'generating' | 'generated' | 'failed';
+export type FirmReportApprovalState = 'pending' | 'approved';
+export type FirmReportReleaseState = 'unreleased' | 'held' | 'released';
+
+export interface FirmReport {
+  id: string;
+  editionId: string;
+  organizationId: string;
+  scoringRunId: string;
+  version: number;
+  retailN: number;
+  cutState: FirmReportCutState;
+  generationState: FirmReportGenerationState;
+  approvalState: FirmReportApprovalState;
+  releaseState: FirmReportReleaseState;
+  heldReason: string | null;
+}
+
+export interface ReleaseFirmReportsResult {
+  released: string[];
+  held: { organizationId: string; reason: string }[];
 }
 
 export interface Coordinator {
@@ -103,4 +355,112 @@ export class ApiError extends Error {
     super(message);
     this.name = 'ApiError';
   }
+}
+
+// ─── People & Access (UX-OPS-006) ───────────────────────────────────────────
+
+export type AccessRightKey = 'view' | 'send' | 'regs' | 'setup' | 'request' | 'approve' | 'dragnet';
+export type AccessOrg = 'CIS' | 'Dragnet';
+
+export interface PersonAccess {
+  userId: string;
+  name: string;
+  email: string;
+  organization: AccessOrg;
+  rights: Record<AccessRightKey, boolean>;
+  canRequest: boolean;
+  canApprove: boolean;
+}
+
+export interface PeopleResponse {
+  people: PersonAccess[];
+  approvers: number;
+  criticalActions: Array<{ action: string; where: string; why: string }>;
+}
+
+export interface PersonInput {
+  name: string;
+  email: string;
+  organization: AccessOrg;
+  rights: Partial<Record<Exclude<AccessRightKey, 'view'>, boolean>>;
+}
+
+// ─── Responses monitoring (UX-OPS-003) ──────────────────────────────────────
+
+export type SegmentCardState = 'on_track' | 'will_miss' | 'closed';
+
+export interface CompleteFirmLine {
+  metric: 'OMI' | 'DMI';
+  requiredInstruments: string[];
+  current: number;
+  forecast: number | null;
+  state: SegmentCardState;
+}
+
+export interface SegmentCard {
+  segment: string;
+  label: string;
+  current: number;
+  target: number;
+  greyBarPct: number;
+  redMarkerPct: number | null;
+  forecast: number | null;
+  shortfall: number;
+  velocity: number | null;
+  requiredVelocity: number | null;
+  daysRemaining: number;
+  state: SegmentCardState;
+  boardConditionId: number;
+  completeFirm?: CompleteFirmLine[];
+}
+
+export type DependencyDisplayState = 'guaranteed' | 'some_suppressed' | 'at_risk' | 'on_track';
+
+export interface DependencyRow {
+  outputId: string;
+  dependsOn: string[];
+  requiredInstruments: string[] | null;
+  enabled: boolean;
+  displayState: DependencyDisplayState;
+  note: string;
+}
+
+export interface ResponsesMonitor {
+  cards: SegmentCard[];
+  dependencies: DependencyRow[];
+  funnelDiagnosis: unknown;
+  industrySeiNotCalculable: boolean;
+}
+
+// ─── Reminder timing (UX-OPS-004) ───────────────────────────────────────────
+
+export interface ReminderStepConfig {
+  step: number;
+  kind: 'relative' | 'before_close';
+  days?: number;
+  beforeCloseDays?: number;
+  enabled: boolean;
+}
+
+export interface ReminderSchedule {
+  steps: ReminderStepConfig[];
+}
+
+export interface UnfinishedStats {
+  unfinished: number;
+  reachable: number;
+  unreachable: number;
+}
+
+export interface DropoffBucket {
+  questionId: string;
+  count: number;
+  peak: boolean;
+}
+
+export interface UnfinishedResponse {
+  stats: UnfinishedStats;
+  dropoff: DropoffBucket[];
+  schedule: ReminderSchedule;
+  cap: number;
 }

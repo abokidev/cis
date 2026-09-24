@@ -14,6 +14,7 @@ interface RawSeatRow {
   is_self: boolean;
   stalled_at: string | null;
   respondent_id: string | null;
+  link_token: string;
   created_at: Date;
   updated_at: Date;
 }
@@ -31,6 +32,7 @@ function mapSeat(row: RawSeatRow): SeatAssignment {
     isSelf: row.is_self,
     stalledAt: row.stalled_at,
     respondentId: row.respondent_id,
+    linkToken: row.link_token,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -86,7 +88,9 @@ export async function getSeat(
   return row ? mapSeat(row) : null;
 }
 
-/** Assign (or re-assign) a seat: sets name/email and moves it to 'invited'. */
+/** Assign (or re-assign) a seat: sets name/email and moves it to 'invited'.
+ *  A fresh `link_token` is minted every time — the previous occupant's link
+ *  (if any) stops resolving to anything immediately. */
 export async function assignSeat(
   pool: Pool,
   data: {
@@ -103,7 +107,8 @@ export async function assignSeat(
     `UPDATE seat_assignments
         SET assigned_name = $4, assigned_email = $5,
             state = 'invited', is_self = $6,
-            stalled_at = NULL, respondent_id = NULL, updated_at = NOW()
+            stalled_at = NULL, respondent_id = NULL, link_token = gen_random_uuid(),
+            updated_at = NOW()
       WHERE edition_id = $1 AND organization_id = $2 AND seat_code = $3
       RETURNING *`,
     [
@@ -120,7 +125,9 @@ export async function assignSeat(
   return mapSeat(row);
 }
 
-/** Clear a seat back to empty (used when replacing an occupant). */
+/** Clear a seat back to empty (used when replacing an occupant). Also mints a
+ *  fresh `link_token` — nobody holding the old link can land on whatever gets
+ *  assigned to this seat next. */
 export async function clearSeat(
   pool: Pool,
   editionId: string,
@@ -131,7 +138,8 @@ export async function clearSeat(
     pool,
     `UPDATE seat_assignments
         SET assigned_name = NULL, assigned_email = NULL, state = 'empty',
-            is_self = FALSE, stalled_at = NULL, respondent_id = NULL, updated_at = NOW()
+            is_self = FALSE, stalled_at = NULL, respondent_id = NULL,
+            link_token = gen_random_uuid(), updated_at = NOW()
       WHERE edition_id = $1 AND organization_id = $2 AND seat_code = $3
       RETURNING *`,
     [editionId, organizationId, seatCode],
@@ -139,6 +147,22 @@ export async function clearSeat(
   const row = result.rows[0];
   if (!row) throw new Error(`Seat ${seatCode} not found`);
   return mapSeat(row);
+}
+
+/** Resolve a seat by its public link token — the ONLY lookup a respondent's
+ *  entry-point request is allowed to use (never by the seat's own stable id,
+ *  which survives reassignment). */
+export async function getSeatByLinkToken(
+  pool: Pool,
+  linkToken: string,
+): Promise<SeatAssignment | null> {
+  const result = await query<RawSeatRow>(
+    pool,
+    `SELECT * FROM seat_assignments WHERE link_token = $1`,
+    [linkToken],
+  );
+  const row = result.rows[0];
+  return row ? mapSeat(row) : null;
 }
 
 /** Move a seat's state (invited→started→complete, or flag stalled). */

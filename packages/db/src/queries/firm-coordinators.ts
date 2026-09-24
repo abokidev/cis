@@ -91,6 +91,30 @@ export async function getCoordinatorById(pool: Pool, id: string): Promise<FirmCo
   return row ? mapCoordinator(row) : null;
 }
 
+/**
+ * Every active (non-revoked) coordinator identified by email — the sign-in
+ * lookup. Case-insensitive: email addresses are not case-sensitive.
+ *
+ * Plural, not a single row: `uniq_active_coordinator_email` is unique PER
+ * ORGANIZATION, not globally, so the same email can genuinely be an active
+ * coordinator at more than one firm (e.g. a consultant coordinating for
+ * several client firms). A caller that assumed a single match here would
+ * silently sign the wrong firm's coordinator in whenever two firms happen to
+ * share an email on file — `coordinatorLogin` verifies the PIN against every
+ * candidate this returns, not just the first.
+ */
+export async function getActiveCoordinatorsByEmail(
+  pool: Pool,
+  email: string,
+): Promise<FirmCoordinator[]> {
+  const result = await query<RawCoordinatorRow>(
+    pool,
+    'SELECT * FROM firm_coordinators WHERE lower(email) = lower($1) AND revoked_at IS NULL',
+    [email],
+  );
+  return result.rows.map(mapCoordinator);
+}
+
 /** The stored PIN hash for a coordinator (for current-PIN verification). */
 export async function getCoordinatorPinHash(pool: Pool, id: string): Promise<string | null> {
   const result = await query<{ pin_hash: string | null }>(

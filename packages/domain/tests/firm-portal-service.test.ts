@@ -39,6 +39,10 @@ import {
   getSeatStatus,
   ensureOutreachLinks,
   getOutreachVolumes,
+  listOutreachLinksForFirm,
+  resolveOutreachToken,
+  recordOutreachEvent,
+  OutreachLinkNotFoundError,
   setRatedFirms,
   PrivacyConsentRequiredError,
   AlreadyClaimedError,
@@ -314,6 +318,80 @@ describe('Outreach non-joinability & volumes-only', () => {
     const summary = await getFirmOutreachSummary(pool, editionId, org.id);
     // Summary is counts only — no eligibility/threshold/invitation field.
     expect(Object.keys(summary).sort()).toEqual(['finishes', 'links', 'opens', 'starts']);
+  });
+});
+
+describe('Outreach-link consumption (Task E) — the public entry-flow side', () => {
+  it('resolveOutreachToken exposes ONLY edition/firm/segment — never counts, never the token, never identity', async () => {
+    const org = await firm('consume-outreach');
+    await ensureOutreachLinks(pool, editionId, org.id, (seg) => `consume-tok-${seg}`);
+
+    const ctx = await resolveOutreachToken(pool, 'consume-tok-individual');
+    expect(ctx).toEqual({ editionId, organizationId: org.id, segment: 'individual' });
+    // Exactly these three keys — no opens/starts/finishes, no token, no id.
+    expect(Object.keys(ctx).sort()).toEqual(['editionId', 'organizationId', 'segment']);
+  });
+
+  it('throws OutreachLinkNotFoundError for an unknown token', async () => {
+    await expect(resolveOutreachToken(pool, 'no-such-token')).rejects.toBeInstanceOf(
+      OutreachLinkNotFoundError,
+    );
+  });
+
+  it('recordOutreachEvent increments exactly the named counter, real opens/starts/finishes', async () => {
+    const org = await firm('record-outreach');
+    await ensureOutreachLinks(pool, editionId, org.id, (seg) => `record-tok-${seg}`);
+
+    await recordOutreachEvent(pool, 'record-tok-individual', 'opens');
+    await recordOutreachEvent(pool, 'record-tok-individual', 'opens');
+    await recordOutreachEvent(pool, 'record-tok-individual', 'starts');
+
+    const volumes = await getOutreachVolumes(pool, editionId, org.id);
+    const individual = volumes.find((v) => v.segment === 'individual')!;
+    expect(individual).toMatchObject({ opens: 2, starts: 1, finishes: 0 });
+
+    // Untouched segments stay at zero — an event only ever affects its own link.
+    const institutional = volumes.find((v) => v.segment === 'local_institutional')!;
+    expect(institutional).toMatchObject({ opens: 0, starts: 0, finishes: 0 });
+  });
+
+  it('silently no-ops for an unknown token — never an error a respondent could see', async () => {
+    await expect(recordOutreachEvent(pool, 'nonexistent', 'opens')).resolves.toBeUndefined();
+  });
+
+  it("listOutreachLinksForFirm gives the firm's OWN read its real token — not a non-joinability concern, the firm already owns the link", async () => {
+    const org = await firm('list-outreach-tokens');
+    await ensureOutreachLinks(pool, editionId, org.id, (seg) => `list-tok-${seg}`);
+
+    const links = await listOutreachLinksForFirm(pool, editionId, org.id);
+    expect(links.map((l) => l.token).sort()).toEqual([
+      'list-tok-foreign_institutional',
+      'list-tok-individual',
+      'list-tok-local_institutional',
+    ]);
+  });
+
+  it('consuming a real event never creates any new joinable link to a respondent', async () => {
+    const org = await firm('consume-then-check');
+    await ensureOutreachLinks(pool, editionId, org.id, (seg) => `check-tok-${seg}`);
+    await recordOutreachEvent(pool, 'check-tok-individual', 'opens');
+    await recordOutreachEvent(pool, 'check-tok-individual', 'starts');
+    // A real respondent exists in this edition, entirely independent of the
+    // outreach event above — nothing about consuming the event ever writes
+    // anything referencing a respondent.
+    await createRespondent(pool, { editionId, instrumentCode: 'S4' });
+
+    const cols = await pool.query<{ column_name: string }>(
+      `SELECT column_name FROM information_schema.columns WHERE table_name = 'outreach_links'`,
+    );
+    const names = cols.rows.map((r) => r.column_name);
+    expect(names).not.toContain('respondent_id');
+    expect(names).not.toContain('response_id');
+
+    const link = await pool.query(
+      `SELECT * FROM outreach_links WHERE token = 'check-tok-individual'`,
+    );
+    expect(Object.keys(link.rows[0] ?? {})).not.toContain('respondent_id');
   });
 });
 

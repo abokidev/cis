@@ -1,32 +1,32 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import type { AdminClient } from '../api/client';
+import {
+  ApiError,
+  type AccessOrg,
+  type AccessRightKey,
+  type AuthUser,
+  type PersonAccess,
+} from '../api/types';
 
 /**
- * UX-OPS-006 — People & Access (RBAC admin). Ported faithfully from the approved
- * v1.3 artefact. This surface manages WHO holds the seven access rights,
- * including the request/approve rights that gate the six critical actions — it
- * adds no seventh action and changes none of the six's logic.
+ * UX-OPS-006 — People & Access (RBAC admin), live-wired to the real evaluator
+ * (`@cis/domain` people-access-service, via `apps/api/src/routes/people.ts`).
+ * This surface manages WHO holds the seven access rights, including the
+ * request/approve rights that gate the six critical actions — it adds no
+ * seventh action and changes none of the six's own logic.
  *
- * The corrected defects it encodes (all also enforced server-side in
- * @cis/domain people-access-service, which is the source of truth):
+ * Every rule this UI hints at is enforced server-side, which is the actual
+ * source of truth (this is UX convenience, not the gate):
  *   - The two-approver floor is ENFORCED, not warned — on both breach routes
  *     (removal, and un-ticking `approve`).
- *   - The Dragnet analysis right does NOT render for a CIS person (it is not
- *     shown-and-refused); changing org away from Dragnet clears it.
- *   - A person cannot remove their own access (the action is not rendered for
- *     the signed-in user's own row).
- *   - Zero people is a distinct, non-recoverable-from-here state, separate from
- *     too-few-approvers (recoverable by granting someone else approve).
+ *   - The Dragnet analysis right is refused server-side for a CIS person.
+ *   - A person cannot remove their own access (checked against the real,
+ *     signed-in actor from the JWT — never a client-supplied id).
+ *   - Zero people is a distinct, non-recoverable-from-here state.
  */
 
-type RightKey = 'view' | 'send' | 'regs' | 'setup' | 'request' | 'approve' | 'dragnet';
-type Org = 'CIS' | 'Dragnet';
-
-interface Person {
-  name: string;
-  org: Org;
-  email: string;
-  r: Record<RightKey, boolean>;
-}
+type RightKey = AccessRightKey;
+type Org = AccessOrg;
 
 const RIGHTS: Array<{ k: RightKey; label: string; sub: string; dragnetOnly?: boolean }> = [
   {
@@ -67,99 +67,33 @@ const RIGHTS: Array<{ k: RightKey; label: string; sub: string; dragnetOnly?: boo
   },
 ];
 
-const CRIT: Array<[string, string, string]> = [
-  ['Freeze the instruments', 'Surveys', 'No question, option or order changes afterwards.'],
-  ['Lock the results', 'Edition', 'Collection ends. Surveys in progress are lost.'],
-  ['Sign off a scoring run', 'Scoring', 'Every published figure comes from the signed run.'],
-  ['Approve the national report', 'National report', 'It goes to the market.'],
-  ['Release the firm reports', 'Firm reports', 'Every firm sees its report at once.'],
-  [
-    'Change a sample floor after collection opens',
-    'Edition',
-    'Prevented outright rather than gated — it would mean choosing what is reportable while knowing what the data says.',
-  ],
-];
-
-// The signed-in operator — used to hide the self-removal action for their row.
-const ME_EMAIL = 'a.okoro@cis.org.ng';
-
-const SEED: Person[] = [
-  {
-    name: 'Adaeze Okoro',
-    org: 'CIS',
-    email: ME_EMAIL,
-    r: {
-      view: true,
-      send: true,
-      regs: true,
-      setup: true,
-      request: true,
-      approve: true,
-      dragnet: false,
-    },
-  },
-  {
-    name: 'Ayorinde Adeonipekun',
-    org: 'CIS',
-    email: 'registrar@cis.org.ng',
-    r: {
-      view: true,
-      send: false,
-      regs: true,
-      setup: false,
-      request: false,
-      approve: true,
-      dragnet: false,
-    },
-  },
-  {
-    name: 'Segun Oyegbesan',
-    org: 'Dragnet',
-    email: 's.oyegbesan@dragnet.com',
-    r: {
-      view: true,
-      send: true,
-      regs: false,
-      setup: true,
-      request: true,
-      approve: true,
-      dragnet: true,
-    },
-  },
-  {
-    name: 'Joseph Benson',
-    org: 'Dragnet',
-    email: 'j.benson@dragnet.com',
-    r: {
-      view: true,
-      send: true,
-      regs: false,
-      setup: false,
-      request: false,
-      approve: false,
-      dragnet: false,
-    },
-  },
-];
-
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const FLOOR = 2;
 
-function clone(list: Person[]): Person[] {
-  return list.map((p) => ({ ...p, r: { ...p.r } }));
-}
-function summarise(p: Person): string {
-  const on = RIGHTS.filter((x) => p.r[x.k] && x.k !== 'request' && x.k !== 'approve');
+function summarise(p: PersonAccess): string {
+  const on = RIGHTS.filter((x) => p.rights[x.k] && x.k !== 'request' && x.k !== 'approve');
   return on.map((x) => x.label).join(', ') || 'See the study only';
 }
 
 type ViewName = 'main' | 'add' | 'person';
 
-export function PeopleAccessPage(): JSX.Element {
-  const [people, setPeople] = useState<Person[]>(() => clone(SEED));
+export function PeopleAccessPage({
+  client,
+  viewer,
+}: {
+  client: AdminClient;
+  viewer: AuthUser;
+}): JSX.Element {
+  const [people, setPeople] = useState<PersonAccess[] | null>(null);
+  const [approvers, setApprovers] = useState(0);
+  const [criticalActions, setCriticalActions] = useState<
+    Array<{ action: string; where: string; why: string }>
+  >([]);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   const [view, setView] = useState<ViewName>('main');
-  const [editIdx, setEditIdx] = useState<number | null>(null); // null = adding
-  const [detailIdx, setDetailIdx] = useState<number | null>(null);
+  const [editUserId, setEditUserId] = useState<string | null>(null); // null = adding
+  const [detailUserId, setDetailUserId] = useState<string | null>(null);
 
   // Draft form state
   const [name, setName] = useState('');
@@ -175,23 +109,58 @@ export function PeopleAccessPage(): JSX.Element {
     dragnet: false,
   });
 
-  const approvers = useMemo(() => people.filter((p) => p.r.approve).length, [people]);
+  const load = useCallback(async () => {
+    setError(null);
+    try {
+      const res = await client.getPeople();
+      setPeople(res.people);
+      setApprovers(res.approvers);
+      setCriticalActions(res.criticalActions);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not load people & access');
+    }
+  }, [client]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const doRun = useCallback(
+    async (fn: () => Promise<unknown>) => {
+      setBusy(true);
+      setError(null);
+      try {
+        await fn();
+        await load();
+        goMain();
+      } catch (err) {
+        setError(err instanceof ApiError ? err.message : 'Something went wrong');
+      } finally {
+        setBusy(false);
+      }
+    },
+    [load],
+  );
+
+  if (people === null) {
+    return <main>{error ? <div className="err">{error}</div> : <p>Loading…</p>}</main>;
+  }
 
   function goMain() {
     setView('main');
-    setDetailIdx(null);
-    setEditIdx(null);
+    setDetailUserId(null);
+    setEditUserId(null);
   }
 
-  function openAdd(idx: number | null) {
-    setEditIdx(idx);
-    const p = idx === null ? null : people[idx]!;
+  function openAdd(userId: string | null) {
+    setEditUserId(userId);
+    const p = userId === null ? null : (people!.find((x) => x.userId === userId) ?? null);
     setName(p ? p.name : '');
     setEmail(p ? p.email : '');
-    setOrg(p ? p.org : 'CIS');
+    setOrg(p ? p.organization : 'CIS');
     setDraft(
       p
-        ? { ...p.r }
+        ? { ...p.rights }
         : {
             view: true,
             send: false,
@@ -202,6 +171,7 @@ export function PeopleAccessPage(): JSX.Element {
             dragnet: false,
           },
     );
+    setError(null);
     setView('add');
   }
 
@@ -211,50 +181,51 @@ export function PeopleAccessPage(): JSX.Element {
     if (next !== 'Dragnet') setDraft((d) => ({ ...d, dragnet: false }));
   }
 
-  const validation: string = useMemo(() => {
+  const validation: string = (() => {
     const e = email.trim();
     if (e.length && !EMAIL_RE.test(e)) return 'That is not a working email address.';
-    if (e && people.some((p, i) => p.email === e && i !== editIdx))
+    if (e && people.some((p) => p.email === e && p.userId !== editUserId))
       return 'Somebody with that address already has access.';
     if (draft.dragnet && org !== 'Dragnet') return 'The Dragnet analysis is Dragnet only.';
     return '';
-  }, [email, people, editIdx, draft.dragnet, org]);
+  })();
 
   const canSave = !!name.trim() && EMAIL_RE.test(email.trim()) && !validation;
 
-  // The second-to-last approver's approve right cannot be un-ticked — same floor,
-  // second door. Disabled here AND refused server-side.
-  const editingPerson = editIdx === null ? null : people[editIdx]!;
-  const lockApprove = !!editingPerson && editingPerson.r.approve && approvers <= FLOOR;
+  // The second-to-last approver's approve right cannot be un-ticked — same
+  // floor, second door. Disabled here (UX hint) AND refused server-side (the
+  // real gate).
+  const editingPerson =
+    editUserId === null ? null : (people.find((p) => p.userId === editUserId) ?? null);
+  const lockApprove = !!editingPerson && editingPerson.rights.approve && approvers <= FLOOR;
 
   function save() {
     if (!canSave) return;
-    const rec: Person = {
+    const input = {
       name: name.trim(),
-      org,
       email: email.trim(),
-      r: { ...draft, view: true, ...(org !== 'Dragnet' ? { dragnet: false } : {}) },
+      organization: org,
+      rights: {
+        send: draft.send,
+        regs: draft.regs,
+        setup: draft.setup,
+        request: draft.request,
+        approve: draft.approve,
+        dragnet: org === 'Dragnet' ? draft.dragnet : false,
+      },
     };
-    setPeople((list) => {
-      const next = clone(list);
-      if (editIdx === null) next.push(rec);
-      else next[editIdx] = rec;
-      return next;
-    });
-    goMain();
+    void doRun(() =>
+      editUserId === null ? client.addPerson(input) : client.updatePersonRights(editUserId, input),
+    );
   }
 
-  function openPerson(idx: number) {
-    setDetailIdx(idx);
+  function openPerson(userId: string) {
+    setDetailUserId(userId);
     setView('person');
   }
 
-  function removePerson(idx: number) {
-    const p = people[idx]!;
-    const wouldBreach = p.r.approve && approvers <= FLOOR;
-    if (wouldBreach || p.email === ME_EMAIL) return; // refused / never offered
-    setPeople((list) => list.filter((_, i) => i !== idx));
-    goMain();
+  function removePerson(userId: string) {
+    void doRun(() => client.removePerson(userId));
   }
 
   return (
@@ -263,6 +234,8 @@ export function PeopleAccessPage(): JSX.Element {
         <MainView
           people={people}
           approvers={approvers}
+          criticalActions={criticalActions}
+          error={error}
           onOpenPerson={openPerson}
           onAdd={() => openAdd(null)}
         />
@@ -270,7 +243,7 @@ export function PeopleAccessPage(): JSX.Element {
 
       {view === 'add' && (
         <AddView
-          editing={editIdx !== null}
+          editing={editUserId !== null}
           name={name}
           email={email}
           org={org}
@@ -278,6 +251,8 @@ export function PeopleAccessPage(): JSX.Element {
           validation={validation}
           canSave={canSave}
           lockApprove={lockApprove}
+          busy={busy}
+          error={error}
           setName={setName}
           setEmail={setEmail}
           onOrg={changeOrg}
@@ -287,13 +262,15 @@ export function PeopleAccessPage(): JSX.Element {
         />
       )}
 
-      {view === 'person' && detailIdx !== null && (
+      {view === 'person' && detailUserId !== null && (
         <PersonView
-          person={people[detailIdx]!}
+          person={people.find((p) => p.userId === detailUserId)!}
           approvers={approvers}
-          isSelf={people[detailIdx]!.email === ME_EMAIL}
-          onEdit={() => openAdd(detailIdx)}
-          onRemove={() => removePerson(detailIdx)}
+          isSelf={people.find((p) => p.userId === detailUserId)!.email === viewer.email}
+          busy={busy}
+          error={error}
+          onEdit={() => openAdd(detailUserId)}
+          onRemove={() => removePerson(detailUserId)}
           onBack={goMain}
         />
       )}
@@ -305,7 +282,7 @@ function ApproverBar({
   people,
   approvers,
 }: {
-  people: Person[];
+  people: PersonAccess[];
   approvers: number;
 }): JSX.Element | null {
   if (people.length === 0) {
@@ -337,12 +314,16 @@ function ApproverBar({
 function MainView({
   people,
   approvers,
+  criticalActions,
+  error,
   onOpenPerson,
   onAdd,
 }: {
-  people: Person[];
+  people: PersonAccess[];
   approvers: number;
-  onOpenPerson: (i: number) => void;
+  criticalActions: Array<{ action: string; where: string; why: string }>;
+  error: string | null;
+  onOpenPerson: (userId: string) => void;
   onAdd: () => void;
 }): JSX.Element {
   return (
@@ -353,6 +334,8 @@ function MainView({
         Who can sign in to study operations, what each of them can do, and who can approve the six
         actions that cannot be undone.
       </p>
+
+      {error && <div className="err">{error}</div>}
 
       <ApproverBar people={people} approvers={approvers} />
 
@@ -372,38 +355,24 @@ function MainView({
                 <td colSpan={4}>Nobody has access.</td>
               </tr>
             ) : (
-              people.map((p, i) => {
+              people.map((p) => {
                 const can =
-                  (p.r.request ? 'Request' : '') +
-                  (p.r.request && p.r.approve ? ' and ' : '') +
-                  (p.r.approve ? 'approve' : '');
+                  (p.rights.request ? 'Request' : '') +
+                  (p.rights.request && p.rights.approve ? ' and ' : '') +
+                  (p.rights.approve ? 'approve' : '');
                 return (
-                  <tr key={p.email}>
+                  <tr key={p.userId}>
                     <td>
                       <button
                         type="button"
                         className="back"
                         style={{ minHeight: 'auto' }}
-                        onClick={() => onOpenPerson(i)}
+                        onClick={() => onOpenPerson(p.userId)}
                       >
                         {p.name}
                       </button>
-                      {p.email === ME_EMAIL && (
-                        <span
-                          style={{
-                            marginLeft: 8,
-                            padding: '2px 8px',
-                            borderRadius: 999,
-                            background: 'var(--bg-2, #eee)',
-                            fontSize: 11,
-                            fontWeight: 700,
-                          }}
-                        >
-                          You
-                        </span>
-                      )}
                     </td>
-                    <td>{p.org}</td>
+                    <td>{p.organization}</td>
                     <td>{summarise(p)}</td>
                     <td>
                       <span className={`tag ${can ? 'ok' : 'soft'}`}>{can || 'Neither'}</span>
@@ -441,13 +410,13 @@ function MainView({
                 </tr>
               </thead>
               <tbody>
-                {CRIT.map((r) => (
-                  <tr key={r[0]}>
+                {criticalActions.map((r) => (
+                  <tr key={r.action}>
                     <td>
-                      <b>{r[0]}</b>
+                      <b>{r.action}</b>
                     </td>
-                    <td>{r[1]}</td>
-                    <td>{r[2]}</td>
+                    <td>{r.where}</td>
+                    <td>{r.why}</td>
                   </tr>
                 ))}
               </tbody>
@@ -479,6 +448,8 @@ function AddView({
   validation,
   canSave,
   lockApprove,
+  busy,
+  error,
   setName,
   setEmail,
   onOrg,
@@ -494,6 +465,8 @@ function AddView({
   validation: string;
   canSave: boolean;
   lockApprove: boolean;
+  busy: boolean;
+  error: string | null;
   setName: (v: string) => void;
   setEmail: (v: string) => void;
   onOrg: (v: Org) => void;
@@ -574,8 +547,9 @@ function AddView({
       </div>
 
       {validation && <div className="err">{validation}</div>}
+      {error && <div className="err">{error}</div>}
       <div className="actions">
-        <button type="button" className="btn" disabled={!canSave} onClick={onSave}>
+        <button type="button" className="btn" disabled={!canSave || busy} onClick={onSave}>
           {editing ? 'Save' : 'Send them access'}
         </button>
         <button type="button" className="btn-2" onClick={onCancel}>
@@ -590,34 +564,40 @@ function PersonView({
   person,
   approvers,
   isSelf,
+  busy,
+  error,
   onEdit,
   onRemove,
   onBack,
 }: {
-  person: Person;
+  person: PersonAccess;
   approvers: number;
   isSelf: boolean;
+  busy: boolean;
+  error: string | null;
   onEdit: () => void;
   onRemove: () => void;
   onBack: () => void;
 }): JSX.Element {
-  const wouldBreach = person.r.approve && approvers <= FLOOR;
-  const on = RIGHTS.filter((x) => person.r[x.k]);
+  const wouldBreach = person.rights.approve && approvers <= FLOOR;
+  const on = RIGHTS.filter((x) => person.rights[x.k]);
   return (
     <>
       <button type="button" className="back" onClick={onBack}>
         ← Back
       </button>
-      <p className="eyebrow">{person.org}</p>
+      <p className="eyebrow">{person.organization}</p>
       <h1 tabIndex={-1}>{person.name}</h1>
       <dl className="kv">
         <dt>Email</dt>
         <dd>{person.email}</dd>
         <dt>Organisation</dt>
-        <dd>{person.org}</dd>
+        <dd>{person.organization}</dd>
         <dt>Rights</dt>
         <dd>{on.map((x) => x.label).join('; ')}</dd>
       </dl>
+
+      {error && <div className="err">{error}</div>}
 
       {wouldBreach && (
         <div className="warnbox">
@@ -637,9 +617,10 @@ function PersonView({
         <button type="button" className="btn-2" onClick={onEdit}>
           Change what they can do
         </button>
-        {/* Self-removal is never offered for the signed-in user's own row. */}
+        {/* Self-removal is never offered for the signed-in user's own row —
+            the real check is server-side, against the real signed-in actor. */}
         {!isSelf && (
-          <button type="button" className="btn-2" disabled={wouldBreach} onClick={onRemove}>
+          <button type="button" className="btn-2" disabled={wouldBreach || busy} onClick={onRemove}>
             Remove their access
           </button>
         )}

@@ -1,6 +1,6 @@
 import { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
-import { getPool, getNationalReport } from '@cis/db';
+import { getPool, getNationalReport, getLatestNationalReportForEdition } from '@cis/db';
 import {
   generateNationalReport,
   openDraft,
@@ -10,6 +10,7 @@ import {
   getSections,
   generateFirmReports,
   approveFirmReport,
+  regenerateFirmReport,
   releaseFirmReports,
   getFirmReports,
   type SufficiencyContext,
@@ -47,6 +48,17 @@ export const reportingRoutes: FastifyPluginAsyncZod = async (app) => {
         context: request.body.context as SufficiencyContext,
       });
       return reply.status(201).send({ reportId: report.id, sections });
+    },
+  );
+
+  // The current (most recently created) report for an edition, if any — lets a
+  // fresh page load discover the report without the frontend remembering an id.
+  app.get(
+    '/editions/:id/national-report',
+    { preHandler: [app.authenticate], schema: { params: z.object({ id: z.string().uuid() }) } },
+    async (request, reply) => {
+      const report = await getLatestNationalReportForEdition(getPool(), request.params.id);
+      return reply.send({ report });
     },
   );
 
@@ -142,6 +154,17 @@ export const reportingRoutes: FastifyPluginAsyncZod = async (app) => {
     async (request, reply) => {
       const report = await approveFirmReport(getPool(), request.params.id);
       return reply.send({ approvalState: report.approvalState });
+    },
+  );
+
+  // Retry a failed/held report's generation. Never a released report — the DB
+  // itself refuses any edit to one; a correction there is a new version.
+  app.post(
+    '/firm-reports/:id/regenerate',
+    { preHandler: [app.authenticate], schema: { params: z.object({ id: z.string().uuid() }) } },
+    async (request, reply) => {
+      const report = await regenerateFirmReport(getPool(), request.params.id);
+      return reply.send({ report });
     },
   );
 

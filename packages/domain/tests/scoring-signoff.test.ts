@@ -32,6 +32,7 @@ import {
   listScoringRuns,
   requestSignoff,
   approveSignoff,
+  rejectSignoff,
   getScoreView,
   listSignoffs,
   generateFirmReports,
@@ -164,6 +165,80 @@ describe('Structured sign-off payload & maker-checker', () => {
     const approved = await approveSignoff(pool, { signoffId: so.id, approvedBy: 'segun' });
     expect(approved.state).toBe('signed_off');
     expect(approved.approvedBy).toBe('segun');
+  });
+});
+
+describe('Reject — the same maker-checker shape as approval', () => {
+  it('a maker can never reject their own sign-off', async () => {
+    await lockEdition();
+    const { run } = await triggerScoringRun(pool, { editionId });
+    const so = await requestSignoff(pool, {
+      editionId,
+      calculationRunId: run.id,
+      requestedBy: 'adaeze',
+      checkedAccount: goodAccount,
+    });
+    await expect(
+      rejectSignoff(pool, { signoffId: so.id, rejectedBy: 'adaeze', reason: 'Not convincing' }),
+    ).rejects.toMatchObject({ code: 'SELF_REJECTION' });
+
+    // A different person can.
+    const rejected = await rejectSignoff(pool, {
+      signoffId: so.id,
+      rejectedBy: 'segun',
+      reason: 'Population counts look stale',
+    });
+    expect(rejected.state).toBe('rejected');
+    expect(rejected.rejectedBy).toBe('segun');
+    expect(rejected.rejectionReason).toBe('Population counts look stale');
+    expect(rejected.rejectedAt).not.toBeNull();
+  });
+
+  it('requires a non-empty reason', async () => {
+    await lockEdition();
+    const { run } = await triggerScoringRun(pool, { editionId });
+    const so = await requestSignoff(pool, {
+      editionId,
+      calculationRunId: run.id,
+      requestedBy: 'adaeze',
+      checkedAccount: goodAccount,
+    });
+    await expect(
+      rejectSignoff(pool, { signoffId: so.id, rejectedBy: 'segun', reason: '   ' }),
+    ).rejects.toBeInstanceOf(SignoffPayloadError);
+  });
+
+  it('a rejected sign-off is not live — the run is free for a fresh request', async () => {
+    await lockEdition();
+    const { run } = await triggerScoringRun(pool, { editionId });
+    const so = await requestSignoff(pool, {
+      editionId,
+      calculationRunId: run.id,
+      requestedBy: 'adaeze',
+      checkedAccount: goodAccount,
+    });
+    await rejectSignoff(pool, { signoffId: so.id, rejectedBy: 'segun', reason: 'Try again' });
+
+    const fresh = await requestSignoff(pool, {
+      editionId,
+      calculationRunId: run.id,
+      requestedBy: 'adaeze',
+      checkedAccount: goodAccount,
+    });
+    expect(fresh.state).toBe('requested');
+    expect(fresh.id).not.toBe(so.id);
+
+    const approved = await approveSignoff(pool, { signoffId: fresh.id, approvedBy: 'segun' });
+    expect(approved.state).toBe('signed_off');
+  });
+
+  it('cannot reject a sign-off that is not in the requested state', async () => {
+    await lockEdition();
+    const { run } = await triggerScoringRun(pool, { editionId });
+    const soId = await signOff(run.id, 'adaeze', 'segun');
+    await expect(
+      rejectSignoff(pool, { signoffId: soId, rejectedBy: 'ada', reason: 'Too late' }),
+    ).rejects.toMatchObject({ code: 'NOT_REQUESTED' });
   });
 });
 

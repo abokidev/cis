@@ -1,58 +1,41 @@
 /**
- * Pure, framework-agnostic model for the firm portal (UX-FRM-001). The three
- * confirmed defects in the v14.5 artefact all lived in logic of exactly this
- * shape, so the fixes are encoded here and unit-tested directly:
+ * Pure, framework-agnostic model for the firm portal (UX-FRM-001).
  *
- *  §2a — surveyNotBuilt was dead code. `notBuiltForSeat` is the live feedback a
- *        seat-row click invokes; the component wires each seat row to it.
- *  §2b — pips 3 and 4 could never light. The indicator is TWO pips
- *        (`PROGRESS_PIP_COUNT`), and `pipsOnFor` never returns more than that.
- *  §2c — `access_model` was a phantom state. It is absent from `PORTAL_VIEWS`;
- *        the coordinator/respondent visibility split is expressed structurally
- *        (seat status is state-only), not as a screen.
+ * Task D rebuilt FirmPortal.tsx against the real backend (coordinator auth,
+ * team, seats, outreach, results), which retires two things that were
+ * artefacts of the earlier unwired prototype rather than real design:
+ *
+ *  - `notBuiltForSeat` — a seat row now links to a real entry point (Part 6),
+ *    so there is nothing left to invoke a "not built" dead end for.
+ *  - `DESTINATIONS.team` / `DESTINATIONS.results` — both are now built INTO
+ *    this surface, so a "not built, owned elsewhere" label for either would
+ *    be a stale claim (the exact defect class fixed once before, in Mission
+ *    Board). Only `survey` remains: the three firm surveys themselves are a
+ *    genuinely different UI (the shared respondent journey shell).
+ *
+ * `PORTAL_VIEWS` now covers only the unauthenticated claim/sign-in flow —
+ * the authenticated portal's own navigation is a separate, simpler type,
+ * since a progress indicator only makes sense before a coordinator exists.
  */
 
-/** The real portal/claim views. Deliberately NO `access_model` (§2c). */
-export const PORTAL_VIEWS = [
-  'email',
-  'pin',
-  'code',
-  'unknown',
-  'halfway',
-  'setup',
-  'done',
-  'notbuilt',
-  'outreach',
-  'whylink',
-  'people',
-  'nocode',
-  'requested',
-] as const;
+/** The claim/sign-in views. Deliberately no `access_model` (§2c) and no
+ *  invented invitation-code state — claiming has no code to check server
+ *  side; the real gate is `AlreadyClaimedError` redirecting to sign-in. */
+export const PORTAL_VIEWS = ['email', 'pin', 'unclaimed', 'claim', 'nocode', 'requested'] as const;
 
 export type PortalView = (typeof PORTAL_VIEWS)[number];
 
 /** The claim flow is genuinely two steps (address → set up access). Two pips,
- *  not four — the setup view itself reads "Step 2 of 2". (§2b) */
+ *  not four — the claim view itself reads "Step 2 of 2". (§2b) */
 export const PROGRESS_PIP_COUNT = 2;
 
 /** How many pips are lit on a given view. Never exceeds PROGRESS_PIP_COUNT. */
 export function pipsOnFor(view: PortalView): number {
   const map: Partial<Record<PortalView, number>> = {
     email: 1,
-    code: 2,
-    pin: 2,
-    setup: 2,
+    claim: 2,
   };
   return Math.min(map[view] ?? 0, PROGRESS_PIP_COUNT);
-}
-
-/**
- * The feedback shown when a coordinator clicks one of the three individual seat
- * rows: that survey is owned by its own surface and is not built in this design.
- * This is the live wiring of the artefact's orphaned `surveyNotBuilt` (§2a).
- */
-export function notBuiltForSeat(seatLabel: string): string {
-  return `The ${seatLabel} survey is owned by its own surface (UX-FRM-004/005/006) and is not built in this design.`;
 }
 
 /** The four seat states — never six, never two. */
@@ -150,9 +133,10 @@ export const SEGMENT_ORDER: Segment[] = [
   'foreign_institutional',
 ];
 
-/** The five real destinations this surface routes to (all owned elsewhere). */
+/** The one real destination this surface still routes to, owned elsewhere:
+ *  the three firm surveys themselves, answered inside the shared respondent
+ *  journey shell (Part 6), a genuinely different UI. Team management and
+ *  results are now built into this surface, not listed here. */
 export const DESTINATIONS = {
   survey: 'UX-FRM-004/005/006',
-  team: 'UX-FRM-007',
-  results: 'UX-FRM-RES-001',
 } as const;

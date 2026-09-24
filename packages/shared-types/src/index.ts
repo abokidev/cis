@@ -225,6 +225,11 @@ export interface SeatAssignment {
   stalledAt: string | null;
   /** Link to the response record for STATE tracking only — no answer access. */
   respondentId: string | null;
+  /** Opaque, unguessable — the entry-point link a coordinator hands to this
+   *  seat's occupant carries this, never the seat's own (stable) id.
+   *  Regenerated on every assign and every clear, so a stale link (held by a
+   *  replaced occupant) resolves to nothing. */
+  linkToken: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -605,9 +610,11 @@ export interface FirmReportReleaseHistory {
  * The sign-off record's lifecycle. `requested` = a maker submitted the
  * structured account; `signed_off` = a different person approved (this run is
  * authoritative); `superseded` = a LATER run was signed off, so this one is no
- * longer authoritative but stays visible in the history.
+ * longer authoritative but stays visible in the history; `rejected` = a
+ * different person declined the request, with a reason — the run remains
+ * un-authoritative and a fresh request may be submitted for it.
  */
-export type ScoringSignoffState = 'requested' | 'signed_off' | 'superseded';
+export type ScoringSignoffState = 'requested' | 'signed_off' | 'superseded' | 'rejected';
 
 /**
  * The STRUCTURED account of what the signer verified — "the record is the
@@ -640,6 +647,9 @@ export interface ScoringSignoff {
   approvedAt: Date | null;
   supersededBy: string | null;
   supersededAt: Date | null;
+  rejectedBy: string | null;
+  rejectedAt: Date | null;
+  rejectionReason: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -983,4 +993,16 @@ export interface SessionPayload {
   email: string;
   displayName: string;
   org: string | null;
+  kind: 'operator';
+}
+
+/** A firm coordinator's session — a distinct claim shape from `SessionPayload`
+ *  so a coordinator token can never be mistaken for, or misused as, operator
+ *  access (or vice versa). `sub` resolves to `firm_coordinators.id`, never
+ *  `users.id`. */
+export interface CoordinatorSessionPayload {
+  sub: string;
+  organizationId: string;
+  email: string;
+  kind: 'coordinator';
 }

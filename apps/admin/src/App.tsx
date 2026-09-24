@@ -18,7 +18,6 @@ import { MissionBoardPage } from './pages/MissionBoardPage';
 import { RegulatorsPage } from './pages/RegulatorsPage';
 import { ResponsesPage } from './pages/ResponsesPage';
 import { UnfinishedPage } from './pages/UnfinishedPage';
-import { FirmResultsPage } from './pages/FirmResultsPage';
 import { WordingPage } from './pages/WordingPage';
 import { DragnetPage } from './pages/DragnetPage';
 
@@ -36,7 +35,6 @@ type Tab =
   | 'scoring'
   | 'national'
   | 'firmreports'
-  | 'firmresults'
   | 'wording'
   | 'dragnet';
 
@@ -60,7 +58,6 @@ const TAB_PHASES: Record<Tab, EditionPhase[]> = {
   scoring: ['closed'],
   national: ['closed'],
   firmreports: ['closed'],
-  firmresults: ['closed'],
   wording: ['before_launch', 'collection_open', 'closing_week', 'closed'],
   dragnet: ['before_launch', 'collection_open', 'closing_week', 'closed'],
 };
@@ -227,10 +224,6 @@ export function App(): JSX.Element {
           Firm reports
         </NavTab>
         <span aria-hidden="true">·</span>
-        <NavTab tabKey="firmresults" tab={tab} phase={phase} setTab={setTab}>
-          Firm results
-        </NavTab>
-        <span aria-hidden="true">·</span>
         <NavTab tabKey="wording" tab={tab} phase={phase} setTab={setTab}>
           Wording
         </NavTab>
@@ -255,11 +248,11 @@ export function App(): JSX.Element {
           )}
         </main>
       ) : tab === 'board' ? (
-        <MissionBoardPage />
+        <MissionBoardPage client={client} editionId={editionId} />
       ) : tab === 'responses' ? (
-        <ResponsesPage />
+        <ResponsesPage client={client} editionId={editionId} />
       ) : tab === 'unfinished' ? (
-        <UnfinishedPage />
+        <UnfinishedPage client={client} editionId={editionId} />
       ) : tab === 'edition' ? (
         <EditionPage client={client} editionId={editionId} viewer={session.user} />
       ) : tab === 'surveys' ? (
@@ -269,23 +262,21 @@ export function App(): JSX.Element {
       ) : tab === 'firmteam' ? (
         <FirmTeamPage client={client} editionId={editionId} />
       ) : tab === 'people' ? (
-        <PeopleAccessPage />
+        <PeopleAccessPage client={client} viewer={session.user} />
       ) : tab === 'invitations' ? (
-        <InvitationsPage />
+        <InvitationsPage client={client} editionId={editionId} />
       ) : tab === 'regulators' ? (
         <RegulatorsPage />
       ) : tab === 'scoring' ? (
-        <ScoresSignoffPage />
+        <ScoresSignoffPage client={client} editionId={editionId} viewer={session.user} />
       ) : tab === 'national' ? (
-        <NationalReportPage />
-      ) : tab === 'firmresults' ? (
-        <FirmResultsPage />
+        <NationalReportPage client={client} editionId={editionId} viewer={session.user} />
       ) : tab === 'wording' ? (
         <WordingPage client={client} />
       ) : tab === 'dragnet' && editionId && session.user.hasDragnetRight ? (
         <DragnetPage client={client} editionId={editionId} />
       ) : (
-        <FirmReportsPage />
+        <FirmReportsPage client={client} editionId={editionId} />
       )}
     </div>
   );

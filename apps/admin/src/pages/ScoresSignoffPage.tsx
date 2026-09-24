@@ -1,120 +1,31 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import type { AdminClient } from '../api/client';
+import {
+  ApiError,
+  type AuthUser,
+  type CalculationRun,
+  type IndexScoreView,
+  type ScoringSignoff,
+} from '../api/types';
 
 /**
- * UX-ADM-004 — Setup: Results, Scores (sign-off). Ported faithfully from the
- * approved v1.3 artefact. The maker-checker gate on which scoring run becomes
- * official:
- *   - Scoring is REFUSED while collection is open (not a disabled button — the
- *     backend endpoint hard-blocks it; here it is shown as a state).
+ * UX-ADM-004 — Setup: Results, Scores (sign-off). The maker-checker gate on
+ * which scoring run becomes official, live-wired to the real evaluator
+ * (`@cis/domain` scoring-signoff-service, via `apps/api/src/routes/scoring.ts`):
+ *   - Scoring is REFUSED while collection is open — enforced by the trigger
+ *     endpoint; a refusal surfaces here as the real domain error message.
  *   - Every run is kept, including superseded ones, with who/when.
  *   - A later run supersedes a signed one only WHEN THE NEW ONE IS SIGNED OFF;
  *     nothing already released is recalled.
- *   - Each index shows its score, effective population, and floor-clear status;
- *     a sub-floor index is FLAGGED, not hidden.
- *   - Sign-off needs a STRUCTURED account of what was checked, not a bare
- *     reason; a maker can never approve their own request.
- *   - Weighting is configuration pending validation — never shown as final.
+ *   - Each index shows its real score, effective population, and floor-clear
+ *     status; a sub-floor index is FLAGGED, not hidden.
+ *   - Sign-off needs a STRUCTURED account of what was checked; a maker can
+ *     never approve their own request.
  *
- * Self-contained functional surface (local state); the enforced rules live and
- * are tested in @cis/domain (scoring-signoff-service).
+ *   - A reviewer may also reject a request, with a reason — a different
+ *     person than the requester, same as approval — after which the run is
+ *     free for a fresh sign-off request.
  */
-
-// The eight states the surface covers (artefact `states_covered`).
-type State =
-  | 'blocked_collection_open'
-  | 'run_complete'
-  | 'request_signoff'
-  | 'review_request'
-  | 'own_request'
-  | 'signed_off'
-  | 'superseded_run'
-  | 'validation_error';
-
-interface IndexRow {
-  k: string;
-  name: string;
-  builtFrom: string;
-  score: number;
-  /** Effective population, described per index (populations differ per index). */
-  pop: string;
-  /** True when computed on a population below its floor — flagged, not hidden. */
-  belowFloor: boolean;
-}
-
-// Population predicates differ per index and are stated per index — OMI needs
-// all three seats complete; DMI needs S1 and S3 only (compliance is irrelevant
-// to it). Investor-side populations count responses.
-const INDICES: IndexRow[] = [
-  {
-    k: 'OMI',
-    name: 'Operational maturity',
-    builtFrom: 'Firm S1/S2/S3 surveys',
-    score: 61,
-    pop: '68 complete firms — all three seats (S1, S2, S3)',
-    belowFloor: true, // 68 < 80-firm floor → flagged
-  },
-  {
-    k: 'DMI',
-    name: 'Digital maturity',
-    builtFrom: 'Firm S1 + S3 surveys',
-    score: 54,
-    pop: '74 firms with S1 and S3 — not S2',
-    belowFloor: true, // 74 < 80-firm floor → flagged
-  },
-  {
-    k: 'IEI',
-    name: 'Investor experience',
-    builtFrom: 'Retail + institutional surveys',
-    score: 66,
-    pop: '1,284 investor responses',
-    belowFloor: false,
-  },
-  {
-    k: 'ICI',
-    name: 'Investor confidence',
-    builtFrom: 'Retail + institutional surveys',
-    score: 63,
-    pop: '1,284 investor responses',
-    belowFloor: false,
-  },
-  {
-    k: 'SEI',
-    name: 'Service excellence gap',
-    builtFrom: 'Both sides, matched by firm',
-    score: 14,
-    pop: 'Both sides, matched by firm',
-    belowFloor: false,
-  },
-];
-
-interface RunRow {
-  id: string;
-  when: string;
-  by: string;
-  state: 'signed_off' | 'superseded' | 'run_complete';
-}
-
-const STATE_LABEL: Record<State, string> = {
-  blocked_collection_open: 'Collection still open',
-  run_complete: 'Run complete',
-  request_signoff: 'Request sign-off',
-  review_request: 'A request awaiting approval',
-  own_request: 'Your own request',
-  signed_off: 'Signed off',
-  superseded_run: 'A run superseded',
-  validation_error: 'Validation error',
-};
-
-const STATES: State[] = [
-  'blocked_collection_open',
-  'run_complete',
-  'request_signoff',
-  'review_request',
-  'own_request',
-  'signed_off',
-  'superseded_run',
-  'validation_error',
-];
 
 const CHECKLIST = [
   { key: 'populationCountsReviewed', label: 'Per-index effective population counts reviewed' },
@@ -122,26 +33,92 @@ const CHECKLIST = [
   { key: 'dataQualityFlagsReviewed', label: 'Known data-quality flags reviewed' },
 ] as const;
 
-export function ScoresSignoffPage(): JSX.Element {
-  const [state, setState] = useState<State>('run_complete');
+type View = 'main' | 'request' | 'review';
+
+export function ScoresSignoffPage({
+  client,
+  editionId,
+  viewer,
+}: {
+  client: AdminClient;
+  editionId: string;
+  viewer: AuthUser;
+}): JSX.Element {
+  const [runs, setRuns] = useState<CalculationRun[] | null>(null);
+  const [signoffs, setSignoffs] = useState<ScoringSignoff[]>([]);
+  const [scores, setScores] = useState<IndexScoreView[] | null>(null);
+  const [view, setView] = useState<View>('main');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [checked, setChecked] = useState<Record<string, boolean>>({});
+  const [rejecting, setRejecting] = useState(false);
+  const [rejectReason, setRejectReason] = useState('');
 
-  const allChecked = CHECKLIST.every((c) => checked[c.key]);
-  const flagged = INDICES.filter((i) => i.belowFloor);
-
-  const runs: RunRow[] = useMemo(() => {
-    const base: RunRow[] = [
-      { id: 'run-3', when: '24 Aug 2026, 14:02', by: 'Adaeze Okoro', state: 'run_complete' },
-    ];
-    if (state === 'signed_off') base[0]!.state = 'signed_off';
-    if (state === 'superseded_run') {
-      return [
-        { id: 'run-4', when: '24 Aug 2026, 16:20', by: 'Adaeze Okoro', state: 'signed_off' },
-        { id: 'run-3', when: '24 Aug 2026, 14:02', by: 'Adaeze Okoro', state: 'superseded' },
-      ];
+  const load = useCallback(async () => {
+    setError(null);
+    try {
+      const data = await client.getScoringRuns(editionId);
+      setRuns(data.runs);
+      setSignoffs(data.signoffs);
+      const current = data.runs[0];
+      if (current) {
+        const sv = await client.getScoreView(editionId, current.id);
+        setScores(sv.scores);
+      } else {
+        setScores(null);
+      }
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not load scoring');
     }
-    return base;
-  }, [state]);
+  }, [client, editionId]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const doRun = useCallback(
+    async (fn: () => Promise<unknown>) => {
+      setBusy(true);
+      setError(null);
+      try {
+        await fn();
+        await load();
+        setView('main');
+        setChecked({});
+        setRejecting(false);
+        setRejectReason('');
+      } catch (err) {
+        setError(err instanceof ApiError ? err.message : 'Something went wrong');
+      } finally {
+        setBusy(false);
+      }
+    },
+    [load],
+  );
+
+  if (runs === null) {
+    return <main>{error ? <div className="err">{error}</div> : <p>Loading…</p>}</main>;
+  }
+
+  const currentRun = runs[0] ?? null;
+  // A rejected sign-off is not "live" — same as superseded — so the run is
+  // free for a fresh request once one is rejected.
+  const liveSignoff = currentRun
+    ? (signoffs.find((s) => s.calculationRunId === currentRun.id && s.state === 'requested') ??
+      signoffs.find((s) => s.calculationRunId === currentRun.id && s.state === 'signed_off') ??
+      null)
+    : null;
+  const lastRejected =
+    !liveSignoff && currentRun
+      ? (signoffs.find((s) => s.calculationRunId === currentRun.id && s.state === 'rejected') ??
+        null)
+      : null;
+  const allChecked = CHECKLIST.every((c) => checked[c.key]);
+  const flagged = (scores ?? []).filter((s) => s.subFloor);
+  const isOwnRequest =
+    liveSignoff?.state === 'requested' && liveSignoff.requestedBy === viewer.email;
+  const isReviewable =
+    liveSignoff?.state === 'requested' && liveSignoff.requestedBy !== viewer.email;
 
   return (
     <main>
@@ -153,51 +130,33 @@ export function ScoresSignoffPage(): JSX.Element {
         generated from.
       </p>
 
-      <div className="actions" style={{ marginBottom: 8, flexWrap: 'wrap' }}>
-        {STATES.map((s) => (
-          <button
-            key={s}
-            type="button"
-            className="btn-2"
-            aria-pressed={s === state}
-            style={s === state ? { borderColor: 'var(--dragnet-black)' } : undefined}
-            onClick={() => setState(s)}
-          >
-            {STATE_LABEL[s]}
-          </button>
-        ))}
-      </div>
+      {error && <div className="err">{error}</div>}
 
-      {/* ── Blocked: collection still open ── */}
-      {state === 'blocked_collection_open' ? (
+      {!currentRun ? (
         <div className="warnbox">
-          <b>Scoring is blocked while collection is open.</b>
+          <b>No scoring run exists yet for this edition.</b>
           <p style={{ margin: '6px 0 0' }}>
-            A run against a changing dataset scores something that won’t exist by the time anyone
-            reads it. The edition must be <b>locked</b> first. This surface refuses — it does not
-            merely warn — and the run-trigger endpoint enforces the same precondition.
+            A run scores the frozen dataset — it is refused while collection is still open.
           </p>
+          <div className="actions">
+            <button
+              type="button"
+              className="btn"
+              disabled={busy}
+              onClick={() => doRun(() => client.triggerScoringRun(editionId))}
+            >
+              Run scoring
+            </button>
+          </div>
         </div>
-      ) : state === 'validation_error' ? (
-        <div className="warnbox">
-          <b>A score fell outside the 0–100 framework scale.</b>
-          <p style={{ margin: '6px 0 0' }}>
-            Scores are on the signed framework’s 0–100 scale, enforced on the result record itself.
-            An out-of-range value is a validation error to resolve, never a figure quietly stored.
-          </p>
-        </div>
-      ) : null}
-
-      {state !== 'blocked_collection_open' && (
+      ) : (
         <>
-          {/* ── What each index is built from + weighting note ── */}
           <div className="note">
             <h3>Weighting is configuration, not code</h3>
             <p>
               Index composition is fixed by the Reporting Specification. The weighting within each
               index is Dragnet methodology and is <b>pending validation</b> by the methodology
-              partner — so it is held as configuration and can change without a rebuild. No figure
-              here is dressed up as final.
+              partner — so it is held as configuration and can change without a rebuild.
             </p>
           </div>
 
@@ -206,31 +165,38 @@ export function ScoresSignoffPage(): JSX.Element {
               <thead>
                 <tr>
                   <th>Index</th>
-                  <th>Built from</th>
-                  <th>Effective population</th>
+                  <th>Population</th>
                   <th>Score</th>
                   <th>Floor</th>
-                  <th>Weighting</th>
                 </tr>
               </thead>
               <tbody>
-                {INDICES.map((i) => (
-                  <tr key={i.k}>
+                {(scores ?? []).map((i) => (
+                  <tr key={i.metricCode}>
                     <td>
-                      <b>{i.k}</b> · {i.name}
-                    </td>
-                    <td>{i.builtFrom}</td>
-                    <td>{i.pop}</td>
-                    <td>
-                      {i.score} <span className="muted">/ 100</span>
+                      <b>{i.metricCode}</b>
                     </td>
                     <td>
-                      <span className={`tag ${i.belowFloor ? 'risk' : 'ok'}`}>
-                        {i.belowFloor ? 'Below floor' : 'Above floor'}
-                      </span>
+                      {i.populationLabel}
+                      {i.effectivePopulation !== null && ` — ${i.effectivePopulation}`}
                     </td>
                     <td>
-                      <span className="tag wait">Pending validation</span>
+                      {i.score === null ? (
+                        <span className="tag wait">Pending validation</span>
+                      ) : (
+                        <>
+                          {i.score} <span className="muted">/ 100</span>
+                        </>
+                      )}
+                    </td>
+                    <td>
+                      {i.clearsFloor === null ? (
+                        <span className="tag soft">Not applicable</span>
+                      ) : (
+                        <span className={`tag ${i.subFloor ? 'risk' : 'ok'}`}>
+                          {i.subFloor ? 'Below floor' : 'Above floor'}
+                        </span>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -246,13 +212,11 @@ export function ScoresSignoffPage(): JSX.Element {
                   {flagged.length > 1 ? 's' : ''}.
                 </b>{' '}
                 The score exists and is shown — it is flagged, not hidden. What is ultimately
-                reportable is decided at the national-report stage (UX-ADM-005), not here. This
-                surface’s job is transparency.
+                reportable is decided at the national-report stage (UX-ADM-005), not here.
               </p>
             </div>
           )}
 
-          {/* ── Runs history ── */}
           <section className="stage">
             <div className="stagehead">
               <h2>Runs</h2>
@@ -261,8 +225,7 @@ export function ScoresSignoffPage(): JSX.Element {
             <div className="stagebody">
               <p>
                 Every run is kept. A run that was signed off and later superseded stays visible,
-                with who signed it and when — a scoring history that only shows the current run
-                cannot answer why a figure changed.
+                with who signed it and when.
               </p>
               <div className="tablewrap">
                 <table className="ftbl">
@@ -270,81 +233,123 @@ export function ScoresSignoffPage(): JSX.Element {
                     <tr>
                       <th>Run</th>
                       <th>When</th>
-                      <th>By</th>
                       <th>State</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {runs.map((r) => (
-                      <tr key={r.id}>
-                        <td>{r.id}</td>
-                        <td>{r.when}</td>
-                        <td>{r.by}</td>
-                        <td>
-                          <span
-                            className={`tag ${
-                              r.state === 'signed_off'
-                                ? 'ok'
-                                : r.state === 'superseded'
-                                  ? 'soft'
-                                  : 'wait'
-                            }`}
-                          >
-                            {r.state === 'signed_off'
-                              ? 'Signed off'
-                              : r.state === 'superseded'
-                                ? 'Superseded'
-                                : 'Run complete'}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
+                    {runs.map((r) => {
+                      const s = signoffs.find((x) => x.calculationRunId === r.id);
+                      const label = !s
+                        ? 'Run complete'
+                        : s.state === 'signed_off'
+                          ? 'Signed off'
+                          : s.state === 'superseded'
+                            ? 'Superseded'
+                            : s.state === 'rejected'
+                              ? 'Rejected'
+                              : 'Awaiting sign-off';
+                      return (
+                        <tr key={r.id}>
+                          <td>{r.id.slice(0, 8)}</td>
+                          <td>{new Date(r.createdAt).toLocaleString()}</td>
+                          <td>
+                            <span
+                              className={`tag ${
+                                label === 'Signed off'
+                                  ? 'ok'
+                                  : label === 'Superseded'
+                                    ? 'soft'
+                                    : label === 'Rejected'
+                                      ? 'risk'
+                                      : 'wait'
+                              }`}
+                            >
+                              {label}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
             </div>
           </section>
 
-          {/* ── Sign-off flow ── */}
-          {state === 'run_complete' || state === 'request_signoff' ? (
+          {/* ── No live sign-off: offer to request one ── */}
+          {!liveSignoff && view !== 'request' && (
             <section className="stage now">
               <div className="stagehead">
                 <h2>Sign off this scoring run</h2>
                 <span className="pill started">Needs a second person</span>
               </div>
               <div className="stagebody">
+                {lastRejected && (
+                  <div className="warnbox" style={{ marginBottom: 12 }}>
+                    <b>The last request was rejected.</b>
+                    <p style={{ margin: '6px 0 0' }}>
+                      By {lastRejected.rejectedBy} on{' '}
+                      {lastRejected.rejectedAt
+                        ? new Date(lastRejected.rejectedAt).toLocaleString()
+                        : '—'}
+                      : {lastRejected.rejectionReason}
+                    </p>
+                  </div>
+                )}
                 <p>
-                  The signed run is the one the report uses. Every figure published nationally and
-                  every firm report is generated from it. A later run can supersede it, but nothing
-                  already released is recalled.
+                  The signed run is the one the report uses. A later run can supersede it, but
+                  nothing already released is recalled.
                 </p>
-                <div className="note">
-                  <h3>What you checked</h3>
-                  <p className="muted" style={{ marginTop: 0 }}>
-                    Kept with the run permanently. The person approving reads this. This is a
-                    structured account of what was verified — not a reason for wanting to proceed.
-                  </p>
-                  {CHECKLIST.map((c) => (
-                    <label key={c.key} style={{ display: 'block', margin: '6px 0' }}>
-                      <input
-                        type="checkbox"
-                        checked={!!checked[c.key]}
-                        onChange={(e) =>
-                          setChecked((prev) => ({ ...prev, [c.key]: e.target.checked }))
-                        }
-                      />{' '}
-                      {c.label}
-                    </label>
-                  ))}
+                <div className="actions">
+                  <button type="button" className="btn" onClick={() => setView('request')}>
+                    Request approval
+                  </button>
                 </div>
+              </div>
+            </section>
+          )}
+
+          {view === 'request' && !liveSignoff && (
+            <section className="stage now">
+              <div className="stagehead">
+                <h2>What you checked</h2>
+              </div>
+              <div className="stagebody">
+                <p className="muted" style={{ marginTop: 0 }}>
+                  Kept with the run permanently. The person approving reads this. This is a
+                  structured account of what was verified — not a reason for wanting to proceed.
+                </p>
+                {CHECKLIST.map((c) => (
+                  <label key={c.key} style={{ display: 'block', margin: '6px 0' }}>
+                    <input
+                      type="checkbox"
+                      checked={!!checked[c.key]}
+                      onChange={(e) =>
+                        setChecked((prev) => ({ ...prev, [c.key]: e.target.checked }))
+                      }
+                    />{' '}
+                    {c.label}
+                  </label>
+                ))}
                 <div className="actions">
                   <button
                     type="button"
                     className="btn"
-                    disabled={!allChecked}
-                    onClick={() => setState('own_request')}
+                    disabled={!allChecked || busy}
+                    onClick={() =>
+                      doRun(() =>
+                        client.requestSignoff(editionId, currentRun.id, viewer.email, {
+                          populationCountsReviewed: true,
+                          floorStatusReviewed: true,
+                          dataQualityFlagsReviewed: true,
+                        }),
+                      )
+                    }
                   >
                     Request approval
+                  </button>
+                  <button type="button" className="btn-2" onClick={() => setView('main')}>
+                    Cancel
                   </button>
                 </div>
                 <p className="muted">
@@ -353,9 +358,9 @@ export function ScoresSignoffPage(): JSX.Element {
                 </p>
               </div>
             </section>
-          ) : null}
+          )}
 
-          {state === 'own_request' && (
+          {isOwnRequest && (
             <section className="stage now">
               <div className="stagehead">
                 <h2>Your own request</h2>
@@ -363,20 +368,15 @@ export function ScoresSignoffPage(): JSX.Element {
               </div>
               <div className="stagebody">
                 <p>
-                  You requested this sign-off. A maker can never approve their own request — the
-                  approver may be from either organisation; the only constraint is that it is a
-                  different person.
+                  You requested this sign-off, on{' '}
+                  {new Date(liveSignoff!.requestedAt).toLocaleString()}. A maker can never approve
+                  their own request.
                 </p>
-                <div className="actions">
-                  <button type="button" className="btn-2" onClick={() => setState('run_complete')}>
-                    ← Cancel request
-                  </button>
-                </div>
               </div>
             </section>
           )}
 
-          {state === 'review_request' && (
+          {isReviewable && view !== 'review' && (
             <section className="stage now">
               <div className="stagehead">
                 <h2>Someone has asked for this</h2>
@@ -384,8 +384,8 @@ export function ScoresSignoffPage(): JSX.Element {
               </div>
               <div className="stagebody">
                 <p>
-                  A different person requested this sign-off and recorded what they checked. Read
-                  their account, then approve and sign off — or reject.
+                  Requested by {liveSignoff!.requestedBy} on{' '}
+                  {new Date(liveSignoff!.requestedAt).toLocaleString()}.
                 </p>
                 <div className="note">
                   <h3>What they checked</h3>
@@ -395,20 +395,78 @@ export function ScoresSignoffPage(): JSX.Element {
                     ))}
                   </ul>
                 </div>
-                <div className="actions">
-                  <button type="button" className="btn" onClick={() => setState('signed_off')}>
-                    Approve and sign off
-                  </button>
-                  <button type="button" className="btn-2" onClick={() => setState('run_complete')}>
-                    Reject
-                  </button>
-                </div>
-                <p className="muted">A maker can never approve their own request.</p>
+                {!rejecting ? (
+                  <div className="actions">
+                    <button
+                      type="button"
+                      className="btn"
+                      disabled={busy}
+                      onClick={() =>
+                        doRun(() => client.approveSignoff(liveSignoff!.id, viewer.email))
+                      }
+                    >
+                      Approve and sign off
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-2"
+                      disabled={busy}
+                      onClick={() => setRejecting(true)}
+                    >
+                      Reject
+                    </button>
+                  </div>
+                ) : (
+                  <div>
+                    <div className="field">
+                      <label htmlFor="rejectReason">Why</label>
+                      <p className="hint">
+                        Kept with the run permanently. Required — a bare rejection is not accepted.
+                      </p>
+                      <input
+                        id="rejectReason"
+                        type="text"
+                        value={rejectReason}
+                        onChange={(e) => setRejectReason(e.target.value)}
+                      />
+                    </div>
+                    <div className="actions">
+                      <button
+                        type="button"
+                        className="btn"
+                        disabled={busy || !rejectReason.trim()}
+                        onClick={() =>
+                          doRun(() =>
+                            client.rejectSignoff(
+                              liveSignoff!.id,
+                              viewer.email,
+                              rejectReason.trim(),
+                            ),
+                          )
+                        }
+                      >
+                        Confirm rejection
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-2"
+                        disabled={busy}
+                        onClick={() => {
+                          setRejecting(false);
+                          setRejectReason('');
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+                <p className="muted">A maker can never approve or reject their own request.</p>
               </div>
             </section>
           )}
 
-          {state === 'signed_off' && (
+          {liveSignoff?.state === 'signed_off' && (
             <section className="stage now">
               <div className="stagehead">
                 <h2>Signed off</h2>
@@ -416,26 +474,10 @@ export function ScoresSignoffPage(): JSX.Element {
               </div>
               <div className="stagebody">
                 <p>
-                  This run is the one every national and firm report is generated from. A later run
-                  can supersede it once that later run is itself signed off — but nothing already
-                  released is recalled.
-                </p>
-              </div>
-            </section>
-          )}
-
-          {state === 'superseded_run' && (
-            <section className="stage">
-              <div className="stagehead">
-                <h2>A later run was signed off</h2>
-                <span className="pill ok">run-4 authoritative</span>
-              </div>
-              <div className="stagebody">
-                <p>
-                  run-4 was signed off and is now authoritative; run-3 transitioned to{' '}
-                  <b>superseded</b> at that moment — not merely when run-4 was executed. run-3 stays
-                  in the history with who signed it and when. Reports already released from run-3
-                  are not recalled.
+                  This run is the one every national and firm report is generated from, approved by{' '}
+                  {liveSignoff.approvedBy} on{' '}
+                  {liveSignoff.approvedAt ? new Date(liveSignoff.approvedAt).toLocaleString() : '—'}
+                  .
                 </p>
               </div>
             </section>

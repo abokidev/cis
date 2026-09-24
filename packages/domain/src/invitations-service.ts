@@ -22,6 +22,7 @@ import {
   listInvitationRequests,
   resolveInvitationRequestRow,
   listRecipients,
+  listBouncedRecipients,
   recordDelivery,
   withTransaction,
 } from '@cis/db';
@@ -29,6 +30,7 @@ import type {
   MessageTemplate,
   MessageAudienceKind,
   MessageBatch,
+  MessageRecipient,
   AudienceCategory,
   BatchReport,
   UploadCheckResult,
@@ -591,6 +593,12 @@ export async function getBatchReport(pool: Pool, batchId: string): Promise<Batch
   };
 }
 
+/** A batch's bounced addresses, for the "list the addresses that bounced"
+ *  view — there is deliberately no resend action anywhere on this surface. */
+export function getBouncedRecipients(pool: Pool, batchId: string): Promise<MessageRecipient[]> {
+  return listBouncedRecipients(pool, batchId);
+}
+
 // ─── Access-request queue (the operational half of Phase 4's request flow) ─────
 
 /**
@@ -690,4 +698,28 @@ export async function resolveFirmNameToOrg(pool: Pool, firmName: string): Promis
     (o) => o.orgType === 'firm' && o.displayName.toLowerCase() === firmName.trim().toLowerCase(),
   );
   return match ? match.id : null;
+}
+
+/**
+ * Resolve several firm names at once — the same exact, case-insensitive match
+ * as `resolveFirmNameToOrg`, but fetching the register once instead of once
+ * per name. Used by the invitations upload flow so an uploaded CSV's rows can
+ * carry a real `organizationId` before validation, which is what makes the
+ * fourth file-validation check (a firm already sent this template) able to
+ * fire for an upload the way it already does for a firm-audience send — a
+ * name with no match resolves to null, same as the single-name function.
+ */
+export async function resolveFirmNamesToOrgs(
+  pool: Pool,
+  firmNames: string[],
+): Promise<Record<string, string | null>> {
+  const orgs = await listOrganizations(pool);
+  const byLowerName = new Map(
+    orgs.filter((o) => o.orgType === 'firm').map((o) => [o.displayName.toLowerCase(), o.id]),
+  );
+  const result: Record<string, string | null> = {};
+  for (const name of firmNames) {
+    result[name] = byLowerName.get(name.trim().toLowerCase()) ?? null;
+  }
+  return result;
 }

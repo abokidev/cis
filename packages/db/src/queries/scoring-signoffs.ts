@@ -21,6 +21,9 @@ interface RawSignoffRow {
   approved_at: Date | null;
   superseded_by: string | null;
   superseded_at: Date | null;
+  rejected_by: string | null;
+  rejected_at: Date | null;
+  rejection_reason: string | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -38,6 +41,9 @@ function mapSignoff(r: RawSignoffRow): ScoringSignoff {
     approvedAt: r.approved_at,
     supersededBy: r.superseded_by,
     supersededAt: r.superseded_at,
+    rejectedBy: r.rejected_by,
+    rejectedAt: r.rejected_at,
+    rejectionReason: r.rejection_reason,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
@@ -106,6 +112,32 @@ export async function approveSignoffRow(
       WHERE id = $1 AND state = 'requested' AND requested_by <> $2
       RETURNING *`,
     [id, approvedBy],
+  );
+  const row = res.rows[0];
+  return row ? mapSignoff(row) : null;
+}
+
+/**
+ * Reject a requested sign-off. Guarded so it fires exactly once, only from
+ * `requested`, and only by someone other than the requester (the DB CHECK is
+ * the backstop; this WHERE clause turns a violation into a clean no-row
+ * result) — same shape as `approveSignoffRow`. A rejected row is not "live",
+ * so the run remains free for a fresh sign-off request afterwards.
+ */
+export async function rejectSignoffRow(
+  pool: Pool,
+  id: string,
+  rejectedBy: string,
+  reason: string,
+): Promise<ScoringSignoff | null> {
+  const res = await query<RawSignoffRow>(
+    pool,
+    `UPDATE scoring_signoffs
+        SET state = 'rejected', rejected_by = $2, rejected_at = NOW(),
+            rejection_reason = $3, updated_at = NOW()
+      WHERE id = $1 AND state = 'requested' AND requested_by <> $2
+      RETURNING *`,
+    [id, rejectedBy, reason],
   );
   const row = res.rows[0];
   return row ? mapSignoff(row) : null;

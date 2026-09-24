@@ -68,12 +68,31 @@ export {
   getSeatStatus,
   ensureOutreachLinks,
   getOutreachVolumes,
+  listOutreachLinksForFirm,
   FirmPortalError,
   PrivacyConsentRequiredError,
   AlreadyClaimedError,
   SeatConflictError,
+  getSeatEntryContext,
+  startSeatEntry,
+  completeSeatEntry,
+  SeatLinkNotFoundError,
+  resolveOutreachToken,
+  recordOutreachEvent,
+  OutreachLinkNotFoundError,
 } from './firm-portal-service';
-export type { ClaimInput, InvitationRequest } from './firm-portal-service';
+export type {
+  ClaimInput,
+  InvitationRequest,
+  SeatEntryContext,
+  OutreachLinkContext,
+} from './firm-portal-service';
+
+export {
+  coordinatorLogin,
+  CoordinatorAuthError,
+  InvalidCoordinatorCredentialsError,
+} from './coordinator-auth-service';
 
 // ── Phase 5: scoring, sufficiency, analytics & evidence ──────────────────────
 export {
@@ -153,6 +172,7 @@ export {
   validateCheckedAccount,
   requestSignoff,
   approveSignoff,
+  rejectSignoff,
   getScoreView,
   hasSignedOffRun,
   getAuthoritativeSignoff,
@@ -190,6 +210,8 @@ export {
   getInvitationRequests,
   resolveInvitationRequest,
   resolveFirmNameToOrg,
+  resolveFirmNamesToOrgs,
+  getBouncedRecipients,
   getFirmAudienceState,
   RECORDING_SENDING_SERVICE,
   ZeptomailSendingService,

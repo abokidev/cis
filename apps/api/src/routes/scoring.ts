@@ -7,6 +7,7 @@ import {
   getScoreView,
   requestSignoff,
   approveSignoff,
+  rejectSignoff,
   listSignoffs,
   getAuthoritativeSignoff,
 } from '@cis/domain';
@@ -98,6 +99,26 @@ export const scoringRoutes: FastifyPluginAsyncZod = async (app) => {
       const signoff = await approveSignoff(getPool(), {
         signoffId: request.params.signoffId,
         approvedBy: request.body.approvedBy,
+      });
+      return reply.send({ signoff });
+    },
+  );
+
+  // Reject a sign-off — a different person than the requester, with a reason.
+  app.post(
+    '/scoring-signoffs/:signoffId/reject',
+    {
+      preHandler: [app.authenticate],
+      schema: {
+        params: z.object({ signoffId: z.string().uuid() }),
+        body: z.object({ rejectedBy: z.string().min(1), reason: z.string().min(1) }),
+      },
+    },
+    async (request, reply) => {
+      const signoff = await rejectSignoff(getPool(), {
+        signoffId: request.params.signoffId,
+        rejectedBy: request.body.rejectedBy,
+        reason: request.body.reason,
       });
       return reply.send({ signoff });
     },

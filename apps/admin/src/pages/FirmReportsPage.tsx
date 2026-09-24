@@ -1,67 +1,118 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import type { AdminClient } from '../api/client';
+import { ApiError, type FirmReport, type FirmSummary } from '../api/types';
 
 /**
- * UX-ADM-006 — Firm report generation & release. Ported faithfully from the
- * approved v1.4 artefact: the guarantee (every participating firm gets its
- * combined report) is a different rule from the retail-cut sufficiency gate;
- * generation and reconciliation precede release; release is ATOMIC PER REPORT
- * (a failed report is HELD, not excluded, and holds no other firm back);
- * release is blocked until the national report is approved; and zero
- * participating firms is a distinct "nothing to produce" state.
+ * UX-ADM-006 — Firm report generation & release, live-wired to the real
+ * evaluator (`@cis/domain` firm-report-service, via
+ * `apps/api/src/routes/reporting.ts`): the guarantee (every participating firm
+ * gets its combined report) is a separate rule from the retail-cut
+ * sufficiency gate; release is ATOMIC PER REPORT — a failed report is HELD,
+ * not excluded, and holds no other firm back; release is blocked until the
+ * national report is approved.
  *
- * Self-contained functional surface (local state); the enforced rules live and
- * are tested in @cis/domain (firm-report-service).
+ * A held/failed report can be retried from here — never a released one; a
+ * correction to a released report is a new version, not an edit to it (the DB
+ * itself refuses any edit to a released row).
  */
 
-interface Firm {
-  name: string;
-  retail: number;
-  gen: 'generated' | 'failed';
-}
+const CUT_LABEL: Record<string, string> = {
+  unlocked: 'Unlocked',
+  directional: 'Directional only',
+  none: 'Not shown',
+};
 
-// FRM_04 thresholds are governed configuration (provisional 10/29/30).
-const THRESHOLDS = { directional: 10, reportable: 30 };
-function cutState(n: number): 'unlocked' | 'directional' | 'none' {
-  if (n >= THRESHOLDS.reportable) return 'unlocked';
-  if (n >= THRESHOLDS.directional) return 'directional';
-  return 'none';
-}
-const CUT_LABEL = { unlocked: 'Unlocked', directional: 'Directional only', none: 'Not shown' };
+export function FirmReportsPage({
+  client,
+  editionId,
+}: {
+  client: AdminClient;
+  editionId: string;
+}): JSX.Element {
+  const [reports, setReports] = useState<FirmReport[] | null>(null);
+  const [firms, setFirms] = useState<FirmSummary[]>([]);
+  const [authoritativeRunId, setAuthoritativeRunId] = useState<string | null>(null);
+  const [nationalApproved, setNationalApproved] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [releaseResult, setReleaseResult] = useState<{
+    released: string[];
+    held: { organizationId: string; reason: string }[];
+  } | null>(null);
+  const [generationAttempted, setGenerationAttempted] = useState(false);
 
-const BASE: Firm[] = [
-  { name: 'Cordros Securities Limited', retail: 64, gen: 'generated' },
-  { name: 'Meristem Stockbrokers Limited', retail: 51, gen: 'generated' },
-  { name: 'Stanbic IBTC Stockbrokers', retail: 47, gen: 'generated' },
-  { name: 'CardinalStone Securities', retail: 38, gen: 'generated' },
-  { name: 'United Capital Securities', retail: 31, gen: 'generated' },
-  { name: 'Chapel Hill Denham Securities', retail: 24, gen: 'generated' },
-  { name: 'Rencap Securities Limited', retail: 19, gen: 'generated' },
-  { name: 'Tiddo Securities Limited', retail: 12, gen: 'generated' },
-  { name: 'Kapital Trust Securities', retail: 8, gen: 'generated' },
-  { name: 'Anchoria Investment and Securities', retail: 6, gen: 'generated' },
-  { name: 'Greenwich Securities Limited', retail: 3, gen: 'generated' },
-  { name: 'Trust Yields Securities', retail: 0, gen: 'generated' },
-];
-
-type Scenario = 'ready' | 'blocked' | 'released' | 'noFirms' | 'genFail';
-
-export function FirmReportsPage(): JSX.Element {
-  const [scenario, setScenario] = useState<Scenario>('ready');
-
-  const firms: Firm[] = useMemo(() => {
-    if (scenario === 'noFirms') return [];
-    const list = BASE.map((f) => ({ ...f }));
-    if (scenario === 'genFail') {
-      list[3]!.gen = 'failed';
-      list[8]!.gen = 'failed';
+  const load = useCallback(async () => {
+    setError(null);
+    try {
+      const [reportsRes, firmsRes, runsRes, latestNational] = await Promise.all([
+        client.getFirmReports(editionId),
+        client.listFirms(),
+        client.getScoringRuns(editionId),
+        client.getLatestNationalReport(editionId),
+      ]);
+      setReports(reportsRes.reports);
+      setFirms(firmsRes);
+      setAuthoritativeRunId(runsRes.authoritative?.calculationRunId ?? null);
+      if (latestNational.report) {
+        const detail = await client.getNationalReport(latestNational.report.id);
+        setNationalApproved(detail.report.status === 'approved');
+      } else {
+        setNationalApproved(false);
+      }
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not load firm reports');
     }
-    return list;
-  }, [scenario]);
+  }, [client, editionId]);
 
-  const failed = firms.filter((f) => f.gen === 'failed');
-  const made = firms.length - failed.length;
-  const unlocked = firms.filter((f) => cutState(f.retail) === 'unlocked').length;
-  const directional = firms.filter((f) => cutState(f.retail) === 'directional').length;
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const doRun = useCallback(
+    async (fn: () => Promise<unknown>) => {
+      setBusy(true);
+      setError(null);
+      try {
+        await fn();
+        await load();
+      } catch (err) {
+        setError(err instanceof ApiError ? err.message : 'Something went wrong');
+      } finally {
+        setBusy(false);
+      }
+    },
+    [load],
+  );
+
+  if (reports === null) {
+    return <main>{error ? <div className="err">{error}</div> : <p>Loading…</p>}</main>;
+  }
+
+  const firmName = (organizationId: string): string =>
+    firms.find((f) => f.id === organizationId)?.displayName ?? organizationId;
+  const failed = reports.filter((r) => r.generationState === 'failed');
+  const generated = reports.filter((r) => r.generationState === 'generated');
+  const released = reports.filter((r) => r.releaseState === 'released');
+  const approved = reports.filter((r) => r.approvalState === 'approved');
+  const readyToRelease = generated.filter((r) => r.approvalState === 'approved');
+  const unlocked = reports.filter((r) => r.cutState === 'unlocked').length;
+  const directional = reports.filter((r) => r.cutState === 'directional').length;
+
+  function downloadList(): void {
+    const rows = (reports ?? []).map(
+      (r) => `${firmName(r.organizationId)},${r.retailN},Guaranteed,${CUT_LABEL[r.cutState]}`,
+    );
+    const csv = ['Firm,Own retail responses,Combined report,Retail category cut', ...rows].join(
+      '\n',
+    );
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `firm-reports-${editionId}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   return (
     <main>
@@ -69,61 +120,49 @@ export function FirmReportsPage(): JSX.Element {
       <h1 tabIndex={-1}>Firm reports</h1>
       <p className="lede">
         One report per participating firm. The combined report is guaranteed to every one of them;
-        the category cut is additional and unlocks on the firm’s own data.
+        the category cut is additional and unlocks on the firm&rsquo;s own data.
       </p>
 
-      <div className="actions" style={{ marginBottom: 8 }}>
-        {(['ready', 'blocked', 'released', 'genFail', 'noFirms'] as Scenario[]).map((s) => (
-          <button
-            key={s}
-            type="button"
-            className="btn-2"
-            aria-pressed={s === scenario}
-            style={s === scenario ? { borderColor: 'var(--dragnet-black)' } : undefined}
-            onClick={() => setScenario(s)}
-          >
-            {s === 'ready'
-              ? 'Ready'
-              : s === 'blocked'
-                ? 'National not approved'
-                : s === 'released'
-                  ? 'Released'
-                  : s === 'genFail'
-                    ? 'Two failed to generate'
-                    : 'No participating firms'}
-          </button>
-        ))}
-      </div>
+      {error && <div className="err">{error}</div>}
 
-      {scenario === 'blocked' && (
+      {reports.length === 0 ? (
         <div className="warnbox">
-          <b>The national report has not been approved.</b>
-          <p style={{ margin: '6px 0 0' }}>
-            Firm reports carry the industry aggregate a firm is measured against. Releasing them
-            first would put the benchmark into the market before the report that explains it.
-          </p>
-        </div>
-      )}
-
-      {scenario === 'noFirms' ? (
-        <div className="note">
-          <h3>There are no reports to release</h3>
-          <p>
-            No firm completed any of S1, S2 or S3, so no firm report exists.{' '}
-            <b>
-              This is not a suppression and nothing is being withheld — there is nothing to produce.
-            </b>
-          </p>
-          <p>
-            Whether the national report should be published with no firm-side participation is an
-            editorial decision for CIS and Dragnet, not one this surface makes.
-          </p>
+          {generationAttempted ? (
+            <>
+              <b>There are no reports to release.</b>
+              <p style={{ margin: '6px 0 0' }}>
+                No firm completed any of S1, S2 or S3, so no firm report exists. This is not a
+                suppression and nothing is being withheld — there is nothing to produce.
+              </p>
+            </>
+          ) : (
+            <b>No firm reports have been generated for this edition yet.</b>
+          )}
+          {!authoritativeRunId ? (
+            <p style={{ margin: '6px 0 0' }}>
+              A signed-off scoring run is required first — sign one off on Scoring.
+            </p>
+          ) : !generationAttempted ? (
+            <div className="actions">
+              <button
+                type="button"
+                className="btn"
+                disabled={busy}
+                onClick={() => {
+                  setGenerationAttempted(true);
+                  return doRun(() => client.generateFirmReports(editionId, authoritativeRunId));
+                }}
+              >
+                Generate firm reports
+              </button>
+            </div>
+          ) : null}
         </div>
       ) : (
         <>
           <div className="statgrid">
             <div className="stat">
-              <b>{firms.length}</b>
+              <b>{reports.length}</b>
               <span>Firms receiving a report</span>
             </div>
             <div className="stat">
@@ -135,22 +174,16 @@ export function FirmReportsPage(): JSX.Element {
               <span>Directional only</span>
             </div>
             <div className="stat">
-              <b>{firms.length - unlocked - directional}</b>
+              <b>{reports.length - unlocked - directional}</b>
               <span>Combined report only</span>
             </div>
           </div>
 
-          <div className="note">
-            <h3>The guarantee is not a sufficiency test</h3>
-            <p>
-              Every participating firm receives its combined report, whatever its response volume —
-              a firm with few responses receives a thinner report, never no report.
-            </p>
-            <p>
-              <b>Only the retail category cut is gated.</b> Below 10 nothing at category level;
-              10–29 directional only; 30+ unlocks. The 30 is provisional and configurable. A firm
-              never receives an institutional cut of itself.
-            </p>
+          <div className="tablebar">
+            <span className="muted">{reports.length} participating firms</span>
+            <button className="btn-2" type="button" onClick={downloadList}>
+              Download the list
+            </button>
           </div>
 
           <div className="tablewrap">
@@ -161,108 +194,126 @@ export function FirmReportsPage(): JSX.Element {
                   <th>Own retail responses</th>
                   <th>Combined report</th>
                   <th>Retail category cut</th>
-                  <th>Generation</th>
+                  <th>Approved</th>
+                  <th>Released</th>
                 </tr>
               </thead>
               <tbody>
-                {firms.map((f) => {
-                  const st = cutState(f.retail);
-                  return (
-                    <tr key={f.name}>
-                      <td>{f.name}</td>
-                      <td>{f.retail}</td>
-                      <td>
-                        <span className="tag ok">Guaranteed</span>
-                      </td>
-                      <td>
-                        <span
-                          className={`tag ${st === 'unlocked' ? 'ok' : st === 'directional' ? 'wait' : 'soft'}`}
+                {reports.map((r) => (
+                  <tr key={r.id} className={r.generationState === 'failed' ? 'bad' : undefined}>
+                    <td>{firmName(r.organizationId)}</td>
+                    <td>{r.retailN}</td>
+                    <td>
+                      <span className="tag ok">Guaranteed</span>
+                    </td>
+                    <td>
+                      <span
+                        className={`tag ${r.cutState === 'unlocked' ? 'ok' : r.cutState === 'directional' ? 'wait' : 'soft'}`}
+                      >
+                        {CUT_LABEL[r.cutState]}
+                      </span>
+                    </td>
+                    <td>
+                      {r.approvalState === 'approved' ? (
+                        <span className="tag ok">Approved</span>
+                      ) : r.generationState === 'generated' ? (
+                        <button
+                          type="button"
+                          className="btn-2"
+                          disabled={busy}
+                          onClick={() => doRun(() => client.approveFirmReport(r.id))}
                         >
-                          {CUT_LABEL[st]}
-                        </span>
-                      </td>
-                      <td>
-                        {f.gen === 'failed' ? (
-                          <span className="tag risk">Failed — held</span>
-                        ) : (
-                          <span className="tag ok">Generated</span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
+                          Approve
+                        </button>
+                      ) : (
+                        <span className="tag soft">Not generated</span>
+                      )}
+                    </td>
+                    <td>
+                      <span className={`tag ${r.releaseState === 'released' ? 'ok' : 'soft'}`}>
+                        {r.releaseState === 'released'
+                          ? 'Released'
+                          : r.releaseState === 'held'
+                            ? 'Held'
+                            : 'Not released'}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
 
+          {failed.length > 0 && (
+            <div className="warnbox">
+              <b>
+                {failed.length} of {reports.length} failed to generate and are HELD.
+              </b>
+              <p style={{ margin: '6px 0 0' }}>A held report is held, not excluded.</p>
+              <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
+                {failed.map((r) => (
+                  <li key={r.id} style={{ margin: '4px 0' }}>
+                    {firmName(r.organizationId)}{' '}
+                    <button
+                      type="button"
+                      className="btn-2"
+                      disabled={busy}
+                      onClick={() => doRun(() => client.regenerateFirmReport(r.id))}
+                    >
+                      Retry generation
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           <section className="stage now">
             <div className="stagehead">
               <h2>Releasing the reports</h2>
-              <span className={`pill ${scenario === 'released' ? 'ok' : 'started'}`}>
-                {scenario === 'released'
-                  ? 'Released'
-                  : failed.length
-                    ? `${made} ready, ${failed.length} held`
-                    : 'Not released'}
+              <span className="pill wait">
+                {released.length} of {reports.length} released
               </span>
             </div>
             <div className="stagebody">
-              {scenario === 'released' ? (
-                <>
-                  <p>Released to {made} firms. Each firm sees its report in its own portal.</p>
-                  <div className="note">
-                    <p>
-                      A later scoring run can change the figures. Nothing already released is
-                      recalled — a firm that has seen its report has seen it. A correction is a new,
-                      separately-versioned report.
-                    </p>
-                  </div>
-                </>
-              ) : failed.length ? (
-                <>
-                  <div className="warnbox">
-                    <b>
-                      {failed.length} of {firms.length} failed to generate and are HELD.
-                    </b>
-                    <p style={{ margin: '6px 0 0' }}>{failed.map((f) => f.name).join(' · ')}</p>
-                    <p style={{ margin: '6px 0 0' }}>
-                      The other {made} may be released. <b>A held report is held, not excluded</b> —
-                      it releases once regenerated, reviewed and approved. Release history records
-                      why it waited.
-                    </p>
-                  </div>
-                  <p>
-                    {made} of {firms.length} reports are approved and ready. Each releases on its
-                    own; a report that is not ready holds no other firm back.
+              {!nationalApproved ? (
+                <div className="warnbox">
+                  <b>The national report has not been approved.</b>
+                  <p style={{ margin: '6px 0 0' }}>
+                    Firm reports carry the industry aggregate a firm is measured against. Releasing
+                    them first would put the benchmark into the market before the report that
+                    explains it.
                   </p>
-                  <div className="actions">
-                    <button type="button" className="btn-2" onClick={() => setScenario('ready')}>
-                      Produce the {failed.length} again
-                    </button>
-                    <button
-                      type="button"
-                      className="btn"
-                      disabled={scenario === 'blocked'}
-                      onClick={() => setScenario('released')}
-                    >
-                      Release the {made} approved
-                    </button>
-                  </div>
-                </>
+                </div>
               ) : (
                 <>
                   <p>
-                    {made} of {firms.length} reports are approved and ready. Release is atomic per
-                    report.
+                    {readyToRelease.length} of {reports.length} reports are approved and ready. Each
+                    releases on its own; a report that is not ready holds no other firm back.
                   </p>
+                  {releaseResult && (
+                    <div className="note">
+                      <p>
+                        Released to {releaseResult.released.length} firms.{' '}
+                        {releaseResult.held.length > 0 &&
+                          `${releaseResult.held.length} held: ${releaseResult.held
+                            .map((h) => `${firmName(h.organizationId)} (${h.reason})`)
+                            .join(', ')}`}
+                      </p>
+                    </div>
+                  )}
                   <div className="actions">
                     <button
                       type="button"
                       className="btn"
-                      disabled={scenario === 'blocked'}
-                      onClick={() => setScenario('released')}
+                      disabled={busy || approved.length === 0}
+                      onClick={() =>
+                        doRun(async () =>
+                          setReleaseResult(await client.releaseFirmReports(editionId)),
+                        )
+                      }
                     >
-                      Release the {made} approved
+                      Release the {readyToRelease.length} approved
                     </button>
                   </div>
                 </>

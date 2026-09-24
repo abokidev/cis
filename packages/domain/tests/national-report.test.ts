@@ -9,7 +9,12 @@
  */
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { Pool } from 'pg';
-import { createCalculationRun, listSections, listFindingsForReport } from '@cis/db';
+import {
+  createCalculationRun,
+  listSections,
+  listFindingsForReport,
+  getLatestNationalReportForEdition,
+} from '@cis/db';
 import {
   seedReferenceData,
   NATIONAL_SECTIONS,
@@ -332,5 +337,44 @@ describe('Approval preconditions — four, independently', () => {
     await expect(approveNational(pool, report.id, 'adaeze')).rejects.toMatchObject({
       code: 'SELF_APPROVAL',
     });
+  });
+});
+
+/**
+ * ADM-005 live-wiring fix — `getLatestNationalReportForEdition` lets a fresh
+ * admin page load discover the current report for an edition without the
+ * frontend having to remember a report id across sessions (there was
+ * previously no way to look a report up except by its own id). Backs the new
+ * `GET /editions/:id/national-report` route.
+ */
+describe('getLatestNationalReportForEdition (ADM-005 live-wiring)', () => {
+  it('returns null when no report has been generated for the edition yet', async () => {
+    const found = await getLatestNationalReportForEdition(pool, editionId);
+    expect(found).toBeNull();
+  });
+
+  it('returns the most recently created report when more than one exists', async () => {
+    const { report: first } = await generateNationalReport(pool, {
+      editionId,
+      scoringRunId,
+      context: fullContext(),
+    });
+
+    const secondRun = await createCalculationRun(pool, {
+      editionId,
+      runType: 'scoring',
+      datasetHash: 'ds-second',
+      status: 'complete',
+    });
+    await signOffRun(secondRun.id);
+    const { report: second } = await generateNationalReport(pool, {
+      editionId,
+      scoringRunId: secondRun.id,
+      context: fullContext(),
+    });
+
+    const found = await getLatestNationalReportForEdition(pool, editionId);
+    expect(found?.id).toBe(second.id);
+    expect(found?.id).not.toBe(first.id);
   });
 });

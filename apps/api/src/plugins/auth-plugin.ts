@@ -1,17 +1,20 @@
-import { FastifyInstance, FastifyRequest } from 'fastify';
+import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import fastifyJwt from '@fastify/jwt';
-import type { SessionPayload } from '@cis/shared-types';
+import type { SessionPayload, CoordinatorSessionPayload } from '@cis/shared-types';
+
+type AnySessionPayload = SessionPayload | CoordinatorSessionPayload;
 
 declare module '@fastify/jwt' {
   interface FastifyJWT {
-    payload: SessionPayload;
-    user: SessionPayload;
+    payload: AnySessionPayload;
+    user: AnySessionPayload;
   }
 }
 
 declare module 'fastify' {
   interface FastifyRequest {
     session: SessionPayload;
+    coordinatorSession: CoordinatorSessionPayload;
   }
 }
 
@@ -27,17 +30,40 @@ export async function registerAuth(app: FastifyInstance): Promise<void> {
     verify: { algorithms: ['HS256'] },
   });
 
-  // Decorator to protect routes
-  app.decorate('authenticate', async (request: FastifyRequest) => {
+  // Decorator to protect operator routes. Both token kinds are signed with
+  // the same secret, so a valid signature alone isn't enough — a coordinator
+  // token must never be usable as operator access, so it's rejected here
+  // even though it verifies fine.
+  app.decorate('authenticate', async (request: FastifyRequest, reply: FastifyReply) => {
     await request.jwtVerify();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- fastify-jwt stores on request.user
-    (request as any).session = (request as any).user as SessionPayload;
+    if (request.user.kind !== 'operator') {
+      return reply
+        .code(401)
+        .send({ error: 'Unauthorized', message: 'Invalid session', statusCode: 401 });
+    }
+    request.session = request.user;
+  });
+
+  // Decorator to protect firm-coordinator routes — the portal-facing
+  // counterpart to `authenticate`. Resolves to `firm_coordinators.id`, never
+  // `users.id`, and rejects an operator token the same way `authenticate`
+  // rejects a coordinator one.
+  app.decorate('authenticateCoordinator', async (request: FastifyRequest, reply: FastifyReply) => {
+    await request.jwtVerify();
+    if (request.user.kind !== 'coordinator') {
+      return reply
+        .code(401)
+        .send({ error: 'Unauthorized', message: 'Invalid session', statusCode: 401 });
+    }
+    request.coordinatorSession = request.user;
   });
 }
 
-// Extend Fastify instance type so routes can reference app.authenticate
+// Extend Fastify instance type so routes can reference app.authenticate /
+// app.authenticateCoordinator
 declare module 'fastify' {
   interface FastifyInstance {
-    authenticate: (request: FastifyRequest) => Promise<void>;
+    authenticate: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
+    authenticateCoordinator: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
   }
 }

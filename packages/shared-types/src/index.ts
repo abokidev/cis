@@ -988,4 +988,16 @@ export interface SessionPayload {
   email: string;
   displayName: string;
   org: string | null;
+  kind: 'operator';
+}
+
+/** A firm coordinator's session — a distinct claim shape from `SessionPayload`
+ *  so a coordinator token can never be mistaken for, or misused as, operator
+ *  access (or vice versa). `sub` resolves to `firm_coordinators.id`, never
+ *  `users.id`. */
+export interface CoordinatorSessionPayload {
+  sub: string;
+  organizationId: string;
+  email: string;
+  kind: 'coordinator';
 }

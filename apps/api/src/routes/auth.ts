@@ -72,6 +72,7 @@ export const authRoutes: FastifyPluginAsyncZod = async (app) => {
         email: user.email,
         displayName: user.displayName,
         org: user.organization,
+        kind: 'operator',
       });
 
       return reply.send({

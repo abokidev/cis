@@ -26,5 +26,6 @@ export function verifySession(token: string): SessionPayload {
     email: decoded['email'] as string,
     displayName: decoded['displayName'] as string,
     org: (decoded['org'] as string | null | undefined) ?? null,
+    kind: 'operator',
   };
 }

@@ -75,6 +75,12 @@ export {
 } from './firm-portal-service';
 export type { ClaimInput, InvitationRequest } from './firm-portal-service';
 
+export {
+  coordinatorLogin,
+  CoordinatorAuthError,
+  InvalidCoordinatorCredentialsError,
+} from './coordinator-auth-service';
+
 // ── Phase 5: scoring, sufficiency, analytics & evidence ──────────────────────
 export {
   segmentForInstrument,

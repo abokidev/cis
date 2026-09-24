@@ -91,6 +91,21 @@ export async function getCoordinatorById(pool: Pool, id: string): Promise<FirmCo
   return row ? mapCoordinator(row) : null;
 }
 
+/** An active (non-revoked) coordinator identified by email — the sign-in
+ *  lookup. Case-insensitive: email addresses are not case-sensitive. */
+export async function getCoordinatorByEmail(
+  pool: Pool,
+  email: string,
+): Promise<FirmCoordinator | null> {
+  const result = await query<RawCoordinatorRow>(
+    pool,
+    'SELECT * FROM firm_coordinators WHERE lower(email) = lower($1) AND revoked_at IS NULL',
+    [email],
+  );
+  const row = result.rows[0];
+  return row ? mapCoordinator(row) : null;
+}
+
 /** The stored PIN hash for a coordinator (for current-PIN verification). */
 export async function getCoordinatorPinHash(pool: Pool, id: string): Promise<string | null> {
   const result = await query<{ pin_hash: string | null }>(

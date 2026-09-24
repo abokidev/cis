@@ -3133,3 +3133,219 @@ devDependency advisories as every prior phase.
 
 Removed from this list, now resolved: `PeopleAccessPage.tsx`, `ResponsesPage.tsx`, and
 `UnfinishedPage.tsx`'s mockup defects (all three above).
+
+## Firm Portal Rebuild — Real Coordinator Authentication (a dedicated remediation, not part of the sweep)
+
+Confirmed by direct product-owner sign-off as an implementation gap against already-approved,
+controlled designs — **not** new scope, and materially larger than the operator-screen sweep above,
+so it gets its own pass. It closes the blocker the previous section left open: `FirmPortal.tsx` was a
+1,398-line, entirely local-state mockup with no real coordinator identity anywhere in the platform,
+so `FirmResultsPage.tsx`'s chosen resolution (move results into the coordinator's own portal) was
+undoable until this existed.
+
+### Two premise corrections, stated plainly before anything else
+
+1. **No artefact source file exists anywhere in this repository.** Exhaustively grepped for
+   `UX-FRM-001`, `UX-FRM-007`, `UX-FRM-RES-001`, `UX-X-001`, `v14.10`, and every other artefact ID
+   this task named — only this README references them, always as labels, never as a source-of-truth
+   document. "Verify directly against the artefact, never infer from the current file" is only
+   partially achievable as a result: copy below is carried over **verbatim** from the earlier
+   prototype file wherever it doesn't conflict with a stated rule (that file's own header claimed a
+   faithful v14.5 port, and its wording reads like real, deliberate design work, not placeholder
+   text), and rebuilt from the real backend's own contract where the prototype's behaviour had no
+   real backing at all (see the claim flow, below). This is flagged rather than silently presented as
+   independently verified.
+2. **The S1/S2/S3 entry point did not exist at all**, contrary to the assumption that Part 6 "should
+   require no new survey-runtime work." `RespondentApp.tsx` had only a `'firm-stub'` dead end. The
+   correction: the survey-**runtime** layer needed zero changes (`startJourney` was already fully
+   generic — a firm seat is not a special case there), but a new, purely additive UI entry point
+   (`FirmSeatEntry.tsx`) and a small, real seat-linking wiring were still required and are now built.
+
+### Part 1 — Real coordinator authentication
+
+Email + PIN only, never a username/password account (the one fixed design decision the engineering
+requirement itself states; everything else about verification/lockout/reuse is left open and not
+invented here). Design decisions, for the record:
+
+- **argon2id** for PIN hashing, reusing `packages/auth/src/password.ts` unchanged (`hashPassword`/
+  `verifyPassword`) — the exact scheme operator passwords already use.
+- **A distinct JWT claim**, not a shared session shape: `SessionPayload` (operator) now carries an
+  explicit `kind: 'operator'`; a new `CoordinatorSessionPayload` carries `kind: 'coordinator'` and
+  resolves to `firm_coordinators.id`, **never** `users.id`. `apps/api/src/plugins/auth-plugin.ts`'s
+  `authenticate` decorator now explicitly rejects a coordinator-kind token (and the new
+  `authenticateCoordinator` decorator explicitly rejects an operator-kind one) — both tokens are
+  signed with the same secret, so a valid signature alone was never enough; the two identity spaces
+  are now structurally incapable of being confused, not just conventionally kept apart.
+- **8-hour token lifetime**, matching the operator convention exactly (`sign: {expiresIn: '8h'}`,
+  the same `fastifyJwt` registration).
+- **Rate limiting** on `POST /portal/auth/login` reuses the identical `RATE_LIMIT_AUTH_MAX`/
+  `RATE_LIMIT_AUTH_WINDOW_MS` env vars and route-level config shape as operator `/auth/login`.
+- **Anti-enumeration**: `coordinatorLogin` always does real hashing work, against a dummy argon2id
+  hash when no candidate coordinator exists or none has a PIN set, the same technique operator login
+  already uses (always calling `verifyPassword` regardless of whether a user was found).
+- **PIN rotation requires the current PIN**, per the one explicit stated rule — enforced by the
+  pre-existing, already-correct `setCoordinatorPin` (unchanged), now reachable over HTTP at
+  `POST /portal/auth/pin`.
+- A coordinator's email is unique **per organization**, not globally (`uniq_active_coordinator_email`)
+  — the schema deliberately allows the same email to coordinate more than one firm (e.g. a
+  consultant). `coordinatorLogin` tries every active coordinator for that email against the supplied
+  PIN rather than assuming a single match; this was originally missed and then found and fixed by
+  live verification (see "Bugs found by live verification", below).
+
+New: `packages/domain/src/coordinator-auth-service.ts` (`coordinatorLogin`, `CoordinatorAuthError`,
+`InvalidCoordinatorCredentialsError`), `getActiveCoordinatorsByEmail`/`getCoordinatorPinHash` query
+additions, `apps/api/src/routes/firm-coordinator-auth.ts` (`POST /portal/auth/login`,
+`POST /portal/auth/pin`, `GET /portal/auth/lookup` — see Part 3).
+
+### Part 2 — Coordinator-portal routes, reusing the existing domain services unchanged
+
+`apps/api/src/routes/firm-coordinator-portal.ts` wraps `firm-team-service.ts` and
+`firm-portal-service.ts` — both already correct, already tested — behind `authenticateCoordinator`
+instead of rebuilding either. Every route is **self-scoped**: `organizationId` always comes from
+`request.coordinatorSession.organizationId` (the session token), never a client-supplied parameter,
+and a lead-handover's acting coordinator is always the session's own id, never a request body field.
+HTTP tests assert this directly — one firm's token cannot see another firm's coordinators or land a
+seat assignment outside its own organization, and a coordinator token is still refused on the
+equivalent operator-only route. "Current edition" resolves the same way the existing public
+journey-context and previous-editions routes already do (the open edition, else the most recent) —
+a coordinator's portal has no edition picker of its own.
+
+### Part 3 — `FirmPortal.tsx` rebuilt against the real backend
+
+The claim flow drops the mockup's fictional manually-typed invitation code entirely: the real
+`claimSpace` takes no code parameter at all, and a second claimant is simply redirected to sign in —
+`AlreadyClaimedError`'s own message ("This firm already has a space. Sign in instead.") is used
+**verbatim**, not paraphrased. Two small, real, necessary public endpoints back what the prototype
+faked: `GET /firm/directory` (names + ids only — a stockbroking firm's name is not confidential; it
+is the reason the study exists) replaces a hardcoded `FIRMS` array, and `GET /portal/auth/lookup`
+(does this email belong to a sign-in-capable coordinator, without ever disclosing which firm) backs
+the email-first branch the artefact's own copy already commits to.
+
+Team, seats, and outreach are wired to Part 2's routes (real add/handover/remove, real seat
+assign/replace with the real replacement-cost warning text, real per-segment outreach volumes —
+`ensureOutreachLinks`/`getOutreachVolumes`, unchanged). Results call the existing, **unchanged**
+coordinator-access-code route (`firm-results.ts`) with the signed-in coordinator's own `accessCode`
+from a new `GET /portal/me` — no backend change there, per the explicit instruction not to touch
+that route or resolve the coordinator-vs-all-three-respondents question (still open, still not
+resolved here).
+
+"Phase" (setup/running/closed) is derived from real state, not a local demo toggle — see "Bugs found
+by live verification" for a correction made to that derivation mid-build.
+
+`apps/admin/src/firm/portalModel.ts` retires `notBuiltForSeat` (a seat row now links to a real entry
+point) and `DESTINATIONS.team`/`.results` (both now built into this surface — keeping either label
+would be the exact same stale "owned elsewhere" defect already fixed once before, in Mission Board).
+
+### Part 4 — Firm results wired in; `FirmResultsPage.tsx` removed
+
+`apps/admin/src/pages/FirmResultsPage.tsx` and its "Firm results" operator admin tab are deleted
+entirely. It never had a legitimate reason to sit behind operator login once the coordinator-
+authenticated surface that should always have owned it actually exists.
+
+### Part 5 — All five `ErrorState` access-failure states, live-reachable
+
+Spread across the two new real surfaces, each with a genuine trigger, reusing the one Phase 18
+component — no second implementation:
+
+| State                  | Real trigger                                                                                                                                                                                                                                                           |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `expired_link`         | An unknown seat link token, **or** a never-assigned ('empty') seat's token — both now resolve identically, a fix made after live verification found the second case fell through to a raw inline error instead (see below)                                             |
+| `no_unfinished_survey` | A started seat's link revisited with no local session to resume — the same accepted limitation institutional entries already have                                                                                                                                      |
+| `access_denied`        | `FirmResultsAccessError` (403) from the unchanged `firm-results.ts` route — verified via `firm-results.test.ts`'s existing "Coordinator-only access" test plus code review, since a coordinator's own normal flow cannot organically trigger it against their own firm |
+| `service_unavailable`  | Any network/5xx failure loading `/portal/me` or the seat-entry context, in either surface                                                                                                                                                                              |
+| `participation_closed` | A seat link opened once the edition has closed (`editionStatus !== 'open'`) and that seat was never completed                                                                                                                                                          |
+
+### Part 6 — A real entry point for an assigned S1/S2/S3 seat
+
+`apps/admin/src/journey/FirmSeatEntry.tsx`, reached via `/survey?firmSeat=<token>`, mirrors
+`InstitutionalEntry.tsx`'s shape (a single named context, no firm-rating step) rather than
+`RetailEntry.tsx`'s — `requiresConsent()` covers only S5a/S5b, not S1/S2/S3, so there is no consent
+gate and, consequently, no recovery token either: the same accepted limitation institutional entries
+already have (closing the browser mid-survey cannot be resumed from this same link).
+
+A small, genuinely necessary schema addition: `seat_assignments.link_token` (migration
+`20260924000000_phase25-firm-seat-link-token.js`), regenerated on every seat **assign** and every
+**clear**. Without it, the seat's own stable `id` would have had to serve as the link, and a
+reassigned seat's old link would keep resolving — silently letting a _replaced_ occupant land in
+whatever gets assigned to that seat next, breaking the exact promise `replacementCost`'s own warning
+text already makes ("Their link stops working straight away"). New domain functions
+(`getSeatEntryContext`, `startSeatEntry`, `completeSeatEntry`) and a new public
+`apps/api/src/routes/firm-seat-entry.ts` (`GET .../context`, `POST .../start`,
+`POST .../complete`) wrap this. `RespondentApp.tsx`'s dead `'firm-stub'` screen and its `onFirmCta`
+indirection are removed — `PublicLanding.tsx`'s "Firm participation" link now goes straight to
+`/firm`, a real destination.
+
+### Bugs found by live verification (not unit/HTTP-testable — needed the whole real flow)
+
+A full live run — real browser, real dev Postgres, no mocks — through claim → sign in → reload →
+assign three seats → add a second coordinator → hand over lead → reload → open a real assigned
+seat's link in a **separate, unauthenticated browser context** → answer all 11 real questions of a
+real S2 (Compliance) survey → submit → reload the coordinator's page → see the seat genuinely show
+Complete, surfaced three genuine defects, each requiring the full real pipeline to reproduce (fixed,
+each with a regression test where the layer below the UI could express it):
+
+1. **Coordinator login picked whichever row an email resolved to first**, not necessarily the one
+   whose PIN was supplied — reproducible only because the live run happened to reuse an email across
+   two firms and both attempts to sign in "worked" against the wrong firm. `getCoordinatorByEmail`
+   (singular) became `getActiveCoordinatorsByEmail` (plural); `coordinatorLogin` now tries every
+   candidate's PIN hash rather than assuming a single match. New domain test:
+   `coordinatorLogin > signs in the right coordinator when the same email is active at two different
+firms`.
+2. **Phase (setup vs. running) was derived from the edition's own status**, so a firm was shown
+   "running" the instant the edition opened for collection, with zero of its three seats assigned —
+   only visible once a real edition was already open in the seeded dev database. A firm's own setup
+   progress is independent of the edition's status; phase now derives from whether all three seats
+   are actually assigned (`seats.every(s => s.state !== 'empty')`), with only "closed" still tracking
+   the edition directly.
+3. **An unassigned ('empty') seat's link let a visitor attempt to start a survey** — only the
+   backend's own state guard (`startSeatEntry` requiring `'invited'`) stopped it, surfacing as a raw
+   inline error rather than the correct explanation. `FirmSeatEntry.tsx` now treats `'empty'` the
+   same as an unknown token (`expired_link`) — confirmed by visiting both in a real browser and
+   seeing the identical, correct "Expired continuation link" screen.
+
+### Verification
+
+Full suite: `pnpm test` — **52 files, 474 tests, all green** against a live Postgres (up from 47/450:
+Task D adds 4 new domain/HTTP test files — `coordinator-auth-service.test.ts`,
+`firm-coordinator-auth.test.ts`, `firm-coordinator-portal.test.ts`, `firm-seat-entry.test.ts`
+(domain + HTTP) — plus one existing test file rewritten in place, `portalModel.test.ts`, to match the
+rebuilt model). `pnpm lint`, `pnpm typecheck`, `pnpm turbo build` all clean. `pnpm audit` unchanged —
+the same three pre-existing devDependency advisories (`js-yaml`, transitive via `eslint`) as every
+prior phase.
+
+Live end-to-end, real browser (`chromium`) against a freshly-seeded `cis_dev`, no mocks anywhere —
+the full run described under "Bugs found by live verification" above, plus each of the three
+browser-reachable `ErrorState` triggers confirmed showing the correct, real screen (`expired_link`
+for both an unknown token and an empty seat; `no_unfinished_survey` for a started seat revisited),
+and the results route's genuine `409 "No signed-off scoring run exists for this edition yet"`
+confirmed reaching the exact contract the frontend consumes (same endpoint, same
+`x-coordinator-access-code` header, the coordinator's own real access code). Full results-content
+verification (indices actually rendering `you`/`industry`/`standing` values) is not separately
+re-proven here — `firm-results-service.ts` and its 9 domain tests already prove that computation;
+this pass proves only that the portal reaches it correctly, which is what changed.
+
+### Running list of open items (updated)
+
+1. **National report approval is currently unreachable end-to-end** — unchanged, out of scope.
+2. **`RegulatorsPage.tsx`** — unchanged: an honestly, previously self-disclosed deliberate scope
+   decision, not a hidden gap.
+3. **Coordinator-vs-all-three-respondents access to firm results** — still the interim default
+   (coordinator-only), explicitly not resolved by this remediation per instruction.
+4. **A coordinator with no PIN set yet has no self-service recovery path.** This can only happen for
+   a coordinator an OPERATOR added directly (`addCoordinator`/`createLeadCoordinator` via the
+   operator-authenticated `firm-team.ts` routes never set a PIN) — a coordinator who claims their own
+   space always sets one in the same action (`claimSpace` calls `setCoordinatorPin` immediately).
+   Building an email-verification or magic-link subsystem to cover this narrow case was out of this
+   remediation's explicit scope (auth, portal wiring, team/results/seat-entry — not a new identity-
+   recovery mechanism); the portal's "email exists, no PIN" state is flagged as `'unclaimed'` from
+   `/portal/auth/lookup`, same as a genuinely unrecognised email, so nobody is shown a broken control.
+5. **Outreach link consumption does not exist yet** — `ensureOutreachLinks`/`getOutreachVolumes` are
+   real and now wired into the portal (real per-segment tokens, real volume counts), but nothing in
+   the platform increments `opens`/`starts`/`finishes` for a client who actually follows one, or
+   threads the link's segment/firm into `startJourney`'s `recruitingFirmId`. This is a pre-existing
+   gap this remediation did not introduce and was not asked to close (Task D's Part 6 scope was the
+   S1/S2/S3 seat entry point specifically, not the client-facing outreach-link landing page) — the
+   outreach numbers shown in the portal are honestly real, just honestly always zero today.
+
+Removed from this list, now resolved: `FirmPortal.tsx` being a complete unwired mockup;
+`FirmResultsPage.tsx`'s decision being made but not executed (Part 4, above, executes it).

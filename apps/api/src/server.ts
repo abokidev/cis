@@ -8,6 +8,7 @@ import { instrumentRoutes } from './routes/instruments';
 import { journeyRoutes } from './routes/journeys';
 import { firmTeamRoutes } from './routes/firm-team';
 import { firmCoordinatorAuthRoutes } from './routes/firm-coordinator-auth';
+import { firmCoordinatorPortalRoutes } from './routes/firm-coordinator-portal';
 import { governedContentRoutes } from './routes/governed-content';
 import { firmPortalRoutes } from './routes/firm-portal';
 import { reportingRoutes } from './routes/reporting';
@@ -73,6 +74,7 @@ export async function buildServer() {
   await app.register(journeyRoutes);
   await app.register(firmTeamRoutes);
   await app.register(firmCoordinatorAuthRoutes);
+  await app.register(firmCoordinatorPortalRoutes);
   await app.register(governedContentRoutes);
   await app.register(firmPortalRoutes);
   await app.register(reportingRoutes);

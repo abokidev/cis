@@ -61,6 +61,26 @@ export async function incrementOutreach(
   ]);
 }
 
+/**
+ * Resolve a single outreach link by its own token — the public, respondent-
+ * facing lookup a `?ref=<token>` link uses to find which edition/firm/segment
+ * it belongs to. Returns the full row (including counts) because callers so
+ * far are all trusted internal ones; the public route built on top of this
+ * exposes only editionId/organizationId/segment, never the counts.
+ */
+export async function getOutreachLinkByToken(
+  pool: Pool,
+  token: string,
+): Promise<OutreachLink | null> {
+  const result = await query<RawOutreachRow>(
+    pool,
+    'SELECT * FROM outreach_links WHERE token = $1',
+    [token],
+  );
+  const row = result.rows[0];
+  return row ? mapOutreach(row) : null;
+}
+
 /** List a firm's outreach links (one per segment). Counters only. */
 export async function listFirmOutreachLinks(
   pool: Pool,

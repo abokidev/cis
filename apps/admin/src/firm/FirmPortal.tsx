@@ -19,7 +19,7 @@ import {
   type SeatCode,
   type Coordinator,
   type PortalMe,
-  type OutreachVolume,
+  type OutreachLink,
   type FirmDirectoryEntry,
   type FirmResults,
 } from './portalClient';
@@ -931,7 +931,6 @@ function Portal({
         {screen === 'outreach' && (
           <OutreachView
             token={session.token}
-            editionId={me.currentEdition?.id ?? null}
             onWhy={() => go('whylink')}
             onBack={() => go('landing')}
           />
@@ -1348,27 +1347,26 @@ function SeatRow({
 
 function OutreachView({
   token,
-  editionId,
   onWhy,
   onBack,
 }: {
   token: string;
-  editionId: string | null;
   onWhy: () => void;
   onBack: () => void;
 }): JSX.Element {
   const [seg, setSeg] = useState<Segment>('individual');
-  const [volumes, setVolumes] = useState<OutreachVolume[]>([]);
+  const [links, setLinks] = useState<OutreachLink[]>([]);
   const [copied, setCopied] = useState('');
 
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       try {
-        const v = await portalClient.getOutreach(token);
-        if (!cancelled) setVolumes(v);
+        const l = await portalClient.getOutreach(token);
+        if (!cancelled) setLinks(l);
       } catch {
-        // Non-fatal for this view; volumes simply show as zero.
+        // Non-fatal for this view; volumes simply show as zero and the link
+        // stays blank until the next successful load.
       }
     })();
     return () => {
@@ -1376,8 +1374,13 @@ function OutreachView({
     };
   }, [token]);
 
+  const bySegment = (s: Segment) => links.find((l) => l.segment === s);
   const copy = SEGMENTS[seg];
-  const link = editionId ? `${window.location.origin}/survey?ref=${editionId}-${seg}` : '';
+  // The real, working link — the coordinator's own outreach token for this
+  // segment, the same one `/outreach/:token/context` resolves for a
+  // respondent who follows it.
+  const currentLink = bySegment(seg);
+  const link = currentLink ? `${window.location.origin}/survey?ref=${currentLink.token}` : '';
   const emailText = `Subject: ${copy.subject}\n\n${copy.body.join('\n\n')}\n\n${link}`;
 
   function copyText(t: string) {
@@ -1388,8 +1391,6 @@ function OutreachView({
         .catch(() => setCopied('Copy it yourself'));
     } else setCopied('Copy it yourself');
   }
-
-  const bySegment = (s: Segment) => volumes.find((v) => v.segment === s);
 
   return (
     <>

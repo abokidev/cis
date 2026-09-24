@@ -16,7 +16,7 @@ import {
   canInviteClients,
   getSeatStatus,
   ensureOutreachLinks,
-  getOutreachVolumes,
+  listOutreachLinksForFirm,
 } from '@cis/domain';
 
 const INVESTOR_CATEGORY = z.enum([
@@ -326,8 +326,16 @@ export const firmCoordinatorPortalRoutes: FastifyPluginAsyncZod = async (app) =>
       const pool = getPool();
       const organizationId = request.coordinatorSession.organizationId;
       await ensureOutreachLinks(pool, editionId, organizationId, () => randomUUID());
-      const volumes = await getOutreachVolumes(pool, editionId, organizationId);
-      return reply.send({ volumes });
+      const links = await listOutreachLinksForFirm(pool, editionId, organizationId);
+      return reply.send({
+        links: links.map((l) => ({
+          token: l.token,
+          segment: l.segment,
+          opens: l.opens,
+          starts: l.starts,
+          finishes: l.finishes,
+        })),
+      });
     },
   );
 };

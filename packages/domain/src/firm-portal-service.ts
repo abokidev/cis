@@ -13,6 +13,8 @@ import {
   createOutreachLink,
   listFirmOutreachLinks,
   getFirmOutreachBySegment,
+  getOutreachLinkByToken,
+  incrementOutreach,
   getEditionById,
 } from '@cis/db';
 import type {
@@ -405,6 +407,21 @@ export async function getOutreachVolumes(
   return getFirmOutreachBySegment(pool, editionId, organizationId);
 }
 
+/**
+ * A firm's own outreach links, WITH their tokens — unlike `getOutreachVolumes`,
+ * this is for the firm's own coordinator-authenticated read of its own links,
+ * which genuinely needs the token to actually build and share the link. This
+ * is not a non-joinability concern: the token identifies the LINK, not any
+ * respondent, and a firm already fully owns its own link's identity.
+ */
+export async function listOutreachLinksForFirm(
+  pool: Pool,
+  editionId: string,
+  organizationId: string,
+): ReturnType<typeof listFirmOutreachLinks> {
+  return listFirmOutreachLinks(pool, editionId, organizationId);
+}
+
 // ─── Seat entry point (Task D, Part 6) ─────────────────────────────────────────
 
 /** No seat matches this link token — either it never existed, or the seat was
@@ -485,4 +502,52 @@ export async function completeSeatEntry(pool: Pool, linkToken: string): Promise<
     seatCode: seat.seatCode,
     state: 'complete',
   });
+}
+
+// ─── Outreach-link consumption ─────────────────────────────────────────────────
+
+/** No outreach link matches this token. */
+export class OutreachLinkNotFoundError extends FirmPortalError {
+  constructor() {
+    super('This link is no longer valid', 'OUTREACH_LINK_NOT_FOUND');
+  }
+}
+
+export interface OutreachLinkContext {
+  editionId: string;
+  organizationId: string;
+  segment: OutreachSegment;
+}
+
+/**
+ * What an unauthenticated visitor following a firm's outreach link is
+ * allowed to know: which edition, which firm, which client segment — never
+ * the link's own counts, and never anything about any respondent. The
+ * counts stay a firm-facing-only view (`getOutreachVolumes`); this is a
+ * separate, deliberately narrower read for the public entry-flow side.
+ */
+export async function resolveOutreachToken(
+  pool: Pool,
+  token: string,
+): Promise<OutreachLinkContext> {
+  const link = await getOutreachLinkByToken(pool, token);
+  if (!link || !link.segment) throw new OutreachLinkNotFoundError();
+  return { editionId: link.editionId, organizationId: link.organizationId, segment: link.segment };
+}
+
+/**
+ * Record a real opens/starts/finishes event against a firm's outreach link —
+ * the missing other half of `ensureOutreachLinks`/`getOutreachVolumes`
+ * (which create and read links, but nothing previously incremented them).
+ * Silently ignores an unknown token: firing this from a respondent's browser
+ * is best-effort telemetry on an already-completed navigation, never a gate
+ * on it, so a stale/invalid token must not surface as an error to the
+ * respondent it would otherwise interrupt.
+ */
+export async function recordOutreachEvent(
+  pool: Pool,
+  token: string,
+  event: 'opens' | 'starts' | 'finishes',
+): Promise<void> {
+  await incrementOutreach(pool, token, event);
 }

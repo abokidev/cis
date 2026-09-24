@@ -68,6 +68,7 @@ export {
   getSeatStatus,
   ensureOutreachLinks,
   getOutreachVolumes,
+  listOutreachLinksForFirm,
   FirmPortalError,
   PrivacyConsentRequiredError,
   AlreadyClaimedError,
@@ -76,8 +77,16 @@ export {
   startSeatEntry,
   completeSeatEntry,
   SeatLinkNotFoundError,
+  resolveOutreachToken,
+  recordOutreachEvent,
+  OutreachLinkNotFoundError,
 } from './firm-portal-service';
-export type { ClaimInput, InvitationRequest, SeatEntryContext } from './firm-portal-service';
+export type {
+  ClaimInput,
+  InvitationRequest,
+  SeatEntryContext,
+  OutreachLinkContext,
+} from './firm-portal-service';
 
 export {
   coordinatorLogin,

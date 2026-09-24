@@ -92,7 +92,8 @@ export interface FirmDirectoryEntry {
 
 export type OutreachSegment = 'individual' | 'local_institutional' | 'foreign_institutional';
 
-export interface OutreachVolume {
+export interface OutreachLink {
+  token: string;
   segment: OutreachSegment | null;
   opens: number;
   starts: number;
@@ -245,7 +246,7 @@ export const portalClient = {
 
   // Outreach
   getOutreach: (token: string) =>
-    request<{ volumes: OutreachVolume[] }>('/portal/outreach', { token }).then((r) => r.volumes),
+    request<{ links: OutreachLink[] }>('/portal/outreach', { token }).then((r) => r.links),
 
   // Results — reuses the existing, unchanged coordinator-access-code route
   // (apps/api/src/routes/firm-results.ts); the coordinator's own accessCode,

@@ -181,6 +181,23 @@ export const journeyApi = {
   firmSeatComplete: (linkToken: string) =>
     request<{ ok: true }>(`/firm-seats/${encodeURIComponent(linkToken)}/complete`, 'POST'),
 
+  // A firm's outreach link (Task E) — resolving which edition/firm/segment a
+  // `?ref=<token>` link belongs to, and recording the real opens/starts/
+  // finishes events `ensureOutreachLinks`/`getOutreachVolumes` always
+  // supported reading but nothing ever wrote. Best-effort: a failed event
+  // call is never allowed to interrupt the respondent's own navigation.
+  outreachContext: (token: string) =>
+    request<{
+      editionId: string;
+      organizationId: string;
+      segment: 'individual' | 'local_institutional' | 'foreign_institutional';
+    }>(`/outreach/${encodeURIComponent(token)}/context`),
+
+  outreachEvent: (token: string, event: 'opens' | 'starts' | 'finishes') =>
+    request<{ ok: true }>(`/outreach/${encodeURIComponent(token)}/event`, 'POST', { event }).catch(
+      () => undefined,
+    ),
+
   previousEditions: (currentEditionId: string | null) =>
     request<{
       editions: Array<{
